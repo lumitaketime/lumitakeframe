@@ -1,4 +1,4 @@
-# Lumi take frame
+# Lumitake Frame
 
 免費、在裝置內處理的照片畫框工具。支援 HEIC／HEIF、JPG、PNG、WebP，
 自動讀取相機與曝光資訊，提供經典白框、純框與可拖曳裁切的拍立得畫框。

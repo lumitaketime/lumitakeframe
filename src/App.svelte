@@ -18,7 +18,7 @@
  let showCamera=true,showParameters=true,caption='',fit:'contain'|'cover'='cover';
  let model='',make='',focalLength='',fNumber='',exposureTime='',iso='',lens='',date='';
  let quality='png',creditCopied=false;
- $: creditText=t('使用 Lumi take frame 製作 · Lumi taketime','Made with Lumi take frame · Lumi taketime')+' — https://lumitaketime.github.io/photo-frame-studio/';
+ $: creditText=t('使用 Lumitake Frame 製作 · Lumi taketime','Made with Lumitake Frame · Lumi taketime')+' — https://lumitaketime.github.io/lumitakeframe/';
  async function copyCredit(){try{await navigator.clipboard.writeText(creditText);creditCopied=true;}catch{creditCopied=false;}}
 
  let settingsPanel:HTMLDetailsElement,exportDialog:HTMLDialogElement;
@@ -78,7 +78,7 @@
 
 <div class="studio" class:dark>
  <header class="topbar">
-  <a class="wordmark" href="./" aria-label="Lumi take frame">Lumi take frame</a>
+  <a class="wordmark" href="./" aria-label="Lumitake Frame"><img src="./icon.svg" alt="" width="30" height="30"/><span>Lumitake Frame<span class="brand-period">.</span></span></a>
   <div class="top-actions">
    <button class="quiet-button language" on:click={toggleLanguage} aria-label={t('切換為英文','Switch to Chinese')}>{lang==='zh'?'EN':'中文'}</button>
    <span class="divider"></span>

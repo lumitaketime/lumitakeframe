@@ -1,4 +1,4 @@
-Lumi take frame — third-party notices
+Lumitake Frame — third-party notices
 
 Original application code: Noncommercial Attribution Software License 1.0;
 see licenses/application.txt. Original editorial text and visual design:

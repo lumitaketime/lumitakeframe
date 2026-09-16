@@ -1,4 +1,4 @@
-name: Publish Lumi take frame
+name: Publish Lumitake Frame
 on:
   push:
     branches: [main]
