@@ -1,0 +1,35 @@
+Photo Frame Studio — third-party notices
+
+Original application code: Noncommercial Attribution Software License 1.0;
+see licenses/application.txt. Original editorial text and visual design:
+CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/).
+Third-party libraries remain under their respective licenses.
+
+Svelte — MIT
+https://github.com/sveltejs/svelte
+License: licenses/svelte.txt
+
+exifr 7.1.3 — MIT
+https://github.com/MikeKovarik/exifr/tree/v7.1.3
+License: licenses/exifr.txt
+Our application changes HEIF format detection through exifr's parser registry;
+the installed exifr package is not modified.
+
+heic-to 1.5.2 — MIT (JavaScript wrapper)
+https://github.com/hoppergee/heic-to
+License: licenses/heic-to.txt
+The decoder is loaded only when native HEIC decoding fails.
+The bundled HEIF codec contains separately licensed components, including:
+libheif 1.22.2 — LGPL-3.0
+https://github.com/strukturag/libheif/tree/v1.22.2
+libde265 1.0.16 — LGPL-3.0
+https://github.com/strukturag/libde265/tree/v1.0.16
+The heic-to source, build instructions, and upstream codec source are available
+at the links above. No codec source changes are made by this application.
+The decoder remains a separate JavaScript chunk; replace the heic-to dependency
+and rebuild the application to use a modified compatible decoder.
+
+Inspiration acknowledgement:
+ssssota/exif.photos inspired the idea of a community photo-frame tool.
+No upstream exif.photos application source, images, or repository history is
+included in this independent repository. This is not an official successor.

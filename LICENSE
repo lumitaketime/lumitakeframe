@@ -1,0 +1,32 @@
+Photo Frame Studio — Noncommercial Attribution Software License 1.0
+Copyright (c) 2026 lumitaketime and contributors.
+
+This license applies only to original application source code, including the
+implementation of the interface. Third-party components retain their own licenses.
+Website editorial text and original visual design, considered separately from
+implementation code, are licensed under CC BY-NC 4.0:
+https://creativecommons.org/licenses/by-nc/4.0/
+
+Permission is granted, without charge, to use, study, copy, modify and redistribute
+this software solely for noncommercial purposes. Noncommercial means not primarily
+intended for or directed toward commercial advantage or monetary compensation.
+Commercial hosting, sale, paid client work and commercial use of the software
+require separate written permission from the copyright holders.
+
+Copies and distributions must retain this license, copyright notices and third-party
+notices. Public deployments and distributions, including modified versions, must
+clearly credit “Photo Frame Studio by lumitaketime”, link to
+https://github.com/lumitaketime/photo-frame-studio and identify modifications.
+No permission is granted to remove attribution or imply official endorsement.
+This is a source-available license with a noncommercial restriction, not an
+OSI-approved open-source license. It does not relicense third-party components.
+
+Website use and sharing of generated images are also subject to the separate
+website terms in public/terms.html. Users retain their photograph copyrights;
+this license does not automatically license their photographs under CC.
+Statutory exceptions and rights that cannot be restricted remain unaffected.
+
+THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND. TO THE EXTENT
+PERMITTED BY LAW, THE COPYRIGHT HOLDERS ARE NOT LIABLE FOR CLAIMS OR DAMAGES
+ARISING FROM THE SOFTWARE OR ITS USE. Rights under this license terminate upon
+breach; restoration requires permission from the relevant copyright holders.
