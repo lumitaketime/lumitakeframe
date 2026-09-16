@@ -17,7 +17,7 @@
  let layout='Frame',align:'left'|'center'|'right'='center';
  let showCamera=true,showParameters=true,caption='',fit:'contain'|'cover'='contain';
  let model='',make='',focalLength='',fNumber='',exposureTime='',iso='',lens='',date='';
- let quality='png',termsAccepted=false,creditCopied=false;
+ let quality='png',creditCopied=false;
  $: creditText=t('使用 Photo Frame Studio 製作','Made with Photo Frame Studio')+' — https://lumitaketime.github.io/photo-frame-studio/';
  async function copyCredit(){try{await navigator.clipboard.writeText(creditText);creditCopied=true;}catch{creditCopied=false;}}
 
@@ -60,7 +60,7 @@
  }
  function drop(e:DragEvent){e.preventDefault();drag=false;openPhoto(e.dataTransfer?.files[0]);}
  async function download(original=false){
-  if(!image||!source||saving||busy||(!original&&!termsAccepted))return;saving=true;error='';notice='';
+  if(!image||!source||saving||busy)return;saving=true;error='';notice='';
   let target:HTMLCanvasElement|undefined;
   try{
    // Give the progress label a paint before full resolution rendering.
@@ -145,12 +145,12 @@
     {#if image}<div class="export-size"><span>{t('輸出尺寸','Output size')}</span><span>{outputSize} px</span></div>{/if}
     <div class="usage-terms">
      <p>{t('僅限非商業用途。分享成品時，請在貼文或作品說明附上工具名稱與連結；照片著作權仍屬你。','For noncommercial use only. Credit this tool and link to it when sharing. Your photograph remains yours.')}</p>
-     <label class="terms-check"><input type="checkbox" bind:checked={termsAccepted}/><span>{t('我已閱讀並同意','I have read and agree to the')} <a href="./terms.html" target="_blank" rel="noreferrer">{t('使用條款','terms of use')}</a></span></label>
+     <a href="./terms.html" target="_blank" rel="noreferrer">{t('查看使用條款','View terms of use')}</a>
      <label class="field-label" for="photo-credit">{t('分享時的署名文字','Credit for sharing')}</label>
      <textarea id="photo-credit" readonly rows="3" value={creditText}></textarea>
      <button class="text-button" on:click={copyCredit}>{creditCopied?t('已複製','Copied'):t('複製署名文字','Copy credit')}</button>
     </div>
-    <button class="download-button" on:click={()=>download()} disabled={!image||busy||saving||!termsAccepted}>{saving?t('正在製作…','Preparing…'):t('下載照片','Download photo')}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"/></svg></button>
+    <button class="download-button" on:click={()=>download()} disabled={!image||busy||saving}>{saving?t('正在製作…','Preparing…'):t('下載照片','Download photo')}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"/></svg></button>
     <button class="text-button" disabled={!image||busy||saving} on:click={()=>download(true)}>{t('下載原始檔案（不加框）','Download untouched original')}</button>
     <div class="feedback" aria-live="polite">{#if error}<p class="error" role="alert">{error==='decode'?t('無法讀取這張照片，請確認檔案完整並再試一次。','Could not open this photo. Check the file and try again.'):t('裝置無法輸出這個尺寸，請改用電腦或下載原始檔案。','This device could not export this size. Try a computer or download the original file.')}</p>{:else if notice}<p>{t('照片已準備下載。','Your photo is ready to download.')}</p>{/if}</div>
   </div>
