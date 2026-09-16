@@ -1,4 +1,4 @@
-name: Publish Photo Frame Studio
+name: Publish Lumi take frame
 on:
   push:
     branches: [main]

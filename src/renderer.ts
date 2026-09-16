@@ -21,8 +21,8 @@ function line(ctx:CanvasRenderingContext2D,runs:Run[],x:number,y:number,size:num
  for(const run of runs){ctx.font=face(run.weight);ctx.fillStyle=run.color;ctx.fillText(run.text,pen,0);pen+=ctx.measureText(run.text).width;}
  ctx.restore();
 }
-export function renderPhoto(canvas:HTMLCanvasElement,image:PhotoImage,layout:string,settings:Settings,fit:'contain'|'cover',caption:string,cropX:number,cropY:number,maxEdge?:number){
- if(layout.startsWith('Instant'))return drawInstant(canvas,image,layout==='Instant Square'?'square':'portrait',fit,caption,maxEdge,cropX,cropY);
+export function renderPhoto(canvas:HTMLCanvasElement,image:PhotoImage,layout:string,settings:Settings,fit:'contain'|'cover',caption:string,cropX:number,cropY:number,maxEdge?:number,background:'white'|'transparent'='white'){
+ if(layout.startsWith('Instant'))return drawInstant(canvas,image,layout==='Instant Square'?'square':'portrait',fit,caption,maxEdge,cropX,cropY,background);
  const size=outputGeometry(image.width,image.height,layout,fit);
  const scale=maxEdge?Math.min(1,maxEdge/Math.max(size.width,size.height)):1;
  canvas.width=Math.round(size.width*scale);canvas.height=Math.round(size.height*scale);

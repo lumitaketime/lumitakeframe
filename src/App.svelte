@@ -15,13 +15,16 @@
  let paper:'light'|'dark'='light';
  let ink:'white'|'gray'|'black'='white';
  let layout='Frame',align:'left'|'center'|'right'='center';
- let showCamera=true,showParameters=true,caption='',fit:'contain'|'cover'='contain';
+ let showCamera=true,showParameters=true,caption='',fit:'contain'|'cover'='cover';
  let model='',make='',focalLength='',fNumber='',exposureTime='',iso='',lens='',date='';
  let quality='png',creditCopied=false;
- $: creditText=t('使用 Photo Frame Studio 製作','Made with Photo Frame Studio')+' — https://lumitaketime.github.io/photo-frame-studio/';
+ $: creditText=t('使用 Lumi take frame 製作 · Lumi taketime','Made with Lumi take frame · Lumi taketime')+' — https://lumitaketime.github.io/photo-frame-studio/';
  async function copyCredit(){try{await navigator.clipboard.writeText(creditText);creditCopied=true;}catch{creditCopied=false;}}
 
- let settingsDialog:HTMLDialogElement,exportDialog:HTMLDialogElement;
+ let settingsPanel:HTMLDetailsElement,exportDialog:HTMLDialogElement;
+ let instantBackground:'white'|'transparent'='white';
+ function openSettings(){settingsPanel.open=true;settingsPanel.scrollIntoView({behavior:'smooth',block:'start'});}
+ function chooseBackground(value:'white'|'transparent'){instantBackground=value;if(value==='transparent')quality='png';}
  let thumbnail='',metadataState:'idle'|'reading'|'ready'|'empty'|'error'='idle';
  let photoRequest=0;
  function applyMetadata(data:ExifData){exif=data;model=data.Model??'';make=data.Make??'';focalLength=data.FocalLength??'';fNumber=data.FNumber??'';exposureTime=data.ExposureTime??'';iso=data.ISO??'';lens=data.LensModel??'';date=data.CreateDate?new Date(data.CreateDate).toLocaleString():'';}
@@ -39,10 +42,10 @@
  $: options={theme:paper,align:layout==='In the Photo'&&align==='center'?'left':align,color:ink,model,make,focalLength,fNumber,exposureTime,iso,lens,date,showCamera,showParameters};
  function render(target:HTMLCanvasElement,preview:boolean){
   if(!image)return;
-  const dimensions=renderPhoto(target,image,layout,options as Settings,fit,caption,cropX,cropY,preview?1600:undefined);
+  const dimensions=renderPhoto(target,image,layout,options as Settings,fit,caption,cropX,cropY,preview?1600:undefined,instantBackground);
   if(preview)outputSize=`${dimensions.width} × ${dimensions.height}`;
  }
- $: if(canvas&&image){options;layout;fit;caption;cropX;cropY;render(canvas,true);}
+ $: if(canvas&&image){options;layout;fit;caption;cropX;cropY;instantBackground;render(canvas,true);}
  onMount(()=>{try{lang=localStorage.getItem('exif-lang')==='en'?'en':'zh';const theme=localStorage.getItem('exif-theme');dark=theme?theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;}catch{} });
  function toggleLanguage(){lang=lang==='zh'?'en':'zh';try{localStorage.setItem('exif-lang',lang)}catch{} }
  function toggleTheme(){dark=!dark;try{localStorage.setItem('exif-theme',dark?'dark':'light')}catch{} }
@@ -67,7 +70,7 @@
    await new Promise(resolve=>setTimeout(resolve,30));
    let blob:Blob,extension:string;
    if(original){blob=source;extension=source.name.split('.').pop()??'jpg';}
-   else{target=document.createElement('canvas');render(target,false);extension=quality==='png'?'png':'jpg';blob=await canvasBlob(target,quality==='png'?'image/png':'image/jpeg',.92);}
+   else{target=document.createElement('canvas');render(target,false);if(quality==='jpg'){const ctx=target.getContext('2d')!;ctx.globalCompositeOperation='destination-over';ctx.fillStyle='#fff';ctx.fillRect(0,0,target.width,target.height);ctx.globalCompositeOperation='source-over';}extension=quality==='png'?'png':'jpg';blob=await canvasBlob(target,quality==='png'?'image/png':'image/jpeg',.92);}
    const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=original?source.name:source.name.replace(/\.[^.]+$/,'')+'-frame.'+extension;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);notice='saved';
   }catch{error='export';}finally{if(target){target.width=1;target.height=1;}saving=false;}
  }
@@ -75,7 +78,7 @@
 
 <div class="studio" class:dark>
  <header class="topbar">
-  <a class="wordmark" href="./" aria-label="Photo Frame Studio">frame<span class="wordmark-dot">.</span></a>
+  <a class="wordmark" href="./" aria-label="Lumi take frame">Lumi take frame</a>
   <div class="top-actions">
    <button class="quiet-button language" on:click={toggleLanguage} aria-label={t('切換為英文','Switch to Chinese')}>{lang==='zh'?'EN':'中文'}</button>
    <span class="divider"></span>
@@ -88,7 +91,7 @@
   <section class="photo-workspace" aria-label={t('照片預覽','Photo preview')}>
 
    <div class="stage" class:dragging={drag} class:has-image={!!image} class:cropping={!!image&&instant&&fit==='cover'} role="button" tabindex="0" aria-label={t('選擇或拖曳照片','Choose or drop a photo')} on:click={()=>{if(!image&&!busy&&!saving)fileInput.click()}} on:keydown={stageKey} on:dragover={e=>{e.preventDefault();drag=true}} on:dragleave={()=>drag=false} on:drop={drop}>
-    <canvas on:pointerdown={cropStart} on:pointermove={cropMove} on:pointerup={()=>pointer=undefined} on:pointercancel={()=>pointer=undefined} on:lostpointercapture={()=>pointer=undefined} bind:this={canvas} class:visible={!!image} aria-label={t('套用邊框後的照片','Framed photo preview')}></canvas>
+    <canvas class:transparent-paper={instant&&instantBackground==='transparent'} on:pointerdown={cropStart} on:pointermove={cropMove} on:pointerup={()=>pointer=undefined} on:pointercancel={()=>pointer=undefined} on:lostpointercapture={()=>pointer=undefined} bind:this={canvas} class:visible={!!image} aria-label={t('套用邊框後的照片','Framed photo preview')}></canvas>
     {#if !image}<div class="empty-state"><div class="empty-frame"><span>+</span></div><h1>{t('讓照片成為作品','Make it a photograph.')}</h1><p>{t('拖曳照片至此，或點選開始','Drop a photo here, or click to begin')}</p><span class="file-types">HEIC · JPG · PNG · WEBP</span></div>{/if}
     {#if busy}<div class="loading-overlay"><span class="spinner"></span><p>{t('正在讀取照片…','Opening your photo…')}</p></div>{/if}
    </div>
@@ -98,50 +101,51 @@
   <section class="simple-controls" aria-label={t('照片設定','Photo controls')}>
    <h2>{t('畫框','Frame')}</h2>
    <div class="template-grid primary-frames">
-    {#each [layouts[0],layouts[1],layouts[2]] as item}
-     <button class="template" class:selected={item.id==='Instant Square'?instant:layout===item.id} aria-pressed={item.id==='Instant Square'?instant:layout===item.id} on:click={()=>selectLayout(item.id)}>
+    {#each [layouts[0],layouts[1],layouts[3]] as item}
+     <button class="template" class:selected={item.id.startsWith('Instant')?instant:layout===item.id} aria-pressed={item.id.startsWith('Instant')?instant:layout===item.id} on:click={()=>selectLayout(item.id)}>
       <span class="thumb-wrap"><span class="frame-thumb {item.shape}"><span style:background-image={thumbnail?`url("${thumbnail}")`:undefined}></span>{#if item.id==='Frame'}<i aria-hidden="true" class="mini-exif">Shot on CAMERA<br/>35mm f/2 ISO100</i>{/if}</span></span>
-      <span>{item.id==='Instant Square'?t('拍立得','Instant'):lang==='zh'?item.zh:item.en}</span>
+      <span>{item.id.startsWith('Instant')?t('拍立得','Instant'):lang==='zh'?item.zh:item.en}</span>
      </button>
     {/each}
    </div>
    {#if instant}
-    <div class="segmented"><button class:active={layout==='Instant Square'} on:click={()=>selectLayout('Instant Square')}>{t('方形','Square')}</button><button class:active={layout==='Instant Portrait'} on:click={()=>selectLayout('Instant Portrait')}>{t('直式','Portrait')}</button></div>
-    <div class="segmented fit-controls"><button class:active={fit==='contain'} on:click={()=>fit='contain'}>{t('完整保留','Fit entire photo')}</button><button class:active={fit==='cover'} on:click={()=>fit='cover'}>{t('填滿裁切','Fill & crop')}</button></div>
+    <div class="segmented"><button class:active={layout==='Instant Portrait'} on:click={()=>selectLayout('Instant Portrait')}>{t('直式','Portrait')}</button><button class:active={layout==='Instant Square'} on:click={()=>selectLayout('Instant Square')}>{t('方形','Square')}</button></div>
+    <div class="segmented fit-controls"><button class:active={fit==='cover'} on:click={()=>fit='cover'}>{t('填滿裁切','Fill & crop')}</button><button class:active={fit==='contain'} on:click={()=>fit='contain'}>{t('完整保留','Fit entire photo')}</button></div>
     {#if fit==='cover'}<p class="hint">{t('拖曳照片調整位置','Drag the photo to adjust its position')} <button class="inline-link" on:click={()=>cropX=cropY=.5}>{t('重設置中','Recenter')}</button></p>{/if}
    {:else if layout==='Frame'}
     <label class="toggle-row"><span>{t('相機資訊','Camera details')}</span><input type="checkbox" bind:checked={showCamera}/><span class="switch"></span></label>
     <label class="toggle-row"><span>{t('拍攝參數','Exposure settings')}</span><input type="checkbox" bind:checked={showParameters}/><span class="switch"></span></label>
    {:else if !['Just a Frame'].includes(layout)}<p class="hint">{t('目前版型：','Current frame: ')}{lang==='zh'?layouts.find(x=>x.id===layout)?.zh:layouts.find(x=>x.id===layout)?.en}</p>{/if}
-   {#if source}<p class="metadata-status" aria-live="polite">{metadataState==='ready'?t('✓ 拍攝資訊已讀取','✓ Photo metadata loaded'):metadataState==='reading'?t('正在讀取拍攝資訊…','Reading photo metadata…'):metadataState==='error'?t('拍攝資訊讀取失敗，可在設定中手動填寫。','Metadata could not be read. You can enter it in Settings.'):t('這張照片沒有可用的拍攝資訊，可在設定中填寫。','No photo metadata found. You can enter it in Settings.')}</p>{/if}
-  </section>
-    <div class="feedback" aria-live="polite">{#if error}<p class="error" role="alert">{error==='decode'?t('無法讀取這張照片，請確認檔案完整並再試一次。','Could not open this photo. Check the file and try again.'):t('裝置無法輸出這個尺寸，請改用電腦或下載原始檔案。','This device could not export this size. Try a computer or download the original file.')}</p>{:else if notice}<p>{t('照片已準備下載。','Your photo is ready to download.')}</p>{/if}</div>
- </main>
- <footer><span>{t('靈感致敬','Inspired by')} <a href="https://github.com/ssssota/exif.photos" target="_blank" rel="noreferrer">ssssota · exif.photos</a></span><a href="./THIRD-PARTY-NOTICES.txt" target="_blank" rel="noreferrer">{t('第三方授權','Third-party notices')}</a><a href="./terms.html" target="_blank" rel="noreferrer">{t('使用條款與授權','Terms & licenses')}</a></footer>
- <div class="bottom-dock">
-  <button class="settings-button" on:click={()=>settingsDialog.showModal()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="8" cy="6" r="2" fill="var(--panel)"/><circle cx="16" cy="12" r="2" fill="var(--panel)"/><circle cx="10" cy="18" r="2" fill="var(--panel)"/></svg>{t('設定','Settings')}</button>
-  <button class="download-button" disabled={!image||busy||saving} on:click={()=>exportDialog.showModal()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"/></svg>{saving?t('正在製作…','Preparing…'):t('下載照片','Download photo')}</button>
- </div>
- <dialog bind:this={settingsDialog} aria-labelledby="settings-title">
-  <div class="sheet-head"><h2 id="settings-title">{t('設定','Settings')}</h2><button class="text-button" on:click={()=>settingsDialog.close()}>{t('完成','Done')}</button></div>
+   <details class="inline-settings" bind:this={settingsPanel}><summary>{t('設定與拍攝資訊','Settings & photo details')}</summary>
   <div class="sheet-content"><label class="field-label" for="all-frames">{t('所有版型','All frames')}</label><select id="all-frames" value={layout} on:change={e=>selectLayout(e.currentTarget.value)}>{#each layouts as item}<option value={item.id}>{lang==='zh'?item.zh:item.en}</option>{/each}</select>
     {#if instant}
-     <label class="field-label" for="fit">{t('照片呈現','Photo fit')}</label><div class="segmented" id="fit"><button class:active={fit==='contain'} aria-pressed={fit==='contain'} on:click={()=>fit='contain'}>{t('完整保留','Fit entire photo')}</button><button class:active={fit==='cover'} aria-pressed={fit==='cover'} on:click={()=>fit='cover'}>{t('填滿裁切','Fill & crop')}</button></div>
-     <p class="hint">{fit==='contain'?t('保留完整構圖，比例不同時在相紙內留白。','Keeps the full composition, with space when ratios differ.'):t('直接在拍立得上拖曳照片，調整裁切位置。','Drag the photo inside the instant frame to adjust the crop.')}</p>
+     <span class="field-label">{t('拍立得背景','Instant background')}</span>
+     <div class="segmented"><button class:active={instantBackground==='white'} aria-pressed={instantBackground==='white'} on:click={()=>chooseBackground('white')}>{t('白色背景','White background')}</button><button class:active={instantBackground==='transparent'} aria-pressed={instantBackground==='transparent'} on:click={()=>chooseBackground('transparent')}>{t('透明背景 PNG','Transparent PNG')}</button></div>
+     <p class="hint">{t('透明背景只保留照片與相紙，請以 PNG 下載。','Transparent background keeps the photo and paper. Download as PNG.')}</p>
      <label class="field-label" for="caption">{t('相紙題字','Caption')}</label><input id="caption" bind:value={caption} maxlength="100" placeholder={t('留下一句話，也可以留白','A few words, or simply leave it blank')}/>
     {:else if details}
      {#if layout!=='In the Photo'}<div class="inline-control"><span>{t('相框顏色','Frame tone')}</span><div class="swatches"><button class="swatch white" class:chosen={paper==='light'} aria-label={t('白色相框','White frame')} aria-pressed={paper==='light'} on:click={()=>paper='light'}></button><button class="swatch black" class:chosen={paper==='dark'} aria-label={t('黑色相框','Black frame')} aria-pressed={paper==='dark'} on:click={()=>paper='dark'}></button></div></div>{:else}<label class="field-label" for="ink">{t('文字顏色','Text color')}</label><select id="ink" bind:value={ink}><option value="white">{t('白色','White')}</option><option value="gray">{t('灰色','Gray')}</option><option value="black">{t('黑色','Black')}</option></select>{/if}
      {#if layout!=='Banner'}<label class="field-label" for="alignment">{t('文字對齊','Alignment')}</label><div class="segmented" id="alignment">{#each alignments as a}{#if layout!=='In the Photo'||a!=='center'}<button class:active={align===a} aria-pressed={align===a} on:click={()=>align=a}>{a==='left'?t('靠左','Left'):a==='center'?t('置中','Center'):t('靠右','Right')}</button>{/if}{/each}</div>{/if}
 
-     <details class="metadata-editor"><summary>{t('編輯文字與參數','Edit text & metadata')}<span>+</span></summary><div class="fields"><label>{t('相機型號','Camera model')}<input bind:value={model} placeholder="ILCE-7M4"/></label><label>{t('品牌','Make')}<input bind:value={make} placeholder="SONY"/></label><label>{t('焦距','Focal length')}<input bind:value={focalLength} placeholder="35mm"/></label><label>{t('光圈','Aperture')}<input bind:value={fNumber} placeholder="f/2.0"/></label><label>{t('快門','Shutter')}<input bind:value={exposureTime} placeholder="1/200s"/></label><label>ISO<input bind:value={iso} placeholder="ISO100"/></label>{#if layout==='Banner'}<label>{t('鏡頭','Lens')}<input bind:value={lens}/></label><label>{t('日期','Date')}<input bind:value={date}/></label>{/if}</div><p class="hint">{t('自動讀取原始拍攝資訊，可自由修改。','Read from the original file. Yours to edit.')}</p></details>
+     <div class="metadata-editor"><h3>{t('編輯文字與參數','Edit text & metadata')}</h3><div class="fields"><label>{t('相機型號','Camera model')}<input bind:value={model} placeholder="ILCE-7M4"/></label><label>{t('品牌','Make')}<input bind:value={make} placeholder="SONY"/></label><label>{t('焦距','Focal length')}<input bind:value={focalLength} placeholder="35mm"/></label><label>{t('光圈','Aperture')}<input bind:value={fNumber} placeholder="f/2.0"/></label><label>{t('快門','Shutter')}<input bind:value={exposureTime} placeholder="1/200s"/></label><label>ISO<input bind:value={iso} placeholder="ISO100"/></label>{#if layout==='Banner'}<label>{t('鏡頭','Lens')}<input bind:value={lens}/></label><label>{t('日期','Date')}<input bind:value={date}/></label>{/if}</div><p class="hint">{t('自動讀取原始拍攝資訊，可自由修改。','Read from the original file. Yours to edit.')}</p></div>
     {:else}<p class="hint">{t('純粹保留照片，無需其他設定。','Nothing more to add. Just your photograph.')}</p>{/if}
   </div>
- </dialog>
+   </details>
+   {#if source}<p class="metadata-status" aria-live="polite">{metadataState==='ready'?t('✓ 拍攝資訊已讀取','✓ Photo metadata loaded'):metadataState==='reading'?t('正在讀取拍攝資訊…','Reading photo metadata…'):metadataState==='error'?t('拍攝資訊讀取失敗，可在設定中手動填寫。','Metadata could not be read. You can enter it in Settings.'):t('這張照片沒有可用的拍攝資訊，可在設定中填寫。','No photo metadata found. You can enter it in Settings.')}</p>{/if}
+  </section>
+    <div class="feedback" aria-live="polite">{#if error}<p class="error" role="alert">{error==='decode'?t('無法讀取這張照片，請確認檔案完整並再試一次。','Could not open this photo. Check the file and try again.'):t('裝置無法輸出這個尺寸，請改用電腦或下載原始檔案。','This device could not export this size. Try a computer or download the original file.')}</p>{:else if notice}<p>{t('照片已準備下載。','Your photo is ready to download.')}</p>{/if}</div>
+ </main>
+ <footer><span>© 2026 Lumi taketime</span><span>{t('靈感致敬','Inspired by')} <a href="https://github.com/ssssota/exif.photos" target="_blank" rel="noreferrer">ssssota · exif.photos</a></span><a href="./THIRD-PARTY-NOTICES.txt" target="_blank" rel="noreferrer">{t('第三方授權','Third-party notices')}</a><a href="./terms.html" target="_blank" rel="noreferrer">{t('使用條款與授權','Terms & licenses')}</a></footer>
+ <div class="bottom-dock">
+  <button class="settings-button" on:click={openSettings}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="8" cy="6" r="2" fill="var(--panel)"/><circle cx="16" cy="12" r="2" fill="var(--panel)"/><circle cx="10" cy="18" r="2" fill="var(--panel)"/></svg>{t('設定','Settings')}</button>
+  <button class="download-button" disabled={!image||busy||saving} on:click={()=>exportDialog.showModal()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"/></svg>{saving?t('正在製作…','Preparing…'):t('下載照片','Download photo')}</button>
+ </div>
  <dialog bind:this={exportDialog} aria-labelledby="export-title">
   <div class="sheet-head"><h2 id="export-title">{t('下載照片','Download photo')}</h2><button class="text-button" on:click={()=>exportDialog.close()}>{t('關閉','Close')}</button></div>
   <div class="sheet-content">
     <label class="field-label" for="quality">{t('下載畫質','Download quality')}</label><select id="quality" bind:value={quality}><option value="png">{t('無損 PNG','Lossless PNG')}</option><option value="jpg">{t('有損 JPG','Lossy JPG')}</option></select>
     <p class="hint">{quality==='png'?t('原尺寸輸出，不再有損壓縮；檔案較大。','Full resolution, without further lossy compression. Larger files.'):t('原尺寸輸出，適度壓縮；方便儲存與分享。','Full resolution with compression. Smaller files for sharing.')}</p>
+    {#if instant&&instantBackground==='transparent'}<p class="hint">{quality==='png'?t('此 PNG 會保留透明背景。','This PNG preserves transparency.'):t('JPG 不支援透明，透明部分將轉成白色。','JPG does not support transparency; transparent areas will be white.')}</p>{/if}
     {#if image}<div class="export-size"><span>{t('輸出尺寸','Output size')}</span><span>{outputSize} px</span></div>{/if}
     <div class="usage-terms">
      <p>{t('僅限非商業用途。分享成品時，請在貼文或作品說明附上工具名稱與連結；照片著作權仍屬你。','For noncommercial use only. Credit this tool and link to it when sharing. Your photograph remains yours.')}</p>
