@@ -55,3 +55,7 @@ pnpm run build
 詳見 [使用條款](public/terms.html)。使用者照片著作權仍屬使用者。
 第三方套件各自適用其授權，詳見
 [第三方聲明](public/THIRD-PARTY-NOTICES.txt) 與 `public/licenses/`。
+
+## 安裝到裝置
+
+支援 PWA manifest、獨立視窗與離線應用程式快取。Android／桌面支援的瀏覽器可顯示安裝提示；iPhone 可透過 Safari 的分享選單加入主畫面。頁面也提供安裝按鈕與操作指引。安裝提示是否出現由瀏覽器決定。快取只包含網站資源，不儲存使用者照片；更新會在舊版視窗關閉後啟用。

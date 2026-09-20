@@ -1,4 +1,5 @@
 <script lang="ts">
+ import InstallApp from './InstallApp.svelte';
  import {onMount} from 'svelte';
  import {loadExif,type ExifData} from './metadata';
  import {renderPhoto,type Settings} from './renderer';
@@ -21,9 +22,8 @@
  $: creditText=t('使用 Lumitake Frame 製作 · Lumi taketime','Made with Lumitake Frame · Lumi taketime')+' — https://lumitaketime.github.io/lumitakeframe/';
  async function copyCredit(){try{await navigator.clipboard.writeText(creditText);creditCopied=true;}catch{creditCopied=false;}}
 
- let settingsPanel:HTMLDetailsElement,exportDialog:HTMLDialogElement;
+ let exportDialog:HTMLDialogElement;
  let instantBackground:'white'|'transparent'='white';
- function openSettings(){settingsPanel.open=true;settingsPanel.scrollIntoView({behavior:'smooth',block:'start'});}
  function chooseBackground(value:'white'|'transparent'){instantBackground=value;if(value==='transparent')quality='png';}
  let thumbnail='',metadataState:'idle'|'reading'|'ready'|'empty'|'error'='idle';
  let photoRequest=0;
@@ -116,7 +116,7 @@
     <label class="toggle-row"><span>{t('相機資訊','Camera details')}</span><input type="checkbox" bind:checked={showCamera}/><span class="switch"></span></label>
     <label class="toggle-row"><span>{t('拍攝參數','Exposure settings')}</span><input type="checkbox" bind:checked={showParameters}/><span class="switch"></span></label>
    {:else if !['Just a Frame'].includes(layout)}<p class="hint">{t('目前版型：','Current frame: ')}{lang==='zh'?layouts.find(x=>x.id===layout)?.zh:layouts.find(x=>x.id===layout)?.en}</p>{/if}
-   <details class="inline-settings" bind:this={settingsPanel}><summary>{t('設定與拍攝資訊','Settings & photo details')}</summary>
+   <details class="inline-settings"><summary>{t('設定與拍攝資訊','Settings & photo details')}</summary>
   <div class="sheet-content"><label class="field-label" for="all-frames">{t('所有版型','All frames')}</label><select id="all-frames" value={layout} on:change={e=>selectLayout(e.currentTarget.value)}>{#each layouts as item}<option value={item.id}>{lang==='zh'?item.zh:item.en}</option>{/each}</select>
     {#if instant}
      <span class="field-label">{t('拍立得背景','Instant background')}</span>
@@ -135,9 +135,9 @@
   </section>
     <div class="feedback" aria-live="polite">{#if error}<p class="error" role="alert">{error==='decode'?t('無法讀取這張照片，請確認檔案完整並再試一次。','Could not open this photo. Check the file and try again.'):t('裝置無法輸出這個尺寸，請改用電腦或下載原始檔案。','This device could not export this size. Try a computer or download the original file.')}</p>{:else if notice}<p>{t('照片已準備下載。','Your photo is ready to download.')}</p>{/if}</div>
  </main>
+ <InstallApp {lang}/>
  <footer><span>© 2026 Lumi taketime</span><span>{t('靈感致敬','Inspired by')} <a href="https://github.com/ssssota/exif.photos" target="_blank" rel="noreferrer">ssssota · exif.photos</a></span><a href="./THIRD-PARTY-NOTICES.txt" target="_blank" rel="noreferrer">{t('第三方授權','Third-party notices')}</a><a href="./terms.html" target="_blank" rel="noreferrer">{t('使用條款與授權','Terms & licenses')}</a></footer>
  <div class="bottom-dock">
-  <button class="settings-button" on:click={openSettings}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="8" cy="6" r="2" fill="var(--panel)"/><circle cx="16" cy="12" r="2" fill="var(--panel)"/><circle cx="10" cy="18" r="2" fill="var(--panel)"/></svg>{t('設定','Settings')}</button>
   <button class="download-button" disabled={!image||busy||saving} on:click={()=>exportDialog.showModal()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"/></svg>{saving?t('正在製作…','Preparing…'):t('下載照片','Download photo')}</button>
  </div>
  <dialog bind:this={exportDialog} aria-labelledby="export-title">

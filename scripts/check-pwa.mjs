@@ -1,0 +1,17 @@
+import {readFileSync,existsSync} from 'node:fs';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+const manifest=JSON.parse(readFileSync('dist/manifest.webmanifest'));
+assert.equal(manifest.scope,'./');assert.equal(manifest.start_url,'./');assert.equal(manifest.display,'standalone');
+for(const icon of manifest.icons)assert.ok(existsSync('dist/'+icon.src));
+const listeners={},deleted=[];let precached=[],networkFails=false;
+const cached={offline:true};
+const context={URL,Promise,self:{location:{origin:'https://example.com'},registration:{scope:'https://example.com/lumitakeframe/'},addEventListener:(name,fn)=>listeners[name]=fn},caches:{open:async()=>({addAll:async urls=>{precached=urls;},match:async request=>request==='./index.html'?cached:undefined}),keys:async()=>['lumitakeframe-old','another-app'],delete:async key=>deleted.push(key)},fetch:async()=>{if(networkFails)throw Error('offline');return {online:true};}};
+vm.runInNewContext(readFileSync('dist/sw.js','utf8'),context);
+let pending;listeners.install({waitUntil:p=>pending=p});await pending;
+assert.ok(precached.includes('./index.html'));assert.ok(precached.some(p=>p.includes('heic-to')));
+for(const url of precached)assert.ok(existsSync('dist/'+url.slice(2)),url);
+listeners.activate({waitUntil:p=>pending=p});await pending;assert.deepEqual(deleted,['lumitakeframe-old']);
+networkFails=true;listeners.fetch({request:{method:'GET',url:'https://example.com/lumitakeframe/',mode:'navigate'},respondWith:p=>pending=p});assert.equal(await pending,cached);
+let intercepted=false;listeners.fetch({request:{method:'GET',url:'https://example.com/another-app/',mode:'navigate'},respondWith:()=>intercepted=true});assert.equal(intercepted,false);
+console.log('PWA manifest, precache files, offline fallback and cache isolation passed.');
