@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumitake Library</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">Lumitake <span>Library</span></div>
+  <form id="search-form" class="search" role="search">
+    <input id="q" type="search" autocomplete="off" placeholder="輸入關鍵字，例如：貓 沙發、海邊 夕陽、year:2023 folder:京都" aria-label="搜尋">
+    <label class="semantic" id="semantic-wrap" hidden title="同時找語意相近但字面不同的圖片">
+      <input type="checkbox" id="semantic"> 語意
+    </label>
+    <button type="submit">搜尋</button>
+  </form>
+  <button id="help-btn" class="ghost" type="button" aria-label="搜尋語法">?</button>
+</header>
+
+<div class="layout">
+  <aside class="side">
+    <section>
+      <h2>圖庫</h2>
+      <p id="stats" class="muted">讀取中…</p>
+      <ul id="roots" class="roots"></ul>
+      <div class="jobs">
+        <button type="button" data-job="index">掃描並分析</button>
+        <button type="button" data-job="scan" class="ghost">只掃描</button>
+        <button type="button" data-job="analyze" class="ghost">只分析</button>
+        <button type="button" id="stop-job" class="ghost" hidden>停止</button>
+      </div>
+      <p id="job" class="job muted"></p>
+      <p class="muted small" id="models"></p>
+    </section>
+    <section>
+      <h2>快速篩選</h2>
+      <div class="chips" id="quick">
+        <button type="button" data-q="is:pending">待分析</button>
+        <button type="button" data-q="is:failed">分析失敗</button>
+        <button type="button" data-q="is:missing">遺失檔案</button>
+      </div>
+    </section>
+    <section>
+      <h2>常見關鍵字</h2>
+      <div class="chips" id="tags"></div>
+    </section>
+  </aside>
+
+  <main>
+    <p id="summary" class="summary muted"></p>
+    <p id="warning" class="warning" hidden></p>
+    <div id="grid" class="grid"></div>
+    <div class="more"><button id="more" type="button" class="ghost" hidden>載入更多</button></div>
+    <div id="empty" class="empty" hidden>
+      <h2>還沒有圖片</h2>
+      <p>在終端機執行以下指令加入照片資料夾（可以是整顆外接 SSD）：</p>
+      <pre>lumilib add "D:\Photos" --name 照片SSD
+lumilib analyze</pre>
+      <p>或先加入資料夾後，按左側的「掃描並分析」。</p>
+    </div>
+  </main>
+</div>
+
+<dialog id="detail">
+  <form method="dialog" class="close"><button aria-label="關閉">✕</button></form>
+  <div class="detail">
+    <div class="preview"><img id="d-img" alt=""></div>
+    <div class="info">
+      <h3 id="d-name"></h3>
+      <p id="d-path" class="path"></p>
+      <div class="actions">
+        <button type="button" id="d-reveal">在資料夾中顯示</button>
+        <button type="button" id="d-open" class="ghost">開啟檔案</button>
+        <button type="button" id="d-copy" class="ghost">複製路徑</button>
+      </div>
+      <p id="d-status" class="warning" hidden></p>
+      <p id="d-desc"></p>
+      <h4>關鍵字</h4>
+      <div id="d-tags" class="chips"></div>
+      <h4>手動標籤 <span class="muted small">（以逗號分隔）</span></h4>
+      <input id="d-user-tags" type="text" placeholder="例如：家人, 2024 旅行, 作品集">
+      <h4>備註</h4>
+      <textarea id="d-note" rows="2"></textarea>
+      <div class="actions"><button type="button" id="d-save">儲存</button><span id="d-saved" class="muted small"></span></div>
+      <dl id="d-meta" class="meta"></dl>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="help">
+  <form method="dialog" class="close"><button aria-label="關閉">✕</button></form>
+  <h3>搜尋語法</h3>
+  <table class="syntax">
+    <tr><td><code>貓 沙發</code></td><td>同時包含兩個關鍵字</td></tr>
+    <tr><td><code>"日落 海邊"</code></td><td>完整片語</td></tr>
+    <tr><td><code>-狗</code></td><td>排除</td></tr>
+    <tr><td><code>tag:貓</code></td><td>只比對關鍵字欄位</td></tr>
+    <tr><td><code>folder:京都</code></td><td>路徑包含</td></tr>
+    <tr><td><code>camera:iphone</code></td><td>相機型號</td></tr>
+    <tr><td><code>ext:heic</code></td><td>副檔名</td></tr>
+    <tr><td><code>year:2023</code> <code>after:2023-05-01</code> <code>before:2024-01-01</code></td><td>拍攝日期（after 含當天，before 不含）</td></tr>
+    <tr><td><code>root:照片SSD</code></td><td>指定資料夾</td></tr>
+    <tr><td><code>is:pending</code> <code>is:failed</code> <code>is:missing</code></td><td>狀態</td></tr>
+  </table>
+  <p class="muted small">關鍵字會比對模型描述、關鍵字、圖中文字、檔名、資料夾名稱、相機與手動標籤。</p>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

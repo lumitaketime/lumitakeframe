@@ -9,6 +9,12 @@
 - 行動裝置底部設定與下載、中英文、明暗模式
 - 其他版型：照片內文字、資訊橫幅、無框
 
+## 地端 AI 圖片管理（Lumitake Library）
+
+`image-library/` 是另一個獨立的本機工具：用 Ollama 上的視覺模型分析硬碟／外接 SSD 中的照片，
+之後以關鍵字找出照片位置。安裝與使用方式見 [image-library/README.md](image-library/README.md)。
+它不屬於上面的網頁畫框應用，也不會被部署到 GitHub Pages。
+
 ## 隱私
 
 照片與 EXIF 在瀏覽器內處理，應用程式不將照片上傳，不含廣告、追蹤或帳號系統。

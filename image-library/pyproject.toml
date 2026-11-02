@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lumilib"
+version = "0.1.0"
+description = "用地端模型分析圖片，並以關鍵字從硬碟／SSD 找回照片的圖庫管理工具"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "SEE LICENSE IN ../LICENSE" }
+dependencies = ["Pillow>=10.0"]
+
+[project.optional-dependencies]
+heic = ["pillow-heif>=0.16"]
+semantic = ["numpy>=1.24"]
+all = ["pillow-heif>=0.16", "numpy>=1.24"]
+
+[project.scripts]
+lumilib = "lumilib.cli:main"
+
+[tool.setuptools]
+packages = ["lumilib"]
+
+[tool.setuptools.package-data]
+lumilib = ["static/*"]

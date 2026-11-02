@@ -1,0 +1,24 @@
+name: Image library tests
+on:
+  push:
+    paths: ["image-library/**", ".github/workflows/image-library.yml"]
+  pull_request:
+    paths: ["image-library/**", ".github/workflows/image-library.yml"]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: image-library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[all]"
+      - run: python -m unittest discover -s tests -v
