@@ -20,8 +20,14 @@ DEFAULTS = {
     "language": "zh-TW",
     # 送進模型前把長邊縮到這個像素，越大越慢但細節越多
     "analyze_max_side": 1024,
+    # 縮圖高度（像素）；時間軸以等高列排版
     "thumb_size": 360,
     "request_timeout": 300,
+    "port": 8765,
+    # 1 = 允許同一個 Wi-Fi 下的手機／平板連線（需要設定密碼）
+    "lan": 0,
+    # 啟動時自動掃描新增的檔案
+    "scan_on_start": 1,
 }
 
 ENV_PREFIX = "LUMILIB_"
@@ -37,6 +43,9 @@ class Config:
     analyze_max_side: int = DEFAULTS["analyze_max_side"]
     thumb_size: int = DEFAULTS["thumb_size"]
     request_timeout: int = DEFAULTS["request_timeout"]
+    port: int = DEFAULTS["port"]
+    lan: int = DEFAULTS["lan"]
+    scan_on_start: int = DEFAULTS["scan_on_start"]
 
     @property
     def db_path(self) -> Path:
@@ -45,6 +54,10 @@ class Config:
     @property
     def thumbs_dir(self) -> Path:
         return self.home / "thumbs"
+
+    @property
+    def auth_file(self) -> Path:
+        return self.home / "auth.json"
 
     @property
     def config_file(self) -> Path:

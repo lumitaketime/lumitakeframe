@@ -9,11 +9,11 @@
 - 行動裝置底部設定與下載、中英文、明暗模式
 - 其他版型：照片內文字、資訊橫幅、無框
 
-## 地端 AI 圖片管理（Lumitake Library）
+## Lumitake Library（離線 AI 圖庫）
 
-`image-library/` 是另一個獨立的本機工具：用 Ollama 上的視覺模型分析硬碟／外接 SSD 中的照片，
-之後以關鍵字找出照片位置。安裝與使用方式見 [image-library/README.md](image-library/README.md)。
-它不屬於上面的網頁畫框應用，也不會被部署到 GitHub Pages。
+`image-library/` 是另一個獨立的 Mac 本機程式：像 Google 相簿／Immich 的介面，直接讀取 SSD 上的照片與影片資料夾，
+用地端 AI 模型產生描述與關鍵字，並支援相簿、搬移、地圖與手機瀏覽。
+安裝與使用方式見 [image-library/README.md](image-library/README.md)。它不屬於上面的網頁畫框應用，也不會部署到 GitHub Pages。
 
 ## 隱私
 

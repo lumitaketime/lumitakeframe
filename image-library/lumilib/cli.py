@@ -11,7 +11,7 @@ import time
 from . import __version__, db
 from .analyzer import OllamaClient, OllamaUnavailable, analyze_images, embed_images
 from .config import CONFIG_KEYS, load_config
-from .imaging import HEIF_SUPPORT
+from .media import HEIF_SUPPORT, tool_status
 from .scanner import scan_all
 from .search import search
 
@@ -190,6 +190,9 @@ def cmd_doctor(conn, cfg, args):
     print(f"lumilib {__version__}，Python {sys.version.split()[0]}")
     print(f"資料目錄：{cfg.home}")
     print(f"HEIC 支援：{'有' if HEIF_SUPPORT else '無（pip install pillow-heif）'}")
+    tools = tool_status()
+    print(f"exiftool：{'有' if tools['exiftool'] else '無（brew install exiftool，RAW 與完整 EXIF 需要）'}")
+    print(f"ffmpeg：{'有' if tools['ffmpeg'] else '無（brew install ffmpeg，影片需要）'}")
     try:
         import numpy  # noqa: F401
 
@@ -228,6 +231,20 @@ def cmd_config(conn, cfg, args):
         return 0
     for key, value in cfg.as_dict().items():
         print(f"{key:<18} {value}")
+    return 0
+
+
+def cmd_password(conn, cfg, args):
+    import getpass
+
+    from .auth import Auth
+
+    pw = getpass.getpass("新密碼（至少 6 個字元）：")
+    if pw != getpass.getpass("再輸入一次：") :
+        print("兩次輸入不一致")
+        return 1
+    Auth(cfg.auth_file).set_password(pw)
+    print("已設定密碼。可在設定頁開啟「手機連線」。")
     return 0
 
 
@@ -312,9 +329,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("value", nargs="?")
     s.set_defaults(func=cmd_config)
 
-    s = sub.add_parser("serve", help="開啟本機網頁介面")
-    s.add_argument("--host", default="127.0.0.1")
-    s.add_argument("--port", type=int, default=8765)
+    s = sub.add_parser("password", help="設定手機／平板連線密碼")
+    s.set_defaults(func=cmd_password)
+
+    s = sub.add_parser("serve", help="開啟圖庫介面")
+    s.add_argument("--host", help="預設 127.0.0.1；開啟手機連線後為 0.0.0.0")
+    s.add_argument("--port", type=int, help="預設 8765")
     s.add_argument("--open", action="store_true", help="自動開啟瀏覽器")
     s.set_defaults(func=cmd_serve)
     return p

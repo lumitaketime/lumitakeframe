@@ -1,354 +1,770 @@
-"""本機網頁介面：搜尋、瀏覽、編輯標籤、在檔案總管中顯示原檔。
+"""本機圖庫服務（FastAPI）：提供 PWA 介面與 API。
 
-只綁定 127.0.0.1，並檢查 Host / Origin，避免其他網站透過瀏覽器呼叫這個服務。
+- 在這台 Mac 上用 127.0.0.1 開啟不需要登入。
+- 開啟「手機連線」後綁定區網，其他裝置一律需要密碼登入。
+- 檢查 Host / Origin，避免其他網站透過瀏覽器呼叫這個服務。
 """
 
 from __future__ import annotations
 
-import json
+import ipaddress
 import mimetypes
 import os
-import subprocess
+import socket
+import sqlite3
 import sys
 import threading
-import traceback
-from contextlib import contextmanager
-from datetime import datetime
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
-from . import __version__, db
-from .analyzer import OllamaClient, OllamaUnavailable, analyze_images, embed_images
-from .config import Config
-from .imaging import ImageReadError, ensure_thumbnail, make_jpeg, open_image, thumb_path
-from .scanner import scan_all
-from .search import search, top_tags
+from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
 
-STATIC_DIR = Path(__file__).parent / "static"
+from . import __version__, db, fileops
+from .analyzer import OllamaClient, OllamaUnavailable
+from .auth import COOKIE, SESSION_DAYS, Auth
+from .config import CONFIG_KEYS, Config
+from .jobs import JobRunner
+from .media import BROWSER_VIDEO, MediaError, encode, exiftool, load_image, thumb_path, tool_status, write_thumbnail
+from .models import RECOMMENDED, same_model
+from .search import search, summarize, tag_covers, top_tags
+
+WEB_DIR = Path(__file__).parent / "web"
+PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
+LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan"}
+SETTING_KEYS = {"vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url"}
+MAX_IDS = 5000
 
 
-class JobRunner:
-    """同一時間只跑一個背景工作（掃描或分析）。"""
+def _is_loopback(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host == "localhost"
 
-    def __init__(self, cfg: Config):
-        self.cfg = cfg
-        self.lock = threading.Lock()
-        self.stop_event = threading.Event()
-        self.thread: threading.Thread | None = None
-        self.state: dict = {"kind": None, "running": False, "message": "", "done": 0, "total": 0}
 
-    def snapshot(self) -> dict:
-        with self.lock:
-            return dict(self.state)
+def _host_only(host_header: str) -> str:
+    host = host_header.strip().lower()
+    if host.startswith("["):
+        return host[1:].split("]")[0]
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
 
-    def _update(self, **kw) -> None:
-        with self.lock:
-            self.state.update(kw)
 
-    def start(self, kind: str, **options) -> bool:
-        with self.lock:
-            if self.state["running"]:
-                return False
-            self.stop_event.clear()
-            self.state = {
-                "kind": kind, "running": True, "message": "準備中…", "done": 0, "total": 0,
-                "started_at": datetime.now().isoformat(timespec="seconds"), "error": None,
-            }
-        self.thread = threading.Thread(target=self._run, args=(kind, options), daemon=True)
-        self.thread.start()
-        return True
+def lan_addresses(port: int) -> list[str]:
+    urls = []
+    name = socket.gethostname()
+    if name:
+        urls.append(f"http://{name if '.' in name else name + '.local'}:{port}")
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 80))  # 不會真的送出封包，只用來取得本機區網 IP
+            ip = s.getsockname()[0]
+        if not ip.startswith("127."):
+            urls.append(f"http://{ip}:{port}")
+    except OSError:
+        pass
+    return urls
 
-    def stop(self) -> None:
-        self.stop_event.set()
-        self._update(message="停止中…")
 
-    def _run(self, kind: str, options: dict) -> None:
-        conn = db.connect(self.cfg.db_path)
+def qr_svg(text: str) -> str:
+    import qrcode
+    import qrcode.image.svg
+
+    img = qrcode.make(text, image_factory=qrcode.image.svg.SvgPathImage, box_size=10, border=2)
+    return img.to_string(encoding="unicode")
+
+
+def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, start_jobs_on_boot: bool = True,
+               trash=None) -> FastAPI:
+    auth = Auth(cfg.auth_file)
+    client_factory = client_factory or (lambda: OllamaClient(cfg.ollama_url, cfg.request_timeout))
+    state: dict = {}
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        conn = db.connect(cfg.db_path)
+        has_roots = bool(db.list_roots(conn))
+        conn.close()
+        state["jobs"] = JobRunner(cfg, client_factory)
+        if start_jobs_on_boot and cfg.scan_on_start and has_roots:
+            state["jobs"].submit("scan")
+        yield
+        state["jobs"].close()
+        exiftool().close()
+
+    app = FastAPI(title="Lumitake Library", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
+
+    def jobs() -> JobRunner:
+        return state["jobs"]
+
+    def conn() -> sqlite3.Connection:
+        return db.connect(cfg.db_path)
+
+    def is_local(request: Request) -> bool:
+        client = request.client.host if request.client else ""
+        return _is_loopback(client) and _is_loopback(_host_only(request.headers.get("host", "")))
+
+    # ---- 保護 ----
+    @app.middleware("http")
+    async def guard(request: Request, call_next):
+        path = request.url.path
+        local = is_local(request)
+        request.state.local = local
+        if not local and not (cfg.lan and bound_host != "127.0.0.1"):
+            return JSONResponse({"error": "只允許本機連線"}, status_code=403)
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            origin = request.headers.get("origin")
+            if origin and urlparse(origin).netloc.lower() != request.headers.get("host", "").lower():
+                return JSONResponse({"error": "來源不符"}, status_code=403)
+            if request.method in ("POST", "PUT", "PATCH") and "application/json" not in request.headers.get("content-type", ""):
+                return JSONResponse({"error": "需要 JSON"}, status_code=415)
+        if path.startswith("/api/"):
+            if path in LOCAL_ONLY_API and not local and request.method != "GET":
+                return JSONResponse({"error": "這個操作只能在 Mac 本機進行"}, status_code=403)
+            if path not in PUBLIC_API and not local and not auth.verify(request.cookies.get(COOKIE)):
+                return JSONResponse({"error": "請先登入"}, status_code=401)
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        return response
+
+    @app.exception_handler(ValueError)
+    async def value_error(request: Request, exc: ValueError):
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    @app.exception_handler(HTTPException)
+    async def http_error(request: Request, exc: HTTPException):
+        return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+
+    # ---- auth ----
+    @app.get("/api/auth/status")
+    def auth_status(request: Request):
+        local = request.state.local
+        return {
+            "local": local,
+            "required": not local,
+            "authenticated": local or auth.verify(request.cookies.get(COOKIE)),
+            "has_password": auth.has_password,
+        }
+
+    @app.post("/api/auth/login")
+    def login(request: Request, body: dict = Body(...)):
+        if not auth.check_password(str(body.get("password", ""))):
+            raise HTTPException(401, "密碼不正確")
+        resp = JSONResponse({"ok": True})
+        resp.set_cookie(COOKIE, auth.issue(), max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax")
+        return resp
+
+    @app.post("/api/auth/logout")
+    def logout(body: dict = Body(default={})):
+        resp = JSONResponse({"ok": True})
+        resp.delete_cookie(COOKIE)
+        return resp
+
+    # ---- 伺服器狀態 ----
+    @app.get("/api/server")
+    def server_info(request: Request):
+        c = conn()
         try:
-            if kind in ("scan", "index"):
-                results = scan_all(conn, self.cfg, progress=lambda m: self._update(message=m))
-                parts = []
-                for r in results:
-                    if r.offline:
-                        parts.append(f"{r.root}：未連接，已略過")
-                    else:
-                        parts.append(f"{r.root}：新增 {r.added}、更新 {r.updated}、搬移 {r.moved}、遺失 {r.missing}")
-                self._update(message="；".join(parts) or "尚未加入任何資料夾")
-            if kind in ("analyze", "index") and not self.stop_event.is_set():
-                client = OllamaClient(self.cfg.ollama_url, self.cfg.request_timeout)
-                res = analyze_images(
-                    conn, self.cfg, client,
-                    retry_failed=bool(options.get("retry_failed")),
-                    progress=lambda i, n, m: self._update(done=i, total=n, message=f"分析中 {i}/{n}：{m}"),
-                    stop=self.stop_event,
-                )
-                self._update(message=f"完成：分析 {res.analyzed} 張、失敗 {res.failed} 張、建立向量 {res.embedded} 張")
-            if kind == "embed":
-                client = OllamaClient(self.cfg.ollama_url, self.cfg.request_timeout)
-                n = embed_images(conn, self.cfg, client, stop=self.stop_event)
-                self._update(message=f"完成：建立向量 {n} 張")
-        except OllamaUnavailable as exc:
-            self._update(error=str(exc), message=str(exc))
-        except Exception as exc:  # 背景工作不能讓伺服器掛掉
-            traceback.print_exc()
-            self._update(error=str(exc), message=f"發生錯誤：{exc}")
+            roots = [_root_dict(c, r) for r in db.list_roots(c)]
+            return {
+                "version": __version__,
+                "stats": db.stats(c),
+                "roots": roots,
+                "jobs": jobs().snapshot(),
+                "models": {"vision": cfg.vision_model, "embed": cfg.embed_model, "language": cfg.language},
+                "tools": tool_status(),
+                "local": request.state.local,
+                "platform": sys.platform,
+                "home": str(cfg.home) if request.state.local else None,
+            }
         finally:
-            conn.close()
-            if self.stop_event.is_set():
-                self._update(message="已停止")
-            self._update(running=False, finished_at=datetime.now().isoformat(timespec="seconds"))
+            c.close()
 
+    def _root_dict(c, r) -> dict:
+        cover = c.execute(
+            "SELECT id FROM images WHERE root_id = ? AND status = 'ok' AND thumb_ok = 1 ORDER BY sort_at DESC LIMIT 1",
+            (r["id"],),
+        ).fetchone()
+        return {
+            "id": r["id"], "name": r["name"], "path": r["path"], "online": Path(r["path"]).is_dir(),
+            "count": r["image_count"] if "image_count" in r.keys() else c.execute(
+                "SELECT COUNT(*) FROM images WHERE root_id = ? AND status = 'ok'", (r["id"],)).fetchone()[0],
+            "last_scan": r["last_scan"], "cover": cover["id"] if cover else None,
+        }
 
-def reveal_in_file_manager(path: Path, select: bool = True) -> None:
-    if sys.platform.startswith("win"):
-        if select:
-            subprocess.Popen(["explorer", f"/select,{path}"])
-        else:
-            os.startfile(str(path))  # type: ignore[attr-defined]
-    elif sys.platform == "darwin":
-        subprocess.Popen(["open", "-R", str(path)] if select else ["open", str(path)])
-    else:
-        subprocess.Popen(["xdg-open", str(path.parent if select else path)])
+    # ---- 時間軸 ----
+    def scope_sql(params: dict) -> tuple[str, list]:
+        where, args = ["i.status = 'ok'"], []
+        if params.get("fav") == "1":
+            where.append("i.favorite = 1")
+        if params.get("type") in ("photo", "video"):
+            where.append("i.media_type = ?")
+            args.append(params["type"])
+        if params.get("type") == "raw":
+            where.append("i.is_raw = 1")
+        if str(params.get("album", "")).isdigit():
+            where.append("i.id IN (SELECT image_id FROM album_items WHERE album_id = ?)")
+            args.append(int(params["album"]))
+        if params.get("missing") == "1":
+            where[0] = "i.status = 'missing'"
+        return " AND ".join(where), args
 
+    @app.get("/api/timeline/buckets")
+    def buckets(request: Request):
+        where, args = scope_sql(dict(request.query_params))
+        c = conn()
+        try:
+            rows = c.execute(
+                f"SELECT substr(i.sort_at, 1, 7) AS month, COUNT(*) AS count FROM images i WHERE {where} "
+                "GROUP BY month ORDER BY month DESC",
+                args,
+            ).fetchall()
+            return [{"month": r["month"] or "0000-00", "count": r["count"]} for r in rows]
+        finally:
+            c.close()
 
-def make_handler(cfg: Config, jobs: JobRunner, allowed_hosts: set[str]):
-    class Handler(BaseHTTPRequestHandler):
-        server_version = f"lumilib/{__version__}"
+    @app.get("/api/timeline/bucket")
+    def bucket(request: Request, month: str):
+        where, args = scope_sql(dict(request.query_params))
+        c = conn()
+        try:
+            if month == "0000-00":
+                rows = c.execute(f"SELECT i.* FROM images i WHERE {where} AND i.sort_at IS NULL", args).fetchall()
+            else:
+                rows = c.execute(
+                    f"SELECT i.* FROM images i WHERE {where} AND substr(i.sort_at, 1, 7) = ? ORDER BY i.sort_at DESC, i.id DESC",
+                    args + [month],
+                ).fetchall()
+            return [summarize(r) for r in rows]
+        finally:
+            c.close()
 
-        def log_message(self, fmt, *args):  # 安靜一點，只記錄錯誤
-            if args and str(args[1] if len(args) > 1 else "").startswith(("4", "5")):
-                super().log_message(fmt, *args)
+    # ---- 單一檔案 ----
+    def get_image_or_404(c, image_id: int):
+        image = db.get_image(c, image_id)
+        if image is None:
+            raise HTTPException(404, "找不到這個檔案")
+        return image
 
-        # ---- helpers ----
-        @contextmanager
-        def _conn(self):
-            conn = db.connect(cfg.db_path)
-            try:
-                yield conn
-                conn.commit()
-            finally:
-                conn.close()
+    def detail(c, image) -> dict:
+        path = db.absolute_path(c, image)
+        root = db.get_root(c, image["root_id"])
+        data = {k: image[k] for k in image.keys() if k not in ("embedding", "search_text")}
+        for key in ("tags", "objects", "user_tags", "keywords"):
+            data[key] = db.json_list(image[key])
+        albums = c.execute(
+            "SELECT a.id, a.name FROM albums a JOIN album_items ai ON ai.album_id = a.id WHERE ai.image_id = ? ORDER BY a.name",
+            (image["id"],),
+        ).fetchall()
+        data.update(
+            summary=summarize(image),
+            root=root["name"], root_path=root["path"], path=str(path), exists=path.exists(),
+            filename=image["rel_path"].rsplit("/", 1)[-1],
+            albums=[dict(a) for a in albums],
+            playable=image["media_type"] == "video" and Path(image["rel_path"]).suffix.lower() in BROWSER_VIDEO,
+            sidecars=[p.name for p in fileops.sidecars(path)] if path.exists() else [],
+        )
+        return data
 
-        def _send(self, status: int, body: bytes, ctype: str, cache: str = "no-store") -> None:
-            self.send_response(status)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", cache)
-            self.send_header("X-Content-Type-Options", "nosniff")
-            self.end_headers()
-            if self.command != "HEAD":
-                self.wfile.write(body)
+    @app.get("/api/assets/{image_id:int}")
+    def asset(image_id: int):
+        c = conn()
+        try:
+            return detail(c, get_image_or_404(c, image_id))
+        finally:
+            c.close()
 
-        def _json(self, data, status: int = 200) -> None:
-            self._send(status, json.dumps(data, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
+    @app.post("/api/assets/{image_id:int}")
+    def update_asset(image_id: int, body: dict = Body(...)):
+        c = conn()
+        try:
+            get_image_or_404(c, image_id)
+            tags = body.get("user_tags")
+            if isinstance(tags, str):
+                tags = tags.replace("，", ",").replace("、", ",").split(",")
+            db.set_user_fields(c, image_id, user_tags=tags, note=body.get("note"), favorite=body.get("favorite"))
+            return detail(c, db.get_image(c, image_id))
+        finally:
+            c.close()
 
-        def _error(self, status: int, message: str) -> None:
-            self._json({"error": message}, status)
+    def _render(image, path: Path, max_side: int):
+        return load_image(path, image["media_type"], bool(image["is_raw"]), max_side, image["duration"], image["orientation"])
 
-        def _host_ok(self) -> bool:
-            host = (self.headers.get("Host") or "").lower()
-            if host not in allowed_hosts:
-                return False
-            origin = self.headers.get("Origin")
-            if origin and urlparse(origin).netloc.lower() not in allowed_hosts:
-                return False
-            return True
-
-        def _read_json(self) -> dict:
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > 1_000_000:
-                raise ValueError("request too large")
-            raw = self.rfile.read(length) if length else b"{}"
-            data = json.loads(raw.decode("utf-8") or "{}")
-            if not isinstance(data, dict):
-                raise ValueError("JSON object expected")
-            return data
-
-        def _image_or_404(self, conn, image_id: str):
-            if not image_id.isdigit():
-                return None
-            return db.get_image(conn, int(image_id))
-
-        # ---- routes ----
-        def do_HEAD(self):
-            self.do_GET()
-
-        def do_GET(self):
-            if not self._host_ok():
-                return self._error(HTTPStatus.FORBIDDEN, "forbidden host")
-            url = urlparse(self.path)
-            parts = [p for p in url.path.split("/") if p]
-            qs = {k: v[-1] for k, v in parse_qs(url.query).items()}
-            try:
-                if not parts:
-                    return self._static("index.html")
-                if parts[0] == "static" and len(parts) == 2:
-                    return self._static(parts[1])
-                if parts == ["api", "stats"]:
-                    return self._stats()
-                if parts == ["api", "search"]:
-                    return self._search(qs)
-                if parts == ["api", "tags"]:
-                    with self._conn() as conn:
-                        return self._json([{"tag": t, "count": c} for t, c in top_tags(conn, 80)])
-                if len(parts) == 3 and parts[:2] == ["api", "image"]:
-                    return self._detail(parts[2])
-                if len(parts) == 2 and parts[0] in ("thumb", "preview"):
-                    return self._picture(parts[1], parts[0] == "preview")
-            except Exception as exc:
-                traceback.print_exc()
-                return self._error(500, str(exc))
-            self._error(404, "not found")
-
-        def do_POST(self):
-            if not self._host_ok():
-                return self._error(HTTPStatus.FORBIDDEN, "forbidden host")
-            if "application/json" not in (self.headers.get("Content-Type") or ""):
-                return self._error(415, "JSON required")
-            parts = [p for p in urlparse(self.path).path.split("/") if p]
-            try:
-                body = self._read_json()
-                if len(parts) == 3 and parts[:2] == ["api", "image"]:
-                    with self._conn() as conn:
-                        image = self._image_or_404(conn, parts[2])
-                        if image is None:
-                            return self._error(404, "not found")
-                        tags = body.get("user_tags")
-                        if isinstance(tags, str):
-                            tags = [t for t in tags.replace("，", ",").split(",")]
-                        db.set_user_fields(conn, image["id"], user_tags=tags, note=body.get("note"))
-                    return self._detail(parts[2])
-                if len(parts) == 3 and parts[:2] == ["api", "open"]:
-                    with self._conn() as conn:
-                        image = self._image_or_404(conn, parts[2])
-                        if image is None:
-                            return self._error(404, "not found")
-                        path = db.absolute_path(conn, image)
-                    if not path.exists():
-                        return self._error(404, "檔案不在原位置，可能是硬碟未連接或已被移動")
-                    reveal_in_file_manager(path, select=body.get("mode") != "open")
-                    return self._json({"ok": True})
-                if len(parts) == 3 and parts[:2] == ["api", "jobs"]:
-                    action = parts[2]
-                    if action == "stop":
-                        jobs.stop()
-                        return self._json(jobs.snapshot())
-                    if action in ("scan", "analyze", "index", "embed"):
-                        if not jobs.start(action, retry_failed=body.get("retry_failed")):
-                            return self._error(409, "已有工作在執行")
-                        return self._json(jobs.snapshot())
-            except (ValueError, json.JSONDecodeError) as exc:
-                return self._error(400, str(exc))
-            except Exception as exc:
-                traceback.print_exc()
-                return self._error(500, str(exc))
-            self._error(404, "not found")
-
-        # ---- handlers ----
-        def _static(self, name: str):
-            target = (STATIC_DIR / name).resolve()
-            if target.parent != STATIC_DIR.resolve() or not target.is_file():
-                return self._error(404, "not found")
-            ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-            if ctype.startswith("text/") or ctype.endswith("javascript"):
-                ctype += "; charset=utf-8"
-            self._send(200, target.read_bytes(), ctype)
-
-        def _stats(self):
-            with self._conn() as conn:
-                roots = [
-                    {
-                        "id": r["id"], "name": r["name"], "path": r["path"],
-                        "online": Path(r["path"]).is_dir(), "images": r["image_count"],
-                        "last_scan": r["last_scan"],
-                    }
-                    for r in db.list_roots(conn)
-                ]
-                data = {
-                    "version": __version__,
-                    "stats": db.stats(conn),
-                    "roots": roots,
-                    "job": jobs.snapshot(),
-                    "models": {"vision": cfg.vision_model, "embed": cfg.embed_model, "ollama": cfg.ollama_url},
-                }
-            self._json(data)
-
-        def _search(self, qs: dict):
-            limit = max(1, min(int(qs.get("limit", 120)), 500))
-            offset = max(0, int(qs.get("offset", 0)))
-            semantic = qs.get("semantic") == "1" and bool(cfg.embed_model)
-            embedder = OllamaClient(cfg.ollama_url, 60) if semantic else None
-            with self._conn() as conn:
-                try:
-                    result = search(
-                        conn, qs.get("q", ""), limit=limit, offset=offset,
-                        semantic=semantic, embedder=embedder, embed_model=cfg.embed_model,
-                    )
-                except OllamaUnavailable as exc:
-                    result = search(conn, qs.get("q", ""), limit=limit, offset=offset)
-                    result["warning"] = str(exc)
-            self._json(result)
-
-        def _detail(self, image_id: str):
-            with self._conn() as conn:
-                image = self._image_or_404(conn, image_id)
-                if image is None:
-                    return self._error(404, "not found")
-                root = db.get_root(conn, image["root_id"])
-                path = db.absolute_path(conn, image)
-                data = {k: image[k] for k in image.keys() if k not in ("embedding", "search_text")}
-                for key in ("tags", "objects", "user_tags"):
-                    data[key] = db.json_list(image[key])
-                data.update(
-                    root=root["name"], path=str(path), exists=path.exists(),
-                    filename=image["rel_path"].rsplit("/", 1)[-1], has_embedding=image["embedding"] is not None,
-                )
-            self._json(data)
-
-        def _picture(self, image_id: str, preview: bool):
-            with self._conn() as conn:
-                image = self._image_or_404(conn, image_id)
-                if image is None:
-                    return self._error(404, "not found")
-                path = db.absolute_path(conn, image)
-            thumb = thumb_path(cfg.thumbs_dir, image["fingerprint"])
-            if not preview and thumb.exists():
-                return self._send(200, thumb.read_bytes(), "image/jpeg", "private, max-age=86400")
+    @app.get("/api/assets/{image_id:int}/thumb")
+    def thumb(image_id: int):
+        c = conn()
+        try:
+            image = get_image_or_404(c, image_id)
+            path = db.absolute_path(c, image)
+        finally:
+            c.close()
+        target = thumb_path(cfg.thumbs_dir, image["fingerprint"])
+        if not target.exists():
             if not path.exists():
-                if thumb.exists():  # 硬碟沒接上時，大圖退回縮圖
-                    return self._send(200, thumb.read_bytes(), "image/jpeg", "no-store")
-                return self._error(404, "檔案目前無法存取")
+                raise HTTPException(404, "檔案目前無法存取")
             try:
-                img, _ = open_image(path, draft_side=3200 if preview else cfg.thumb_size * 2)
-                with img:
-                    if preview:
-                        body = make_jpeg(img, 1600, quality=88)
-                    else:
-                        body = ensure_thumbnail(img, cfg.thumbs_dir, image["fingerprint"], cfg.thumb_size).read_bytes()
-            except ImageReadError as exc:
-                return self._error(415, str(exc))
-            self._send(200, body, "image/jpeg", "private, max-age=3600")
+                write_thumbnail(_render(image, path, cfg.thumb_size * 2), cfg.thumbs_dir, image["fingerprint"], cfg.thumb_size)
+            except MediaError as exc:
+                raise HTTPException(415, str(exc))
+        return FileResponse(target, media_type="image/webp", headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
-    return Handler
+    @app.get("/api/assets/{image_id:int}/preview")
+    def preview(image_id: int, size: int = 2048):
+        size = max(256, min(size, 4096))
+        c = conn()
+        try:
+            image = get_image_or_404(c, image_id)
+            path = db.absolute_path(c, image)
+        finally:
+            c.close()
+        if not path.exists():
+            target = thumb_path(cfg.thumbs_dir, image["fingerprint"])
+            if target.exists():  # 硬碟沒接上時退回縮圖
+                return FileResponse(target, media_type="image/webp", headers={"Cache-Control": "no-store"})
+            raise HTTPException(404, "檔案目前無法存取")
+        if Path(image["rel_path"]).suffix.lower() == ".gif":
+            return FileResponse(path, media_type="image/gif")
+        try:
+            body = encode(_render(image, path, size), size, "JPEG", 88)
+        except MediaError as exc:
+            raise HTTPException(415, str(exc))
+        return Response(body, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+
+    @app.get("/api/assets/{image_id:int}/original")
+    def original(image_id: int, download: int = 0):
+        c = conn()
+        try:
+            image = get_image_or_404(c, image_id)
+            path = db.absolute_path(c, image)
+        finally:
+            c.close()
+        if not path.exists():
+            raise HTTPException(404, "檔案目前無法存取（硬碟可能未連接）")
+        ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        if path.suffix.lower() in (".mov",):
+            ctype = "video/quicktime"
+        return FileResponse(
+            path, media_type=ctype, filename=path.name if download else None,
+            content_disposition_type="attachment" if download else "inline",
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
+
+    @app.post("/api/assets/{image_id:int}/reveal")
+    def reveal(image_id: int, body: dict = Body(default={})):
+        c = conn()
+        try:
+            path = db.absolute_path(c, get_image_or_404(c, image_id))
+        finally:
+            c.close()
+        if not path.exists():
+            raise HTTPException(404, "檔案不在原位置，可能硬碟未連接或已被移動")
+        fileops.reveal(path, select=body.get("mode") != "open")
+        return {"ok": True}
+
+    @app.post("/api/assets/bulk")
+    def bulk(body: dict = Body(...)):
+        ids = [int(i) for i in body.get("ids") or []][:MAX_IDS]
+        action = body.get("action")
+        if not ids:
+            raise HTTPException(400, "沒有選取任何項目")
+        c = conn()
+        try:
+            if action in ("favorite", "unfavorite"):
+                c.executemany("UPDATE images SET favorite = ? WHERE id = ?", [(1 if action == "favorite" else 0, i) for i in ids])
+                c.commit()
+                return {"done": len(ids)}
+            if action == "trash":
+                res = fileops.trash_images(c, ids, **({"trash": trash} if trash else {}))
+                return {"done": len(res.done), "ids": res.done, "errors": res.errors}
+            if action == "move":
+                res = fileops.move_images(c, ids, int(body["root_id"]), str(body.get("folder", "")))
+                return {"done": len(res.done), "ids": res.done, "errors": res.errors}
+            if action == "add_to_album":
+                album_id = body.get("album_id")
+                if not album_id:
+                    album_id = db.create_album(c, str(body.get("name") or ""))
+                db.add_to_album(c, int(album_id), ids)
+                return {"done": len(ids), "album_id": int(album_id)}
+            if action == "remove_from_album":
+                db.remove_from_album(c, int(body["album_id"]), ids)
+                return {"done": len(ids)}
+            if action == "analyze":
+                return {"jobs": jobs().submit("analyze", ids=ids, redo=bool(body.get("redo")))}
+            raise HTTPException(400, f"未知的動作：{action}")
+        finally:
+            c.close()
+
+    # ---- 搜尋與探索 ----
+    @app.get("/api/search")
+    def do_search(q: str = "", limit: int = 200, offset: int = 0, semantic: int = 0):
+        limit = max(1, min(limit, 1000))
+        c = conn()
+        try:
+            use_sem = bool(semantic and cfg.embed_model)
+            try:
+                return search(c, q, limit=limit, offset=max(0, offset), semantic=use_sem,
+                              embedder=client_factory() if use_sem else None, embed_model=cfg.embed_model)
+            except OllamaUnavailable as exc:
+                result = search(c, q, limit=limit, offset=max(0, offset))
+                result["warning"] = str(exc)
+                return result
+        finally:
+            c.close()
+
+    @app.get("/api/explore")
+    def explore():
+        c = conn()
+        try:
+            tags = top_tags(c, 40)
+            covers = tag_covers(c, [t for t, _ in tags])
+
+            def grouped(column: str, limit: int = 20):
+                rows = c.execute(
+                    f"SELECT {column} AS value, COUNT(*) AS count, id FROM images WHERE status = 'ok' AND thumb_ok = 1 "
+                    f"AND {column} IS NOT NULL AND {column} != '' GROUP BY {column} ORDER BY count DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+                return [{"value": r["value"], "count": r["count"], "cover": r["id"]} for r in rows]
+
+            years = c.execute(
+                "SELECT substr(sort_at, 1, 4) AS value, COUNT(*) AS count, MAX(id) AS id FROM images "
+                "WHERE status = 'ok' AND sort_at IS NOT NULL GROUP BY value ORDER BY value DESC"
+            ).fetchall()
+            return {
+                "tags": [{"value": t, "count": n, "cover": covers.get(t)} for t, n in tags if covers.get(t)],
+                "scenes": grouped("scene", 16),
+                "cameras": grouped("camera"),
+                "lenses": grouped("lens"),
+                "years": [{"value": r["value"], "count": r["count"], "cover": r["id"]} for r in years],
+                "gps": c.execute("SELECT COUNT(*) FROM images WHERE status = 'ok' AND lat IS NOT NULL").fetchone()[0],
+            }
+        finally:
+            c.close()
+
+    @app.get("/api/map")
+    def map_points():
+        """地圖用：[[id, lat, lon], ...]，資料量小，十萬筆也能一次載入。"""
+        c = conn()
+        try:
+            rows = c.execute(
+                "SELECT id, lat, lon FROM images WHERE status = 'ok' AND lat IS NOT NULL ORDER BY sort_at DESC"
+            ).fetchall()
+            return [[r["id"], r["lat"], r["lon"]] for r in rows]
+        finally:
+            c.close()
+
+    # ---- 資料夾 ----
+    @app.get("/api/folders")
+    def folders(root: int | None = None, path: str = ""):
+        c = conn()
+        try:
+            if root is None:
+                return {"roots": [_root_dict(c, r) for r in db.list_roots(c)]}
+            r = db.get_root(c, root)
+            if r is None:
+                raise HTTPException(404, "找不到資料夾")
+            path = path.strip("/")
+            prefix = f"{path}/" if path else ""
+            esc = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            rows = c.execute(
+                "SELECT folder, COUNT(*) AS count, MAX(sort_at) AS latest, id FROM images "
+                "WHERE root_id = ? AND status = 'ok' AND folder LIKE ? ESCAPE '\\' GROUP BY folder",
+                (r["id"], esc + "%"),
+            ).fetchall()
+            children: dict[str, dict] = {}
+            for row in rows:
+                if row["folder"] == path:
+                    continue
+                name = row["folder"][len(prefix):].split("/")[0]
+                child = children.setdefault(name, {"name": name, "path": prefix + name, "count": 0, "cover": None, "latest": ""})
+                child["count"] += row["count"]
+                if (row["latest"] or "") >= child["latest"]:
+                    child["latest"], child["cover"] = row["latest"] or "", row["id"]
+            assets = c.execute(
+                "SELECT * FROM images WHERE root_id = ? AND folder = ? AND status = 'ok' ORDER BY sort_at DESC, id DESC",
+                (r["id"], path),
+            ).fetchall()
+            crumbs, acc = [], []
+            for part in [p for p in path.split("/") if p]:
+                acc.append(part)
+                crumbs.append({"name": part, "path": "/".join(acc)})
+            return {
+                "root": _root_dict(c, r),
+                "path": path,
+                "abs_path": str(Path(r["path"]).joinpath(*[p for p in path.split("/") if p])),
+                "crumbs": crumbs,
+                "folders": sorted(children.values(), key=lambda x: x["name"].lower()),
+                "assets": [summarize(a) for a in assets],
+            }
+        finally:
+            c.close()
+
+    @app.get("/api/fs/dirs")
+    def fs_dirs(root: int, path: str = ""):
+        """搬移時選擇目的地：列出硬碟上真實存在的子資料夾（包含還沒有照片的）。"""
+        c = conn()
+        try:
+            r = db.get_root(c, root)
+        finally:
+            c.close()
+        if r is None:
+            raise HTTPException(404, "找不到資料夾")
+        base = fileops.safe_folder(Path(r["path"]), path)
+        if not base.is_dir():
+            raise HTTPException(404, "資料夾不存在或硬碟未連接")
+        names = sorted(
+            (p.name for p in base.iterdir() if p.is_dir() and not p.name.startswith(".")), key=str.lower
+        )
+        return {"root": r["id"], "path": path.strip("/"), "dirs": names}
+
+    @app.post("/api/folders")
+    def make_folder(body: dict = Body(...)):
+        c = conn()
+        try:
+            return {"path": fileops.create_folder(c, int(body["root_id"]), str(body.get("path", "")))}
+        finally:
+            c.close()
+
+    @app.post("/api/folders/reveal")
+    def reveal_folder(body: dict = Body(...)):
+        c = conn()
+        try:
+            r = db.get_root(c, int(body["root_id"]))
+        finally:
+            c.close()
+        if r is None:
+            raise HTTPException(404, "找不到資料夾")
+        target = fileops.safe_folder(Path(r["path"]), str(body.get("path", "")))
+        if not target.exists():
+            raise HTTPException(404, "資料夾不存在或硬碟未連接")
+        fileops.reveal(target, select=False)
+        return {"ok": True}
+
+    # ---- 相簿 ----
+    @app.get("/api/albums")
+    def albums():
+        c = conn()
+        try:
+            return db.list_albums(c)
+        finally:
+            c.close()
+
+    @app.post("/api/albums")
+    def new_album(body: dict = Body(...)):
+        c = conn()
+        try:
+            album_id = db.create_album(c, str(body.get("name", "")), [int(i) for i in body.get("ids") or []])
+            return db.get_album(c, album_id)
+        finally:
+            c.close()
+
+    @app.get("/api/albums/{album_id:int}")
+    def album(album_id: int):
+        c = conn()
+        try:
+            a = db.get_album(c, album_id)
+            if a is None:
+                raise HTTPException(404, "找不到相簿")
+            rows = c.execute(
+                "SELECT i.* FROM images i JOIN album_items ai ON ai.image_id = i.id WHERE ai.album_id = ? "
+                "ORDER BY i.sort_at DESC, i.id DESC",
+                (album_id,),
+            ).fetchall()
+            return {**a, "assets": [summarize(r) for r in rows]}
+        finally:
+            c.close()
+
+    @app.post("/api/albums/{album_id:int}")
+    def edit_album(album_id: int, body: dict = Body(...)):
+        c = conn()
+        try:
+            if db.get_album(c, album_id) is None:
+                raise HTTPException(404, "找不到相簿")
+            db.update_album(c, album_id, name=body.get("name"), description=body.get("description"),
+                            cover_id=body.get("cover_id"))
+            return db.get_album(c, album_id)
+        finally:
+            c.close()
+
+    @app.delete("/api/albums/{album_id:int}")
+    def remove_album(album_id: int):
+        c = conn()
+        try:
+            db.delete_album(c, album_id)
+            return {"ok": True}
+        finally:
+            c.close()
+
+    # ---- 圖庫資料夾（根目錄） ----
+    @app.get("/api/roots")
+    def roots():
+        c = conn()
+        try:
+            return [_root_dict(c, r) for r in db.list_roots(c)]
+        finally:
+            c.close()
+
+    @app.post("/api/roots")
+    def add_root(body: dict = Body(...)):
+        c = conn()
+        try:
+            r = db.add_root(c, str(body.get("path", "")), body.get("name") or None)
+            jobs().submit("scan", roots=[r["name"]])
+            return _root_dict(c, r)
+        finally:
+            c.close()
+
+    @app.post("/api/roots/{root_id:int}")
+    def relocate(root_id: int, body: dict = Body(...)):
+        c = conn()
+        try:
+            r = db.relocate_root(c, root_id, str(body.get("path", "")))
+            jobs().submit("scan", roots=[r["name"]])
+            return _root_dict(c, r)
+        finally:
+            c.close()
+
+    @app.delete("/api/roots/{root_id:int}")
+    def delete_root(root_id: int):
+        c = conn()
+        try:
+            return {"removed": db.remove_root(c, root_id)}
+        finally:
+            c.close()
+
+    @app.post("/api/pick-folder")
+    def pick(body: dict = Body(default={})):
+        path = fileops.pick_folder()
+        return {"path": path}
+
+    # ---- 工作 ----
+    @app.get("/api/jobs")
+    def job_state():
+        return jobs().snapshot()
+
+    @app.post("/api/jobs")
+    def start_job(body: dict = Body(...)):
+        kind = body.get("kind")
+        opts = {k: body[k] for k in ("roots", "folder", "root_id", "album_id", "redo", "retry_failed") if body.get(k) is not None}
+        if kind == "pull":
+            opts = {"model": str(body["model"])}
+        return jobs().submit(kind, **opts)
+
+    @app.post("/api/jobs/stop")
+    def stop_job(body: dict = Body(default={})):
+        return jobs().stop()
+
+    # ---- 模型與設定 ----
+    @app.get("/api/models")
+    def models():
+        try:
+            installed = client_factory().installed()
+            error = None
+        except OllamaUnavailable as exc:
+            installed, error = [], str(exc)
+        names = [m["name"] for m in installed]
+        return {
+            "ollama_ok": error is None,
+            "error": error,
+            "installed": installed,
+            "recommended": [
+                {**m, "installed": any(same_model(m["name"], n) for n in names)} for m in RECOMMENDED
+            ],
+            "active": {"vision": cfg.vision_model, "embed": cfg.embed_model},
+        }
+
+    @app.post("/api/models/delete")
+    def delete_model(body: dict = Body(...)):
+        client_factory().delete(str(body["name"]))
+        return {"ok": True}
+
+    @app.get("/api/settings")
+    def settings():
+        return {k: getattr(cfg, k) for k in CONFIG_KEYS}
+
+    @app.post("/api/settings")
+    def save_settings(body: dict = Body(...)):
+        for key, value in body.items():
+            if key in SETTING_KEYS:
+                cfg.save_setting(key, value)
+        return {k: getattr(cfg, k) for k in CONFIG_KEYS}
+
+    # ---- 手機連線 ----
+    @app.get("/api/lan")
+    def lan(request: Request):
+        urls = lan_addresses(cfg.port)
+        active = bound_host != "127.0.0.1"
+        return {
+            "enabled": bool(cfg.lan),
+            "active": active,
+            "needs_restart": bool(cfg.lan) != active,
+            "has_password": auth.has_password,
+            "urls": urls,
+            "qr": qr_svg(urls[-1]) if urls else None,
+            "local": request.state.local,
+        }
+
+    @app.post("/api/lan")
+    def set_lan(body: dict = Body(...)):
+        if body.get("password"):
+            auth.set_password(str(body["password"]))
+        if "enabled" in body:
+            if body["enabled"] and not auth.has_password:
+                raise HTTPException(400, "開啟手機連線前請先設定密碼")
+            cfg.save_setting("lan", 1 if body["enabled"] else 0)
+        return {"enabled": bool(cfg.lan), "has_password": auth.has_password}
+
+    @app.post("/api/restart")
+    def restart(body: dict = Body(default={})):
+        def later():
+            import time
+
+            time.sleep(0.6)
+            jobs().close()
+            exiftool().close()
+            os.execv(sys.executable, [sys.executable, "-m", "lumilib", *sys.argv[1:]])
+
+        threading.Thread(target=later, daemon=True).start()
+        return {"ok": True}
+
+    # ---- 前端（PWA） ----
+    @app.get("/{full_path:path}")
+    def spa(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(404, "not found")
+        index = WEB_DIR / "index.html"
+        if full_path:
+            target = (WEB_DIR / full_path).resolve()
+            if WEB_DIR.resolve() in target.parents and target.is_file():
+                cache = "public, max-age=31536000, immutable" if "/assets/" in f"/{full_path}" else "no-cache"
+                return FileResponse(target, headers={"Cache-Control": cache})
+        if not index.exists():
+            return Response("前端尚未建置：請在 image-library/web 執行 pnpm install && pnpm build", media_type="text/plain; charset=utf-8")
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})
+
+    return app
 
 
-def serve(cfg: Config, host: str = "127.0.0.1", port: int = 8765, open_browser: bool = False) -> None:
+def serve(cfg: Config, host: str | None = None, port: int | None = None, open_browser: bool = False) -> None:
+    import uvicorn
+
+    host = host or ("0.0.0.0" if cfg.lan else "127.0.0.1")
+    port = port or cfg.port
+    cfg.port = port
     db.connect(cfg.db_path).close()
-    jobs = JobRunner(cfg)
-    allowed = {f"{h}:{port}" for h in ("127.0.0.1", "localhost", host)}
-    httpd = ThreadingHTTPServer((host, port), make_handler(cfg, jobs, allowed))
-    url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '') else host}:{port}/"
-    print(f"圖庫介面：{url}（按 Ctrl+C 結束）")
+    if host != "127.0.0.1" and not Auth(cfg.auth_file).has_password:
+        print("尚未設定手機連線密碼，改為只允許本機。請在設定頁設定密碼。")
+        host = "127.0.0.1"
+    app = create_app(cfg, bound_host=host)
+    url = f"http://127.0.0.1:{port}/"
+    print(f"Lumitake Library：{url}（按 Ctrl+C 結束）")
+    if host != "127.0.0.1":
+        for u in lan_addresses(port):
+            print(f"  手機／平板（同一個 Wi-Fi）：{u}")
     if open_browser:
         import webbrowser
 
-        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\n已關閉")
-    finally:
-        jobs.stop()
-        httpd.server_close()
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    uvicorn.run(app, host=host, port=port, log_level="warning")

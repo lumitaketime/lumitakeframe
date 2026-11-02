@@ -1,153 +1,140 @@
-# Lumitake Library：地端 AI 圖片管理
+# Lumitake Library：離線 AI 照片與影片圖庫
 
-用**本機執行的視覺模型**掃描硬碟／外接 SSD 裡的照片，自動產生描述、關鍵字與圖中文字，
-之後只要輸入關鍵字（例如「貓 沙發」「海邊 夕陽」「year:2023 folder:京都」）就能找出照片在哪裡，
-一鍵在檔案總管／Finder 中顯示原檔。
+給攝影師用的本機圖庫，概念像 Android 相簿：**資料夾就是相簿來源，App 只負責瀏覽與整理**。
+照片和影片留在你的 SSD／硬碟原位，不會被複製進某個資料庫，也不會上傳雲端。
+介面參考 Google 相簿與 Immich，Mac 用瀏覽器開，iPhone／iPad 透過家裡 Wi-Fi 也能看。
 
-- **完全地端**：圖片只送到你電腦上的 [Ollama](https://ollama.com)，不上傳雲端。
-- **不搬動、不修改原檔**：圖庫只保存路徑、分析結果與縮圖（在 `~/.lumilib`）。
-- **增量掃描**：只處理新增或修改的檔案；分析可隨時中斷，下次從未完成的圖片繼續。
-- **找得回搬移的檔案**：檔案改名或換資料夾，重新掃描後用內容指紋找回，原本的分析保留。
-- **外接 SSD 友善**：硬碟沒接上時不會把照片當成刪除；換了磁碟代號用 `relocate` 一行修正。
-- **重複照片**：內容相同的副本直接沿用分析結果，不重複耗時。
-- **搜尋**：中英文關鍵字、片語、排除、日期、相機、資料夾、副檔名條件；可選語意搜尋。
-- **手動標籤與備註**：可在網頁介面補充，例如「家人」「作品集」，一樣能搜尋。
-- 支援 JPG、PNG、WebP、GIF、BMP、TIFF、HEIC／HEIF（需 `pillow-heif`）、AVIF（視 Pillow 版本）。
+## 功能
 
-## 1. 安裝
+- **時間軸**：依拍攝日期分月、分日，等高列排版，右側時間捲軸快速跳到任何年月。
+- **資料夾**：照硬碟上的資料夾結構瀏覽，可建立資料夾、在 Finder 中打開。
+- **相簿與我的最愛**：同一張照片可放進多個相簿，不會複製檔案。
+- **AI 分析（地端）**：Ollama 上的視覺模型產生中文描述、中英文關鍵字、圖中文字；影片取 4 個畫面一起分析。
+  模型可在設定頁下載、切換、刪除。
+- **搜尋**：中英文關鍵字、片語、排除，以及相機、鏡頭、日期、資料夾、檔案類型等條件；可選語意搜尋。
+- **完整檔案資訊**：拍攝時間（含時區）、相機、鏡頭、光圈、快門、ISO、焦距、尺寸、GPS 與地圖、
+  Lightroom 關鍵字與標題、檔案完整路徑（點一下複製、在 Finder 中顯示、前往資料夾）。
+- **地圖**：有 GPS 的照片顯示在 OpenStreetMap 上，靠近的會群組成一個。
+- **真的整理硬碟**：搬移到其他資料夾、移到垃圾桶（可還原）。Lightroom `.xmp` 與 iPhone `.aae`
+  附屬檔會跟著走；RAW+JPEG 同名時，`.xmp` 會留給 RAW。
+- **格式**：JPG、PNG、WebP、HEIC/HEIF、TIFF、GIF、AVIF；RAW（CR2/CR3/NEF/ARW/RAF/ORF/RW2/DNG 等，
+  用內嵌預覽）；影片 MP4、MOV、M4V、AVI、MKV、MTS 等（瀏覽器可播放 MP4／MOV，其他格式可在 Mac 上開啟）。
+- **找得回來**：檔案在 Finder 改名或搬移後，重新掃描會用內容指紋找回，分析與相簿都保留；
+  外接 SSD 沒接上時不會被當成刪除；SSD 換了名稱可在設定頁更新位置。
+- **手機與平板**：在設定頁設定密碼、開啟「手機連線」，用 iPhone 相機掃 QR code，
+  Safari「加入主畫面」後像 App 一樣全螢幕使用。
 
-需要 Python 3.10 以上。
+## 安裝（macOS）
 
-```sh
-cd image-library
-python -m venv .venv
-# Windows: .venv\Scripts\activate    macOS / Linux: source .venv/bin/activate
-pip install -e ".[all]"
+1. 下載這個專案（GitHub 頁面 → Code → Download ZIP，解壓縮）。
+2. 打開「終端機」，把 `install-mac.sh` 拖進視窗前面加上 `bash `，按 Enter：
+
+   ```bash
+   bash ~/Downloads/lumitakeframe-main/image-library/install-mac.sh
+   ```
+
+   會自動安裝 Homebrew、Python、exiftool、ffmpeg、Ollama，並詢問是否下載推薦的 AI 模型（約 6 GB）。
+   過程中可能需要輸入 Mac 的登入密碼。
+3. 完成後桌面會出現 **Lumitake Library.command**，點兩下就會啟動並開啟瀏覽器。
+   關閉那個終端機視窗即停止。
+4. 第一次使用：到「設定 → 圖庫資料夾」按「選擇資料夾…」，練習可先加入 `~/Pictures`。
+
+### 推薦模型（M1 Pro 16GB）
+
+| 模型 | 大小 | 速度 | 用途 |
+| --- | --- | --- | --- |
+| `qwen2.5vl:7b` | 約 6 GB | 每張 6–12 秒 | 預設，中文描述與文字辨識最好 |
+| `qwen2.5vl:3b` | 約 3 GB | 每張 3–5 秒 | 十萬張先快速掃一輪 |
+| `qwen3-vl:8b` / `qwen3-vl:4b` | 3–6 GB | 中／快 | 新一代，需要較新版 Ollama |
+| `gemma3:12b` | 約 8 GB | 每張 12–25 秒 | 描述細膩，16GB 會比較吃緊 |
+| `bge-m3` | 約 1.2 GB | 很快 | 語意搜尋（選用） |
+
+十萬張照片用 7B 模型大約需要一到兩週的累積時間。建議：先用 3B 掃一輪，
+重要作品再到資料夾或相簿頁按「AI 分析」用 7B 重跑。分析可以隨時停止，下次會接著做。
+
+## 日常使用
+
+- 新照片放進 SSD 資料夾後，重新開啟程式（預設啟動時自動掃描），或到設定按「重新掃描」。
+- 選取：滑鼠移到照片左上角點圓圈，按住 Shift 可選一整段；手機上長按。
+  選取後上方會出現：加入最愛、加到相簿、搬移、AI 分析、移到垃圾桶。
+- 檢視器快捷鍵：← → 切換、`i` 資訊、`f` 最愛、Delete 刪除、Esc 關閉、滾輪／雙擊縮放。
+- 搜尋語法：
+
+  | 範例 | 意思 |
+  | --- | --- |
+  | `貓 沙發` | 同時包含（描述、關鍵字、圖中文字、檔名、資料夾） |
+  | `"日落 海邊"` | 完整片語 |
+  | `-狗` | 排除 |
+  | `tag:作品集` | 只找關鍵字（AI、Lightroom、手動標籤） |
+  | `folder:婚禮` `camera:x-t5` `lens:56mm` | 資料夾、相機、鏡頭 |
+  | `year:2024` `after:2024-05-01` `before:2024-06-01` | 日期 |
+  | `type:video` `type:raw` `ext:heic` | 類型 |
+  | `is:favorite` `is:pending` `is:failed` `is:missing` | 狀態 |
+
+### 把圖庫資料也放在 SSD（行動作品集）
+
+資料庫與縮圖預設在 `~/.lumilib`（十萬張約 2–3 GB 縮圖）。想讓它跟著 SSD 走：
+用文字編輯器打開桌面的 `Lumitake Library.command`，把這行的註解拿掉並改成你的 SSD：
+
+```bash
+export LUMILIB_HOME="/Volumes/你的SSD/.lumilib"
 ```
 
-`[all]` 會一併安裝 HEIC 支援（pillow-heif）與加速語意搜尋的 numpy；只需要基本功能可用 `pip install -e .`。
+### 手機與平板
 
-接著安裝 [Ollama](https://ollama.com/download) 並下載視覺模型：
+1. 設定 → 手機與平板：設定密碼、勾選「允許手機與平板連線」、按「立即重新啟動」。
+   macOS 詢問是否允許 Python 接受連入連線時選「允許」。
+2. iPhone 連同一個 Wi-Fi，用相機掃設定頁的 QR code，輸入密碼。
+3. Safari 分享選單 →「加入主畫面」。
 
-```sh
-ollama pull qwen2.5vl:7b
-lumilib doctor          # 檢查連線、模型與選用套件
-```
+Mac 需要保持開機（接電源時程式會避免睡眠，但闔上螢幕仍會睡眠），SSD 需要接著。
+從手機按「在 Finder 中顯示」會在 Mac 上打開 Finder。出門在外的連線（例如 Tailscale）之後再加。
 
-### 模型選擇
+## 隱私與安全
 
-| 模型 | 大小 | 說明 |
-| --- | --- | --- |
-| `qwen2.5vl:7b`（預設） | 約 6 GB | 中文描述與圖中文字辨識表現好，建議 8 GB 以上顯示記憶體 |
-| `qwen2.5vl:3b` | 約 3 GB | 較快、較省記憶體，細節略少 |
-| `gemma3:4b` / `gemma3:12b` | 3–8 GB | 多語言，另一種選擇 |
-| `qwen3-vl:8b` 等較新模型 | — | Ollama 有提供的支援圖片輸入模型都可以使用 |
+- 照片只送到這台 Mac 上的 Ollama（`http://127.0.0.1:11434`），不上傳任何雲端服務。
+- 地圖圖磚來自 OpenStreetMap，只會傳送地圖位置，不會傳送照片。
+- 預設只允許本機連線；開啟手機連線後，其他裝置一律需要密碼（scrypt 雜湊保存）。
+  選資料夾、改連線設定只能在 Mac 本機操作。服務會檢查 Host／Origin，防止其他網站透過瀏覽器呼叫。
+- 刪除一律移到垃圾桶；「從圖庫移除資料夾」只刪紀錄，不動硬碟上的檔案。
 
-更換模型：`lumilib config set vision_model qwen2.5vl:3b`。換模型後想全部重新分析可用 `lumilib analyze --redo`。
+## 命令列（進階）
 
-速度參考：一般顯示卡每張數秒，只用 CPU 每張可能數十秒。上萬張照片建議放著過夜跑，隨時可中斷。
-
-## 2. 使用
-
-```sh
-# 加入照片資料夾（可以是整顆外接 SSD），會立即掃描
-lumilib add "E:\\" --name 照片SSD
-lumilib add ~/Pictures --name 電腦相簿
-
-# 用地端模型分析所有尚未分析的圖片（Ctrl+C 可中斷，下次繼續）
-lumilib analyze
-
-# 搜尋
-lumilib search 貓 沙發
-lumilib search "日落 海邊" year:2023
-lumilib search 收據 --paths          # 只輸出完整路徑，方便複製或交給其他程式
-
-# 網頁介面（建議）
+```bash
+cd image-library && source .venv/bin/activate
+lumilib doctor                    # 檢查 Ollama、模型、exiftool、ffmpeg
+lumilib add "/Volumes/SSD/作品" --name 作品集SSD
+lumilib analyze --limit 100       # 分析 100 張
+lumilib search 海邊 夕陽 --paths   # 只輸出完整路徑
+lumilib relocate 作品集SSD "/Volumes/新名稱/作品"
+lumilib password                  # 設定手機連線密碼
 lumilib serve --open
 ```
 
-網頁介面在 `http://127.0.0.1:8765/`，可搜尋、看大圖、點關鍵字找相似主題、編輯手動標籤、
-在檔案總管中顯示原檔，也能直接按「掃描並分析」。介面只對本機開放。
+## 開發
 
-### 日常維護
+```bash
+# 後端測試（不需要 Ollama；有 exiftool / ffmpeg 時會多跑相關測試）
+pip install -e ".[test]" && python -m unittest discover -s tests
 
-```sh
-lumilib index        # 新增照片後：掃描全部資料夾 + 分析新圖片
-lumilib stats        # 統計
-lumilib roots        # 列出資料夾與是否連接
-lumilib relocate 照片SSD "F:\\"   # SSD 換了磁碟代號 / 掛載位置
-lumilib analyze --retry-failed     # 重試先前失敗的圖片
-lumilib tag 123 --add 家人 旅行 --note "外婆生日"
+# 前端（Svelte 5 + Vite），建置結果輸出到 lumilib/web/ 並一起提交，安裝時不需要 Node.js
+cd web && pnpm install && pnpm build
+pnpm dev   # 開發模式，API 轉到 127.0.0.1:8765
 ```
 
-## 3. 搜尋語法
-
-| 範例 | 意思 |
+| 位置 | 內容 |
 | --- | --- |
-| `貓 沙發` | 同時包含兩個關鍵字 |
-| `"日落 海邊"` | 完整片語 |
-| `-狗` | 排除 |
-| `tag:貓` | 只比對關鍵字欄位（模型 + 手動標籤） |
-| `folder:京都` | 路徑包含 |
-| `camera:iphone` | 相機型號 |
-| `ext:heic` | 副檔名 |
-| `year:2023`、`after:2023-05-01`、`before:2023-06-01` | 拍攝日期（after 含當天，before 不含） |
-| `root:照片SSD` | 指定資料夾 |
-| `is:pending` `is:failed` `is:missing` `is:analyzed` | 狀態 |
-
-關鍵字會比對：模型描述、關鍵字（含英文同義詞）、場景、物品、圖中文字、檔名與資料夾名稱、相機、手動標籤與備註。
-模型分析時也會參考資料夾名稱（例如「2023 京都旅行」），只在與畫面相符時採用。
-
-### 語意搜尋（選用）
-
-關鍵字搜尋需要字面相符；語意搜尋能讓「沙灘」找到描述寫「海邊」的照片。
-
-```sh
-ollama pull bge-m3
-lumilib config set embed_model bge-m3
-lumilib embed                       # 為已分析的圖片建立向量（之後 analyze 會自動建立）
-lumilib search 沙灘 --semantic
-```
-
-網頁介面搜尋框旁會出現「語意」勾選框。結果先列出關鍵字相符的，再補上語意相近的（標示「語意相近」／`≈`）。
-
-## 4. 設定
-
-`lumilib config` 查看目前設定，`lumilib config set <key> <value>` 修改，也可用環境變數 `LUMILIB_<KEY>`。
-
-| key | 預設 | 說明 |
-| --- | --- | --- |
-| `vision_model` | `qwen2.5vl:7b` | 視覺模型 |
-| `embed_model` | （空） | 向量模型，設定後啟用語意搜尋 |
-| `language` | `zh-TW` | 描述與關鍵字語言：`zh-TW` 或 `en` |
-| `ollama_url` | `http://127.0.0.1:11434` | 可指向區網內另一台有 GPU 的電腦 |
-| `analyze_max_side` | `1024` | 送進模型前縮小到的長邊像素 |
-| `thumb_size` | `360` | 縮圖大小 |
-| `request_timeout` | `300` | 每張圖片的模型逾時秒數 |
-
-資料目錄預設 `~/.lumilib`（`library.db` 與 `thumbs/`），可用 `--home` 或 `LUMILIB_HOME` 改到其他位置；
-想讓圖庫跟著外接 SSD 走，可以把資料目錄也放在 SSD 上。
-
-## 5. 隱私與安全
-
-- 圖片只送到 `ollama_url`（預設本機）。若改成區網位址，圖片會經由區網傳到那台電腦。
-- 網頁服務預設只綁定 `127.0.0.1`，並檢查 Host／Origin，防止其他網站透過瀏覽器存取。
-- 不會刪除、移動或修改原始照片；`remove` 只移除圖庫紀錄。
-- 模型提示要求不猜測人物身分；本工具不做人臉辨識。
-
-## 6. 開發
-
-```sh
-python -m unittest discover -s tests
-```
-
-測試使用合成圖片與假模型，不需要 Ollama。
-
-| 檔案 | 內容 |
-| --- | --- |
-| `lumilib/scanner.py` | 掃描、指紋、搬移／重複偵測 |
-| `lumilib/analyzer.py` | Ollama 呼叫、提示詞、結果正規化、向量 |
+| `lumilib/media.py` | exiftool／Pillow／ffmpeg：EXIF、RAW 預覽、影片畫面、縮圖 |
+| `lumilib/scanner.py` | 增量掃描、內容指紋、搬移與重複偵測 |
+| `lumilib/analyzer.py`、`models.py` | Ollama 呼叫、提示詞、模型下載與推薦清單 |
 | `lumilib/search.py` | 查詢語法、排序、語意搜尋 |
-| `lumilib/db.py` | SQLite 結構與資料夾管理 |
-| `lumilib/server.py`、`lumilib/static/` | 本機網頁介面 |
-| `lumilib/cli.py` | 命令列 |
+| `lumilib/fileops.py` | 垃圾桶、搬移、附屬檔、Finder |
+| `lumilib/server.py`、`auth.py`、`jobs.py` | FastAPI、登入、背景工作佇列 |
+| `web/src/` | PWA 介面：時間軸、檢視器、資料夾、相簿、地圖、設定 |
+
+## 接下來
+
+- 人臉辨識與人物頁（InsightFace）
+- 多語言 CLIP 圖像搜尋、查詢自動翻譯與改寫
+- 離線地名（GPS → 城市名稱）
+- 出門在外連線（Tailscale）、Windows 版

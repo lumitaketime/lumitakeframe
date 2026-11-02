@@ -4,17 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lumilib"
-version = "0.1.0"
-description = "用地端模型分析圖片，並以關鍵字從硬碟／SSD 找回照片的圖庫管理工具"
+version = "0.2.0"
+description = "Lumitake Library：用地端 AI 分析並管理硬碟／SSD 上的照片與影片"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "SEE LICENSE IN ../LICENSE" }
-dependencies = ["Pillow>=10.0"]
+dependencies = [
+    "Pillow>=10.0",
+    "pillow-heif>=0.16",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "send2trash>=1.8",
+    "qrcode>=7.4",
+    "numpy>=1.24",
+]
 
 [project.optional-dependencies]
-heic = ["pillow-heif>=0.16"]
-semantic = ["numpy>=1.24"]
-all = ["pillow-heif>=0.16", "numpy>=1.24"]
+test = ["httpx>=0.27"]
 
 [project.scripts]
 lumilib = "lumilib.cli:main"
@@ -23,4 +29,4 @@ lumilib = "lumilib.cli:main"
 packages = ["lumilib"]
 
 [tool.setuptools.package-data]
-lumilib = ["static/*"]
+lumilib = ["web/*", "web/assets/*", "web/icons/*"]

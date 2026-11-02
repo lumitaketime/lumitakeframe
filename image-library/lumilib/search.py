@@ -10,7 +10,9 @@
     ext:heic            副檔名
     year:2023           拍攝年份；after:2023-05-01（含當天）、before:2023-06-01（不含當天）
     root:外接SSD         限定某個登錄的資料夾
-    is:pending / is:failed / is:analyzed / is:missing
+    lens:50mm           鏡頭
+    type:video / type:photo / type:raw
+    is:favorite / is:pending / is:failed / is:analyzed / is:missing
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from dataclasses import dataclass, field
 
 from . import db
 
-FILTER_KEYS = {"tag", "folder", "camera", "ext", "year", "after", "before", "root", "is"}
+FILTER_KEYS = {"tag", "folder", "camera", "lens", "ext", "year", "after", "before", "root", "is", "type", "album"}
 
 
 @dataclass
@@ -69,8 +71,24 @@ def _filter_sql(query: Query, include_terms: bool) -> tuple[str, list]:
     for key, value in query.filters:
         low = value.lower()
         if key == "tag":
-            where.append("(lower(i.tags) LIKE ? ESCAPE '\\' OR lower(i.user_tags) LIKE ? ESCAPE '\\')")
-            params += [_like(low), _like(low)]
+            where.append(
+                "(lower(i.tags) LIKE ? ESCAPE '\\' OR lower(i.user_tags) LIKE ? ESCAPE '\\'"
+                " OR lower(i.keywords) LIKE ? ESCAPE '\\')"
+            )
+            params += [_like(low), _like(low), _like(low)]
+        elif key == "lens":
+            where.append("lower(i.lens) LIKE ? ESCAPE '\\'")
+            params.append(_like(low))
+        elif key == "type":
+            if low in ("video", "影片"):
+                where.append("i.media_type = 'video'")
+            elif low in ("photo", "照片"):
+                where.append("i.media_type = 'photo'")
+            elif low == "raw":
+                where.append("i.is_raw = 1")
+        elif key == "album" and value.isdigit():
+            where.append("i.id IN (SELECT image_id FROM album_items WHERE album_id = ?)")
+            params.append(int(value))
         elif key == "folder":
             where.append("lower(i.rel_path) LIKE ? ESCAPE '\\'")
             params.append(_like(low))
@@ -81,13 +99,13 @@ def _filter_sql(query: Query, include_terms: bool) -> tuple[str, list]:
             where.append("lower(i.rel_path) LIKE ? ESCAPE '\\'")
             params.append("%." + low.lstrip(".").replace("%", "").replace("_", "\\_"))
         elif key == "year" and re.fullmatch(r"\d{4}", value):
-            where.append("substr(i.taken_at, 1, 4) = ?")
+            where.append("substr(i.sort_at, 1, 4) = ?")
             params.append(value)
         elif key == "after":
-            where.append("i.taken_at >= ?")
+            where.append("i.sort_at >= ?")
             params.append(value)
         elif key == "before":
-            where.append("i.taken_at < ?")
+            where.append("i.sort_at < ?")
             params.append(value)
         elif key == "root":
             where.append("(r.name = ? OR CAST(r.id AS TEXT) = ?)")
@@ -101,6 +119,8 @@ def _filter_sql(query: Query, include_terms: bool) -> tuple[str, list]:
                 where.append("i.analyzed_at IS NULL AND i.error IS NOT NULL")
             elif low == "analyzed":
                 where.append("i.analyzed_at IS NOT NULL")
+            elif low in ("favorite", "fav"):
+                where.append("i.favorite = 1")
     where.insert(0, "i.status IN (%s)" % ",".join("?" * len(statuses)))
     params = sorted(statuses) + params
     for term in query.excludes:
@@ -116,7 +136,7 @@ def _filter_sql(query: Query, include_terms: bool) -> tuple[str, list]:
 def keyword_score(row: sqlite3.Row, terms: list[str]) -> float:
     if not terms:
         return 0.0
-    tags = [t.lower() for t in db.json_list(row["tags"]) + db.json_list(row["user_tags"])]
+    tags = [t.lower() for t in db.json_list(row["tags"]) + db.json_list(row["user_tags"]) + db.json_list(row["keywords"])]
     filename = row["rel_path"].rsplit("/", 1)[-1].lower()
     body = " ".join(
         [row["description"] or "", row["scene"] or "", " ".join(db.json_list(row["objects"])), row["note"] or ""]
@@ -137,8 +157,26 @@ def keyword_score(row: sqlite3.Row, terms: list[str]) -> float:
     return score
 
 
+def summarize(row) -> dict:
+    """網格顯示用的精簡資料（時間軸、資料夾、相簿、搜尋共用）。"""
+    return {
+        "id": row["id"],
+        "type": row["media_type"],
+        "raw": bool(row["is_raw"]),
+        "w": row["width"] or 1,
+        "h": row["height"] or 1,
+        "duration": row["duration"],
+        "at": row["sort_at"],
+        "fav": bool(row["favorite"]),
+        "fp": row["fingerprint"][:10],
+        "name": row["rel_path"].rsplit("/", 1)[-1],
+        "missing": row["status"] != "ok",
+    }
+
+
 def _to_result(conn: sqlite3.Connection, row: sqlite3.Row, score: float, match: str) -> dict:
     return {
+        **summarize(row),
         "id": row["id"],
         "root": row["root_name"],
         "rel_path": row["rel_path"],
@@ -231,9 +269,9 @@ def search(
                     scored.append((sim, cand, "semantic"))
 
     if query.terms:
-        scored.sort(key=lambda x: (-x[0], -(_ts(x[1]["taken_at"])), x[1]["id"]))
+        scored.sort(key=lambda x: (-x[0], -(_ts(x[1]["sort_at"])), x[1]["id"]))
     else:
-        scored.sort(key=lambda x: (-(_ts(x[1]["taken_at"])), -x[1]["id"]))
+        scored.sort(key=lambda x: (-(_ts(x[1]["sort_at"])), -x[1]["id"]))
 
     page = scored[offset:offset + limit]
     return {
@@ -253,7 +291,28 @@ def _ts(value: str | None) -> float:
 
 def top_tags(conn: sqlite3.Connection, limit: int = 60) -> list[tuple[str, int]]:
     counts: dict[str, int] = {}
-    for row in conn.execute("SELECT tags, user_tags FROM images WHERE status = 'ok' AND (tags IS NOT NULL OR user_tags IS NOT NULL)"):
-        for tag in set(db.json_list(row["tags"]) + db.json_list(row["user_tags"])):
-            counts[tag] = counts.get(tag, 0) + 1
+    for row in conn.execute(
+        "SELECT tags, user_tags, keywords FROM images WHERE status = 'ok' "
+        "AND (tags IS NOT NULL OR user_tags IS NOT NULL OR keywords IS NOT NULL)"
+    ):
+        seen: set[str] = set()
+        for tag in db.json_list(row["tags"]) + db.json_list(row["user_tags"]) + db.json_list(row["keywords"]):
+            key = tag.lower()
+            if key not in seen:
+                seen.add(key)
+                counts[tag] = counts.get(tag, 0) + 1
     return sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:limit]
+
+
+def tag_covers(conn: sqlite3.Connection, tags: list[str]) -> dict[str, int]:
+    """每個關鍵字挑一張最新的照片當封面。"""
+    covers: dict[str, int] = {}
+    for tag in tags:
+        row = conn.execute(
+            "SELECT id FROM images WHERE status = 'ok' AND thumb_ok = 1 AND (tags LIKE ? OR user_tags LIKE ? OR keywords LIKE ?) "
+            "ORDER BY sort_at DESC LIMIT 1",
+            (f'%"{tag}"%',) * 3,
+        ).fetchone()
+        if row:
+            covers[tag] = row["id"]
+    return covers

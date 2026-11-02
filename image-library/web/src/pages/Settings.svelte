@@ -1,0 +1,484 @@
+<script>
+  import { onMount } from "svelte";
+  import Icon from "../components/Icon.svelte";
+  import { api } from "../lib/api.js";
+  import { app, refresh, showDialog, toast } from "../lib/state.svelte.js";
+  import { confirm } from "../lib/actions.js";
+  import { bytes, count } from "../lib/format.js";
+  import {
+    mdiHarddisk, mdiRefresh, mdiPencilOutline, mdiDeleteOutline, mdiPlus, mdiCreation, mdiCheck, mdiDownload,
+    mdiCellphone, mdiStop, mdiThemeLightDark, mdiServerNetwork, mdiAlertCircleOutline,
+  } from "../lib/icons.js";
+
+  let roots = $state([]);
+  let models = $state(null);
+  let settings = $state(null);
+  let lan = $state(null);
+  let newPath = $state("");
+  let newName = $state("");
+  let customModel = $state("");
+  let password = $state("");
+  let theme = $state(readTheme());
+  let restarting = $state(false);
+
+  const s = $derived(app.server);
+  const jobs = $derived(s?.jobs);
+  const local = $derived(!!s?.local);
+  const pulling = $derived(jobs?.current?.kind === "pull" ? jobs.current.model : null);
+  const vision = $derived(models?.recommended.filter((m) => m.kind === "vision") || []);
+  const embeds = $derived(models?.recommended.filter((m) => m.kind === "embed") || []);
+  const otherInstalled = $derived(
+    models?.installed.filter((m) => !models.recommended.some((r) => sameModel(r.name, m.name))) || [],
+  );
+
+  function sameModel(a, b) {
+    const n = (x) => (x.includes(":") ? x : `${x}:latest`);
+    return !!a && !!b && n(a) === n(b);
+  }
+
+  function readTheme() {
+    try {
+      return localStorage.getItem("theme") || "auto";
+    } catch {
+      return "auto";
+    }
+  }
+
+  function setTheme(v) {
+    theme = v;
+    try {
+      localStorage.setItem("theme", v);
+    } catch {
+      /* 忽略 */
+    }
+    if (v === "auto") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = v;
+  }
+
+  async function loadAll() {
+    [roots, settings, lan] = await Promise.all([api("/api/roots"), api("/api/settings"), api("/api/lan")]);
+    models = await api("/api/models");
+  }
+
+  onMount(() => {
+    loadAll();
+    if (location.hash === "#jobs") setTimeout(() => document.getElementById("jobs")?.scrollIntoView(), 300);
+  });
+
+  $effect(() => {
+    app.refreshKey;
+    api("/api/roots").then((r) => (roots = r));
+    api("/api/models").then((m) => (models = m)).catch(() => {});
+  });
+
+  // ---- 資料夾 ----
+  async function pick() {
+    try {
+      const { path } = await api("/api/pick-folder", { body: {} });
+      if (path) newPath = path;
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  async function addRoot() {
+    try {
+      const r = await api("/api/roots", { body: { path: newPath.trim(), name: newName.trim() || undefined } });
+      toast(`已加入「${r.name}」，開始掃描…`);
+      newPath = newName = "";
+      roots = await api("/api/roots");
+      refresh();
+    } catch (e) {
+      toast(e.message, "error", 6000);
+    }
+  }
+
+  async function relocate(r) {
+    let path = null;
+    if (local && s?.platform === "darwin") {
+      path = (await api("/api/pick-folder", { body: {} })).path;
+    } else {
+      path = await showDialog("prompt", { title: `「${r.name}」的新位置`, value: r.path, ok: "更新" });
+    }
+    if (!path) return;
+    try {
+      await api(`/api/roots/${r.id}`, { body: { path } });
+      toast("已更新位置並重新掃描，分析結果都會保留");
+      roots = await api("/api/roots");
+      refresh();
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  async function removeRoot(r) {
+    const ok = await confirm(
+      `從圖庫移除「${r.name}」？`,
+      "只會移除圖庫中的紀錄（AI 分析、相簿中的項目），硬碟上的檔案完全不受影響。之後重新加入需要重新分析。",
+      { ok: "移除", danger: true },
+    );
+    if (!ok) return;
+    await api(`/api/roots/${r.id}`, { method: "DELETE" });
+    roots = await api("/api/roots");
+    refresh();
+  }
+
+  // ---- 工作 ----
+  async function job(kind, extra = {}) {
+    try {
+      await api("/api/jobs", { body: { kind, ...extra } });
+      refresh();
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  // ---- 模型 ----
+  async function useModel(kind, name) {
+    settings = await api("/api/settings", { body: { [kind === "vision" ? "vision_model" : "embed_model"]: name } });
+    models = await api("/api/models");
+    toast(name ? `已切換為 ${name}` : "已關閉語意搜尋");
+    refresh();
+  }
+
+  async function pull(name) {
+    await job("pull", { model: name });
+    toast(`開始下載 ${name}，完成後即可使用`);
+  }
+
+  async function deleteModel(name) {
+    if (!(await confirm(`刪除模型 ${name}？`, "會從 Ollama 移除以釋放空間，已完成的分析結果不受影響。", { ok: "刪除", danger: true }))) return;
+    try {
+      await api("/api/models/delete", { body: { name } });
+      models = await api("/api/models");
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  async function saveSetting(key, value) {
+    settings = await api("/api/settings", { body: { [key]: value } });
+    toast("已儲存");
+  }
+
+  // ---- 手機連線 ----
+  async function savePassword() {
+    try {
+      await api("/api/lan", { body: { password } });
+      password = "";
+      lan = await api("/api/lan");
+      toast("密碼已設定");
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  async function setLan(enabled) {
+    try {
+      await api("/api/lan", { body: { enabled } });
+      lan = await api("/api/lan");
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  async function restart() {
+    restarting = true;
+    await api("/api/restart", { body: {} }).catch(() => {});
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 750));
+      try {
+        await fetch("/api/auth/status");
+        location.reload();
+        return;
+      } catch {
+        /* 還在重新啟動 */
+      }
+    }
+    restarting = false;
+    toast("重新啟動逾時，請手動重新開啟程式", "error");
+  }
+</script>
+
+<div class="page settings">
+  <div class="page-head"><h1>設定</h1></div>
+
+  <!-- 圖庫資料夾 -->
+  <section class="card">
+    <h2><Icon path={mdiHarddisk} />圖庫資料夾</h2>
+    <p class="muted small">加入電腦或外接 SSD 上的資料夾。檔案留在原位，不會被複製；之後新增的照片按「重新掃描」或重新開啟程式就會出現。</p>
+    {#each roots as r (r.id)}
+      <div class="root">
+        <span class="dot" class:off={!r.online}></span>
+        <div class="grow">
+          <b>{r.name}</b> <span class="muted small">{count(r.count)} 個項目{r.online ? "" : " · 未連接"}</span>
+          <div class="muted tiny path">{r.path}</div>
+          {#if r.last_scan}<div class="muted tiny">上次掃描：{r.last_scan.slice(0, 16).replace("T", " ")}</div>{/if}
+        </div>
+        <button class="icon-btn" title="重新掃描" onclick={() => job("scan", { roots: [r.name] })}><Icon path={mdiRefresh} /></button>
+        <button class="icon-btn" title="變更位置（硬碟換了名稱或位置時）" onclick={() => relocate(r)}><Icon path={mdiPencilOutline} /></button>
+        <button class="icon-btn" title="從圖庫移除" onclick={() => removeRoot(r)}><Icon path={mdiDeleteOutline} /></button>
+      </div>
+    {/each}
+    <div class="add">
+      <div class="row">
+        <input class="input" bind:value={newPath} placeholder={s?.platform === "darwin" ? "/Users/你/Pictures 或 /Volumes/SSD名稱/作品" : "資料夾完整路徑"} />
+        {#if local && s?.platform === "darwin"}<button class="btn ghost" onclick={pick}>選擇資料夾…</button>{/if}
+      </div>
+      <div class="row">
+        <input class="input" bind:value={newName} placeholder="顯示名稱（選填），例如：作品集 SSD" />
+        <button class="btn" disabled={!newPath.trim()} onclick={addRoot}><Icon path={mdiPlus} size={18} />加入並掃描</button>
+      </div>
+      <p class="muted tiny">練習建議：先加入「圖片」資料夾（/Users/你的名稱/Pictures）。蘋果「照片」App 的資料庫會自動略過。</p>
+    </div>
+  </section>
+
+  <!-- 工作 -->
+  <section class="card" id="jobs">
+    <h2><Icon path={mdiCreation} />掃描與 AI 分析</h2>
+    {#if s}
+      <div class="stats">
+        <div><b>{count(s.stats.photos)}</b><span>照片</span></div>
+        <div><b>{count(s.stats.videos)}</b><span>影片</span></div>
+        <div><b>{count(s.stats.analyzed)}</b><span>已分析</span></div>
+        <div><b>{count(s.stats.pending)}</b><span>待分析</span></div>
+        <div><b>{count(s.stats.failed)}</b><span>失敗</span></div>
+        <div><b>{count(s.stats.missing)}</b><span>遺失</span></div>
+      </div>
+    {/if}
+    {#if jobs?.current}
+      <div class="job">
+        <span class="spinner"></span>
+        <div class="grow">
+          <b>{jobs.current.label}</b>
+          <div class="small muted msg">{jobs.current.message}</div>
+          {#if jobs.current.total}<progress max={jobs.current.total} value={jobs.current.done}></progress>{/if}
+          {#if jobs.queued.length}<div class="tiny muted">排隊中：{jobs.queued.map((j) => j.label).join("、")}</div>{/if}
+        </div>
+        <button class="btn ghost small" onclick={() => api("/api/jobs/stop", { body: {} }).then(refresh)}><Icon path={mdiStop} size={18} />停止</button>
+      </div>
+    {:else if jobs?.last}
+      <p class="small" class:danger-text={jobs.last.error}>上次「{jobs.last.label}」：{jobs.last.message}</p>
+    {/if}
+    <div class="row wrap">
+      <button class="btn" onclick={() => job("index")} disabled={!!jobs?.current}>掃描並分析全部</button>
+      <button class="btn ghost" onclick={() => job("scan")}>只掃描</button>
+      <button class="btn ghost" onclick={() => job("analyze")}>只分析新項目</button>
+      {#if s?.stats.failed}<button class="btn ghost" onclick={() => job("analyze", { retry_failed: true })}>重試失敗的 {s.stats.failed} 個</button>{/if}
+    </div>
+    <p class="muted tiny">AI 分析可隨時停止，下次會從未完成的項目繼續。十萬張建議先用 3B 小模型快速掃一輪；也可以在資料夾或相簿頁只分析特定作品。</p>
+  </section>
+
+  <!-- 模型 -->
+  <section class="card">
+    <h2><Icon path={mdiCreation} />AI 模型</h2>
+    {#if !models}
+      <p class="muted"><span class="spinner"></span></p>
+    {:else if !models.ollama_ok}
+      <div class="warn">
+        <Icon path={mdiAlertCircleOutline} />
+        <div>
+          <b>沒有連上 Ollama</b>
+          <p class="small">請先安裝並開啟 Ollama（<a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com/download</a>），
+            或在終端機執行 <code>brew services start ollama</code>，然後重新整理這一頁。</p>
+          <p class="tiny muted">{models.error}</p>
+        </div>
+      </div>
+    {:else}
+      <p class="muted small">使用中的視覺模型：<b class="primary">{models.active.vision}</b>。模型在這台 Mac 上執行，照片不會上傳。</p>
+    {/if}
+    {#if models}
+      <h3>視覺模型（描述照片、產生關鍵字、辨識文字）</h3>
+      <div class="models">
+        {#each vision as m (m.name)}
+          {@const active = sameModel(models.active.vision, m.name)}
+          <div class="model" class:active>
+            <div class="mhead"><b>{m.name}</b>{#if m.badge}<span class="badge">{m.badge}</span>{/if}</div>
+            <div class="tiny muted">約 {m.size_gb} GB · {m.speed}</div>
+            <p class="small">{m.note}</p>
+            <div class="row">
+              {#if active}
+                <span class="using"><Icon path={mdiCheck} size={18} />使用中</span>
+              {:else if m.installed}
+                <button class="btn small" onclick={() => useModel("vision", m.name)}>使用</button>
+              {/if}
+              {#if !m.installed}
+                <button class="btn small soft" disabled={!models.ollama_ok || !!pulling} onclick={() => pull(m.name)}>
+                  <Icon path={mdiDownload} size={16} />{pulling === m.name ? "下載中…" : "下載"}
+                </button>
+              {:else if !active}
+                <button class="icon-btn" title="刪除模型" onclick={() => deleteModel(m.name)}><Icon path={mdiDeleteOutline} size={20} /></button>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+      {#if otherInstalled.length}
+        <p class="small">其他已安裝的模型：
+          {#each otherInstalled as m (m.name)}
+            <button class="chip" class:on={sameModel(models.active.vision, m.name)} onclick={() => useModel("vision", m.name)}>{m.name} · {bytes(m.size)}</button>
+          {/each}
+        </p>
+      {/if}
+      <div class="row">
+        <input class="input" bind:value={customModel} placeholder="其他 Ollama 視覺模型名稱，例如 qwen2.5vl:32b" />
+        <button class="btn ghost" disabled={!customModel.trim() || !models.ollama_ok} onclick={() => pull(customModel.trim())}>下載</button>
+        <button class="btn ghost" disabled={!customModel.trim()} onclick={() => useModel("vision", customModel.trim())}>使用</button>
+      </div>
+
+      <h3>語意搜尋（選用）</h3>
+      <p class="muted small">讓「沙灘」也能找到描述寫「海邊」的照片，中英文互查。</p>
+      <div class="models">
+        {#each embeds as m (m.name)}
+          {@const active = sameModel(models.active.embed, m.name)}
+          <div class="model" class:active>
+            <div class="mhead"><b>{m.name}</b>{#if m.badge}<span class="badge">{m.badge}</span>{/if}</div>
+            <div class="tiny muted">約 {m.size_gb} GB</div>
+            <p class="small">{m.note}</p>
+            <div class="row">
+              {#if active}
+                <span class="using"><Icon path={mdiCheck} size={18} />使用中</span>
+                <button class="btn small ghost" onclick={() => useModel("embed", "")}>關閉</button>
+              {:else if m.installed}
+                <button class="btn small" onclick={async () => { await useModel("embed", m.name); job("embed"); }}>使用</button>
+              {:else}
+                <button class="btn small soft" disabled={!models.ollama_ok || !!pulling} onclick={() => pull(m.name)}>
+                  <Icon path={mdiDownload} size={16} />{pulling === m.name ? "下載中…" : "下載"}
+                </button>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+
+      {#if settings}
+        <h3>分析選項</h3>
+        <div class="row wrap">
+          <label class="field">描述語言
+            <select class="input" value={settings.language} onchange={(e) => saveSetting("language", e.currentTarget.value)}>
+              <option value="zh-TW">繁體中文（附英文關鍵字）</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <label class="field">送進模型的尺寸
+            <select class="input" value={String(settings.analyze_max_side)} onchange={(e) => saveSetting("analyze_max_side", Number(e.currentTarget.value))}>
+              <option value="768">768（較快）</option>
+              <option value="1024">1024（建議）</option>
+              <option value="1344">1344（細節多、較慢）</option>
+            </select>
+          </label>
+          <label class="field">開啟時自動掃描
+            <select class="input" value={String(settings.scan_on_start)} onchange={(e) => saveSetting("scan_on_start", Number(e.currentTarget.value))}>
+              <option value="1">是</option>
+              <option value="0">否</option>
+            </select>
+          </label>
+        </div>
+      {/if}
+    {/if}
+  </section>
+
+  <!-- 手機 -->
+  <section class="card">
+    <h2><Icon path={mdiCellphone} />手機與平板（同一個 Wi-Fi）</h2>
+    {#if lan}
+      {#if !lan.local}
+        <p class="muted small">你正透過區網連線。連線設定只能在 Mac 本機修改。</p>
+      {:else}
+        <p class="muted small">開啟後，同一個 Wi-Fi 下的 iPhone／iPad 用瀏覽器開啟下方網址，輸入密碼即可瀏覽。Mac 需要保持開機、不睡眠，外接 SSD 需接上。</p>
+        <div class="row wrap">
+          <input class="input pw" type="password" bind:value={password} placeholder={lan.has_password ? "變更密碼（至少 6 個字元）" : "設定連線密碼（至少 6 個字元）"} />
+          <button class="btn ghost" disabled={password.length < 6} onclick={savePassword}>{lan.has_password ? "變更密碼" : "設定密碼"}</button>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" checked={lan.enabled} disabled={!lan.has_password} onchange={(e) => setLan(e.currentTarget.checked)} />
+          允許手機與平板連線{lan.has_password ? "" : "（請先設定密碼）"}
+        </label>
+        {#if lan.needs_restart}
+          <div class="warn">
+            <Icon path={mdiServerNetwork} />
+            <div><b>需要重新啟動服務才會生效</b>
+              <p class="small">macOS 第一次可能詢問是否允許 Python 接受連入連線，請選「允許」。</p>
+              <button class="btn small" disabled={restarting} onclick={restart}>{restarting ? "重新啟動中…" : "立即重新啟動"}</button>
+            </div>
+          </div>
+        {/if}
+      {/if}
+      {#if lan.active && lan.urls.length}
+        <div class="qr-row">
+          {#if lan.qr}<div class="qr">{@html lan.qr}</div>{/if}
+          <div>
+            <p class="small">用 iPhone 相機掃描 QR code，或在瀏覽器輸入：</p>
+            {#each lan.urls as u (u)}<p><code>{u}</code></p>{/each}
+            <p class="tiny muted">在 Safari 按「分享」→「加入主畫面」，就能像 App 一樣全螢幕使用。</p>
+          </div>
+        </div>
+      {/if}
+    {/if}
+  </section>
+
+  <!-- 外觀與系統 -->
+  <section class="card">
+    <h2><Icon path={mdiThemeLightDark} />外觀與系統</h2>
+    <div class="row wrap">
+      {#each [["auto", "跟隨系統"], ["light", "淺色"], ["dark", "深色"]] as [v, label] (v)}
+        <button class="chip" class:on={theme === v} onclick={() => setTheme(v)}>{label}</button>
+      {/each}
+    </div>
+    {#if s}
+      <ul class="sys small">
+        <li>exiftool（完整 EXIF、RAW 預覽）：{s.tools.exiftool ? "✓" : "未安裝 → brew install exiftool"}</li>
+        <li>ffmpeg（影片縮圖與分析）：{s.tools.ffmpeg ? "✓" : "未安裝 → brew install ffmpeg"}</li>
+        <li>HEIC 支援：{s.tools.heif ? "✓" : "未安裝 pillow-heif"}</li>
+        {#if s.home}<li>圖庫資料（資料庫與縮圖）：<code>{s.home}</code></li>{/if}
+        <li class="muted">Lumitake Library {s.version}</li>
+      </ul>
+    {/if}
+  </section>
+</div>
+
+<style>
+  .settings { max-width: 980px; }
+  .card { background: var(--bg-2); border-radius: 20px; padding: 18px 20px; margin-bottom: 18px; }
+  h2 { display: flex; align-items: center; gap: 10px; font-size: 17px; margin: 0 0 6px; }
+  h3 { font-size: 14px; margin: 20px 0 10px; }
+  .root { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #2fa66b; flex-shrink: 0; }
+  .dot.off { background: var(--danger); }
+  .grow { flex: 1; min-width: 0; }
+  .path { word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
+  .add { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row.wrap { flex-wrap: wrap; margin-top: 10px; }
+  .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 12px 0; }
+  .stats div { background: var(--bg); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; align-items: center; }
+  .stats b { font-size: 18px; }
+  .stats span { font-size: 12px; color: var(--muted); }
+  .job { display: flex; gap: 12px; align-items: flex-start; background: var(--bg); padding: 12px; border-radius: 14px; }
+  .msg { word-break: break-all; }
+  progress { width: 100%; height: 6px; accent-color: var(--primary); }
+  .models { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .model { background: var(--bg); border-radius: 14px; padding: 12px; border: 2px solid transparent; display: flex; flex-direction: column; }
+  .model.active { border-color: var(--primary); }
+  .model p { margin: 6px 0 10px; flex: 1; }
+  .mhead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .badge { background: var(--primary-soft); color: var(--primary); font-size: 11px; padding: 1px 8px; border-radius: 999px; font-weight: 600; }
+  .using { display: inline-flex; align-items: center; gap: 4px; color: var(--primary); font-weight: 600; font-size: 14px; }
+  .primary { color: var(--primary); }
+  .warn { display: flex; gap: 12px; background: var(--bg); border-radius: 14px; padding: 12px; margin: 10px 0; color: var(--danger); }
+  .warn > div { color: var(--text); }
+  .warn p { margin: 4px 0; }
+  .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); min-width: 200px; flex: 1; }
+  .toggle { display: flex; align-items: center; gap: 8px; margin: 14px 0; font-weight: 500; }
+  .toggle input { width: 18px; height: 18px; accent-color: var(--primary); }
+  .pw { max-width: 320px; }
+  .qr-row { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .qr { width: 170px; height: 170px; background: #fff; border-radius: 12px; padding: 6px; }
+  .qr :global(svg) { width: 100%; height: 100%; }
+  code { background: var(--bg); padding: 2px 8px; border-radius: 6px; font-size: 13px; word-break: break-all; }
+  .sys { margin: 14px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+  @media (max-width: 760px) {
+    .stats { grid-template-columns: repeat(3, 1fr); }
+    .row:not(.wrap) { flex-wrap: wrap; }
+  }
+</style>

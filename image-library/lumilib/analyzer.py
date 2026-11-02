@@ -17,7 +17,7 @@ from typing import Callable, Protocol
 
 from . import db
 from .config import Config
-from .imaging import ImageReadError, encode_for_model, open_image
+from .media import MediaError, analysis_images
 
 RESULT_SCHEMA = {
     "type": "object",
@@ -49,6 +49,11 @@ PROMPTS = {
 Rules: describe only what is visible; never guess the real identity or name of a person.""",
 }
 
+VIDEO_HINT = {
+    "zh-TW": "\n這是一段影片，依時間順序附上 {n} 個畫面，請描述整段影片的內容與發生的事。",
+    "en": "\nThis is a video; {n} frames are attached in chronological order. Describe the whole clip.",
+}
+
 PATH_HINT = {
     "zh-TW": "\n參考資訊（可能不準，只在與畫面相符時採用）：檔案路徑「{path}」{date}",
     "en": "\nReference (may be inaccurate, use only if consistent with the image): file path \"{path}\"{date}",
@@ -60,7 +65,7 @@ class OllamaUnavailable(Exception):
 
 
 class ModelClient(Protocol):
-    def describe(self, model: str, prompt: str, image_b64: str) -> dict: ...
+    def describe(self, model: str, prompt: str, images: list[str]) -> dict: ...
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]: ...
 
@@ -92,15 +97,66 @@ class OllamaClient:
                 f"無法連線到 Ollama（{self.base_url}）。請確認已安裝並啟動 Ollama：{exc}"
             ) from exc
 
-    def list_models(self) -> list[str]:
+    def installed(self) -> list[dict]:
         try:
             with urllib.request.urlopen(self.base_url + "/api/tags", timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-        except (urllib.error.URLError, ConnectionError, ValueError) as exc:
+        except (urllib.error.URLError, ConnectionError, ValueError, OSError) as exc:
             raise OllamaUnavailable(f"無法連線到 Ollama（{self.base_url}）：{exc}") from exc
-        return [m.get("name", "") for m in data.get("models", [])]
+        return [
+            {
+                "name": m.get("name", ""),
+                "size": m.get("size", 0),
+                "parameter_size": (m.get("details") or {}).get("parameter_size"),
+                "families": (m.get("details") or {}).get("families") or [],
+                "modified_at": m.get("modified_at"),
+            }
+            for m in data.get("models", [])
+        ]
 
-    def describe(self, model: str, prompt: str, image_b64: str) -> dict:
+    def list_models(self) -> list[str]:
+        return [m["name"] for m in self.installed()]
+
+    def pull(self, model: str, progress: Callable[[str, int, int], None] | None = None,
+             stop: threading.Event | None = None) -> None:
+        """下載模型（等同 ollama pull），逐行回報進度。"""
+        req = urllib.request.Request(
+            self.base_url + "/api/pull",
+            data=json.dumps({"model": model, "stream": True}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                for line in resp:
+                    if stop is not None and stop.is_set():
+                        return
+                    if not line.strip():
+                        continue
+                    event = json.loads(line.decode("utf-8"))
+                    if event.get("error"):
+                        raise RuntimeError(event["error"])
+                    if progress:
+                        progress(event.get("status", ""), int(event.get("completed") or 0), int(event.get("total") or 0))
+        except (urllib.error.URLError, ConnectionError) as exc:
+            raise OllamaUnavailable(f"無法連線到 Ollama（{self.base_url}）：{exc}") from exc
+
+    def delete(self, model: str) -> None:
+        req = urllib.request.Request(
+            self.base_url + "/api/delete",
+            data=json.dumps({"model": model}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="DELETE",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30):
+                pass
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"刪除失敗：{exc.read().decode('utf-8', 'ignore')[:200]}") from exc
+        except (urllib.error.URLError, ConnectionError) as exc:
+            raise OllamaUnavailable(f"無法連線到 Ollama（{self.base_url}）：{exc}") from exc
+
+    def describe(self, model: str, prompt: str, images: list[str]) -> dict:
         data = self._post(
             "/api/chat",
             {
@@ -109,7 +165,7 @@ class OllamaClient:
                 "format": RESULT_SCHEMA,
                 "keep_alive": "15m",
                 "options": {"temperature": 0.2},
-                "messages": [{"role": "user", "content": prompt, "images": [image_b64]}],
+                "messages": [{"role": "user", "content": prompt, "images": images}],
             },
         )
         return parse_model_json(data.get("message", {}).get("content", ""))
@@ -161,12 +217,15 @@ def normalize_result(raw: dict) -> dict:
     }
 
 
-def build_prompt(cfg: Config, image: sqlite3.Row) -> str:
+def build_prompt(cfg: Config, image, frames: int = 1) -> str:
     lang = cfg.language if cfg.language in PROMPTS else "zh-TW"
     date = ""
     if image["taken_at"]:
         date = f"，拍攝時間 {image['taken_at'][:10]}" if lang == "zh-TW" else f", taken {image['taken_at'][:10]}"
-    return PROMPTS[lang] + PATH_HINT[lang].format(path=image["rel_path"], date=date)
+    prompt = PROMPTS[lang]
+    if image["media_type"] == "video":
+        prompt += VIDEO_HINT[lang].format(n=frames)
+    return prompt + PATH_HINT[lang].format(path=image["rel_path"], date=date)
 
 
 def embedding_text(image: sqlite3.Row | dict) -> str:
@@ -177,6 +236,7 @@ def embedding_text(image: sqlite3.Row | dict) -> str:
         " ".join(db.json_list(image["objects"])),
         image["scene"] or "",
         image["note"] or "",
+        " ".join(db.json_list(image["keywords"])),
     ]
     return "\n".join(p for p in parts if p)[:4000]
 
@@ -200,18 +260,30 @@ class AnalyzeResult:
     errors: list[str] = field(default_factory=list)
 
 
-def _pending_images(conn: sqlite3.Connection, redo: bool, retry_failed: bool, root_id: int | None):
+def _pending_images(conn: sqlite3.Connection, redo: bool, retry_failed: bool, root_id: int | None,
+                    ids: list[int] | None = None, folder: str | None = None, album_id: int | None = None):
     where = ["i.status = 'ok'"]
+    params: list = []
+    scoped = bool(ids or folder is not None or album_id)
     if not redo:
         where.append("i.analyzed_at IS NULL")
-        if not retry_failed:
+        if not retry_failed and not scoped:  # 指定範圍時，先前失敗的也一起重試
             where.append("i.error IS NULL")
-    params: list = []
     if root_id is not None:
         where.append("i.root_id = ?")
         params.append(root_id)
+    if folder is not None:
+        where.append("(i.folder = ? OR i.folder LIKE ? ESCAPE '\\')")
+        esc = folder.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        params += [folder, f"{esc}/%" if folder else "%"]
+    if album_id is not None:
+        where.append("i.id IN (SELECT image_id FROM album_items WHERE album_id = ?)")
+        params.append(album_id)
+    if ids:
+        where.append(f"i.id IN ({','.join('?' * len(ids))})")
+        params += [int(x) for x in ids]
     return conn.execute(
-        f"SELECT i.* FROM images i WHERE {' AND '.join(where)} ORDER BY i.taken_at DESC, i.id",
+        f"SELECT i.* FROM images i WHERE {' AND '.join(where)} ORDER BY i.sort_at DESC, i.id",
         params,
     ).fetchall()
 
@@ -226,9 +298,12 @@ def analyze_images(
     root_id: int | None = None,
     progress: Callable[[int, int, str], None] | None = None,
     stop: threading.Event | None = None,
+    ids: list[int] | None = None,
+    folder: str | None = None,
+    album_id: int | None = None,
 ) -> AnalyzeResult:
     result = AnalyzeResult()
-    rows = _pending_images(conn, redo, retry_failed, root_id)
+    rows = _pending_images(conn, redo, retry_failed, root_id, ids, folder, album_id)
     if limit:
         rows = rows[:limit]
     total = len(rows)
@@ -240,15 +315,17 @@ def analyze_images(
             result.skipped_offline += 1
             continue
         try:
-            img, _ = open_image(path, draft_side=cfg.analyze_max_side * 2)
-            with img:
-                b64 = encode_for_model(img, cfg.analyze_max_side)
-            parsed = normalize_result(client.describe(cfg.vision_model, build_prompt(cfg, image), b64))
+            images = analysis_images(
+                path, image["media_type"], bool(image["is_raw"]), cfg.analyze_max_side,
+                image["duration"], image["orientation"],
+            )
+            prompt = build_prompt(cfg, image, len(images))
+            parsed = normalize_result(client.describe(cfg.vision_model, prompt, images))
             if not parsed["description"] and not parsed["tags"]:
                 raise ValueError("模型回傳空白結果")
         except OllamaUnavailable:
             raise
-        except (ImageReadError, OSError, ValueError, RuntimeError) as exc:
+        except (MediaError, OSError, ValueError, RuntimeError) as exc:
             conn.execute("UPDATE images SET error = ? WHERE id = ?", (str(exc)[:500], image["id"]))
             conn.commit()
             result.failed += 1
