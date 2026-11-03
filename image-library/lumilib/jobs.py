@@ -119,15 +119,44 @@ class JobRunner:
                 message, error = str(exc), str(exc)
             except Exception as exc:  # 背景工作不能讓服務停掉
                 traceback.print_exc()
-                message, error = f"發生錯誤：{exc}", str(exc)
+                from .net import describe_error
+
+                message, error = f"發生錯誤：{describe_error(exc)}", describe_error(exc)
             if self.stop_event.is_set() and not error:
                 message = f"已停止。{message}"
+            elif job["kind"] == "scan" and not error:
+                message = self._follow_up(message)
             with self.lock:
                 self.last = {
                     "kind": job["kind"], "label": job["label"], "message": message, "error": error,
                     "finished_at": datetime.now().isoformat(timespec="seconds"),
                 }
                 self.current = None
+
+    def _follow_up(self, message: str) -> str:
+        """掃描完自動接著做：人臉、圖像索引、AI 分析（各自需要的模型都準備好才做）。"""
+        from .analyzer import ai_status
+
+        try:
+            conn = db.connect(self.cfg.db_path)
+            try:
+                st = db.stats(conn)
+            finally:
+                conn.close()
+            if st["faces_pending"] and self._faces_ready("auto"):
+                self.submit("faces")
+            if st["images"] > st["clip_done"] and self._clip_ready("auto"):
+                self.submit("clip")
+            if self.cfg.auto_analyze and st["pending"]:
+                status = ai_status(self.client_factory(), self.cfg)
+                if status["ready"]:
+                    self.submit("analyze")
+                else:
+                    message += f"；尚未開始 AI 分析：{status['message']}"
+        except Exception as exc:  # noqa: BLE001  後續工作失敗不影響掃描結果
+            traceback.print_exc()
+            message += f"；無法排入後續工作：{exc}"
+        return message
 
     def _faces_ready(self, kind: str) -> bool:
         from .faces import model_installed

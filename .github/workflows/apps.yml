@@ -61,7 +61,9 @@ jobs:
           SERVER=image-library/desktop/server/dist/lumilib-server/lumilib-server
           export LUMILIB_HOME="$RUNNER_TEMP/home"
           "$SERVER" --version
-          "$SERVER" serve --port 8899 > "$RUNNER_TEMP/server.log" 2>&1 &
+          # 模擬使用者的 Mac：沒有可用的系統憑證設定，下載必須靠內建的 certifi
+          SSL_CERT_FILE=/nonexistent/cert.pem SSL_CERT_DIR=/nonexistent \
+            "$SERVER" serve --port 8899 > "$RUNNER_TEMP/server.log" 2>&1 &
           SERVER_PID=$!
           for i in $(seq 1 90); do
             curl -fs http://127.0.0.1:8899/api/auth/status && break
@@ -71,9 +73,17 @@ jobs:
           curl -fs http://127.0.0.1:8899/api/server | python3 -c "
           import json, sys
           d = json.load(sys.stdin)
-          print(d['tools'])
+          print(d['tools'], 'ssl_ca', d.get('ssl_ca'), 'ai', d.get('ai'))
           assert d['tools']['exiftool'] and d['tools']['ffmpeg'] and d['tools']['heif'], d['tools']
+          assert d['ssl_ca'], 'certifi 沒有打包進去'
           "
+          # 實際下載最小的人臉模型（HTTPS，會經過 GitHub 轉址）
+          curl -fs -X POST -H 'Content-Type: application/json' -d '{"kind":"face_model","model":"buffalo_sc"}' http://127.0.0.1:8899/api/jobs
+          for i in $(seq 1 120); do
+            curl -fs http://127.0.0.1:8899/api/jobs | python3 -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if not d['running'] and not d['queued'] and (d['last'] or {}).get('kind')=='face_model' else 1)" && break
+            sleep 2
+          done
+          curl -fs http://127.0.0.1:8899/api/jobs | python3 -c "import json,sys; l=json.load(sys.stdin)['last']; print(l); assert l and l['kind']=='face_model' and not l['error'], l"
           curl -fs -o /dev/null http://127.0.0.1:8899/
           mkdir -p "$RUNNER_TEMP/photos"
           python3 -c "from PIL import Image; Image.new('RGB', (64, 48), (200, 40, 40)).save('$RUNNER_TEMP/photos/x.jpg')"

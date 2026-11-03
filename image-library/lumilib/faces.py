@@ -22,6 +22,7 @@ import numpy as np
 from PIL import Image
 
 from . import db
+from . import net
 from .config import Config
 from .media import MediaError, load_image
 
@@ -114,7 +115,7 @@ def download_model(cfg: Config, name: str, progress: Callable[[str, int, int], N
     target = model_dir(cfg, name)
     target.mkdir(parents=True, exist_ok=True)
     tmp = target / "download.zip.part"
-    with urllib.request.urlopen(info["url"], timeout=60) as resp, open(tmp, "wb") as out:
+    with net.urlopen(info["url"], timeout=60) as resp, open(tmp, "wb") as out:
         total = int(resp.headers.get("Content-Length") or 0)
         done = 0
         while True:

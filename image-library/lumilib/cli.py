@@ -346,6 +346,9 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")  # Windows 主控台顯示中文
         except (AttributeError, ValueError):
             pass
+    from .net import install_default_ca
+
+    install_default_ca()
     args = build_parser().parse_args(argv)
     if args.command == "config" and args.action == "set" and (not args.key or args.value is None):
         print("用法：lumilib config set <key> <value>")

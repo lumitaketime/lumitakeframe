@@ -67,20 +67,7 @@ class OllamaUnavailable(Exception):
 class ModelClient(Protocol):
     def describe(self, model: str, prompt: str, images: list[str]) -> dict: ...
 
-    def chat_json(self, model: str, prompt: str, schema: dict, timeout: int | None = None) -> dict:
-        """純文字對話，輸出符合 schema 的 JSON（查詢改寫、翻譯用）。"""
-        old = self.timeout
-        if timeout:
-            self.timeout = timeout
-        try:
-            data = self._post("/api/chat", {
-                "model": model, "stream": False, "format": schema, "keep_alive": "15m",
-                "options": {"temperature": 0.1},
-                "messages": [{"role": "user", "content": prompt}],
-            })
-        finally:
-            self.timeout = old
-        return parse_model_json(data.get("message", {}).get("content", ""))
+    def chat_json(self, model: str, prompt: str, schema: dict, timeout: int | None = None) -> dict: ...
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]: ...
 
@@ -107,7 +94,11 @@ class OllamaClient:
                     f"模型「{payload.get('model')}」尚未下載，請先執行：ollama pull {payload.get('model')}"
                 ) from exc
             raise RuntimeError(f"Ollama 回應 {exc.code}：{body[:300]}") from exc
+        except TimeoutError as exc:
+            raise RuntimeError(f"模型回應逾時（超過 {self.timeout} 秒）。可以換小一點的模型，或把「送進模型的尺寸」調小。") from exc
         except (urllib.error.URLError, ConnectionError) as exc:
+            if isinstance(getattr(exc, "reason", None), TimeoutError):
+                raise RuntimeError(f"模型回應逾時（超過 {self.timeout} 秒）。可以換小一點的模型，或把「送進模型的尺寸」調小。") from exc
             raise OllamaUnavailable(
                 f"無法連線到 Ollama（{self.base_url}）。請確認已安裝並啟動 Ollama：{exc}"
             ) from exc
@@ -171,19 +162,49 @@ class OllamaClient:
         except (urllib.error.URLError, ConnectionError) as exc:
             raise OllamaUnavailable(f"無法連線到 Ollama（{self.base_url}）：{exc}") from exc
 
+    # 不支援「關閉思考」的舊版 Ollama 或模型：記住後改用一般請求
+    _no_think: set = set()
+
+    def chat(self, model: str, messages: list[dict], schema: dict | None, temperature: float,
+             num_ctx: int | None = None) -> dict:
+        """呼叫 /api/chat，回傳整個回應。
+
+        - think=False：Qwen3-VL、Gemma 4 這類會「先思考」的模型，關閉後每張快很多，
+          也避免思考內容吃掉輸出長度而回傳空白。
+        - num_ctx：圖片會佔上千個 token，Ollama 預設的上下文太小時會被截斷。
+        """
+        payload = {
+            "model": model, "stream": False, "keep_alive": "15m", "messages": messages,
+            "options": {"temperature": temperature},
+        }
+        if schema is not None:
+            payload["format"] = schema
+        if num_ctx:
+            payload["options"]["num_ctx"] = num_ctx
+        if model not in self._no_think:
+            payload["think"] = False
+        try:
+            return self._post("/api/chat", payload)
+        except RuntimeError as exc:
+            if "think" in str(exc).lower() and "think" in payload:
+                self._no_think.add(model)
+                payload.pop("think")
+                return self._post("/api/chat", payload)
+            raise
+
+    @staticmethod
+    def _content(data: dict) -> str:
+        msg = data.get("message") or {}
+        content = msg.get("content") or ""
+        if not content.strip() and msg.get("thinking"):
+            content = msg["thinking"]  # 有些模型把答案放在思考區
+        return content
+
     def describe(self, model: str, prompt: str, images: list[str]) -> dict:
-        data = self._post(
-            "/api/chat",
-            {
-                "model": model,
-                "stream": False,
-                "format": RESULT_SCHEMA,
-                "keep_alive": "15m",
-                "options": {"temperature": 0.2},
-                "messages": [{"role": "user", "content": prompt, "images": images}],
-            },
-        )
-        return parse_model_json(data.get("message", {}).get("content", ""))
+        num_ctx = 8192 if len(images) <= 1 else 16384
+        data = self.chat(model, [{"role": "user", "content": prompt, "images": images}],
+                         RESULT_SCHEMA, 0.2, num_ctx)
+        return parse_model_json(self._content(data))
 
     def chat_json(self, model: str, prompt: str, schema: dict, timeout: int | None = None) -> dict:
         """純文字對話，輸出符合 schema 的 JSON（查詢改寫、翻譯用）。"""
@@ -191,14 +212,10 @@ class OllamaClient:
         if timeout:
             self.timeout = timeout
         try:
-            data = self._post("/api/chat", {
-                "model": model, "stream": False, "format": schema, "keep_alive": "15m",
-                "options": {"temperature": 0.1},
-                "messages": [{"role": "user", "content": prompt}],
-            })
+            data = self.chat(model, [{"role": "user", "content": prompt}], schema, 0.1)
         finally:
             self.timeout = old
-        return parse_model_json(data.get("message", {}).get("content", ""))
+        return parse_model_json(self._content(data))
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
         data = self._post("/api/embed", {"model": model, "input": texts, "keep_alive": "15m"})
@@ -491,3 +508,30 @@ def translate_analysis(client, model: str, description: str, tags: list[str], la
               f"描述：{description}\n關鍵字：{'、'.join(tags)}")
     raw = client.chat_json(model, prompt, TRANSLATE_SCHEMA, timeout=60)
     return {"description": str(raw.get("description") or "").strip(), "tags": _str_list(raw.get("tags"), 40)}
+
+
+# ---- AI 是否準備好 -------------------------------------------------------------------------
+
+def ai_status(client, cfg: Config) -> dict:
+    """{"ready", "ollama", "model_installed", "model", "message"}：讓介面說清楚為什麼還沒開始分析。"""
+    from .models import same_model
+
+    out = {"ready": False, "ollama": False, "model_installed": False, "model": cfg.vision_model, "message": ""}
+    try:
+        names = client.list_models()
+    except OllamaUnavailable:
+        out["message"] = "Ollama 沒有在執行。請安裝並打開 Ollama（https://ollama.com/download）。"
+        return out
+    except Exception as exc:  # noqa: BLE001
+        out["message"] = f"無法讀取 Ollama 狀態：{exc}"
+        return out
+    out["ollama"] = True
+    if not cfg.vision_model:
+        out["message"] = "尚未選擇視覺模型。"
+        return out
+    out["model_installed"] = any(same_model(cfg.vision_model, n) for n in names)
+    if not out["model_installed"]:
+        out["message"] = f"視覺模型「{cfg.vision_model}」還沒下載，請到設定 → AI 分析下載或選擇已下載的模型。"
+        return out
+    out["ready"] = True
+    return out

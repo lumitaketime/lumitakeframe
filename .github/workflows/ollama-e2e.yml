@@ -1,0 +1,71 @@
+name: Real Ollama analysis check
+
+# 用真的 Ollama 與模型分析幾張照片，確認整個 AI 分析流程可用（CPU 執行，速度比 Mac 慢很多）
+on:
+  push:
+    branches: [main, claude/kind-dijkstra-7t80hs]
+    paths:
+      - "image-library/lumilib/analyzer.py"
+      - "image-library/tools/ollama_e2e.py"
+      - ".github/workflows/ollama-e2e.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ollama-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ["qwen3-vl:4b", "gemma4:e2b", "gemma4:e4b"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安裝 Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama --version || true
+          if ! curl -fs http://127.0.0.1:11434/api/tags; then
+            (ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &)
+            for i in $(seq 1 30); do curl -fs http://127.0.0.1:11434/api/tags && break; sleep 1; done
+          fi
+          curl -fs http://127.0.0.1:11434/api/version
+
+      - name: 下載模型 ${{ matrix.model }}
+        run: ollama pull "${{ matrix.model }}"
+
+      - name: 準備測試照片
+        working-directory: image-library
+        run: |
+          pip install .
+          mkdir -p "$RUNNER_TEMP/photos"
+          for id in 237 1015 1043; do
+            curl -fsSL -o "$RUNNER_TEMP/photos/picsum-$id.jpg" "https://picsum.photos/id/$id/1200/800"
+          done
+          python - <<'PY'
+          import os
+          from PIL import Image, ImageDraw, ImageFont
+          img = Image.new("RGB", (1200, 800), (250, 240, 220))
+          d = ImageDraw.Draw(img)
+          font = ImageFont.load_default(size=90)
+          d.text((80, 200), "SUNSET CAFE", fill=(120, 30, 20), font=font)
+          d.text((80, 380), "OPEN 10:00-22:00", fill=(20, 20, 20), font=font)
+          img.save(os.path.join(os.environ["RUNNER_TEMP"], "photos", "sign.jpg"), quality=92)
+          PY
+          ls -la "$RUNNER_TEMP/photos"
+
+      - name: 分析並搜尋
+        working-directory: image-library
+        run: python tools/ollama_e2e.py "${{ matrix.model }}" "$RUNNER_TEMP/photos"
+
+      - name: Ollama 紀錄
+        if: always()
+        run: tail -50 "$RUNNER_TEMP/ollama.log" 2>/dev/null || journalctl -u ollama --no-pager | tail -50 || true

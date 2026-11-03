@@ -17,6 +17,7 @@ from typing import Callable
 import numpy as np
 from PIL import Image
 
+from . import net
 from .config import Config
 from .media import MediaError, thumb_path
 
@@ -68,7 +69,7 @@ def model_installed(cfg: Config, name: str) -> bool:
 
 def _list_files(repo: str, sub: str) -> list[dict]:
     url = f"{HF}/api/models/{repo}/tree/main" + (f"/{sub}" if sub else "")
-    with urllib.request.urlopen(url, timeout=30) as resp:
+    with net.urlopen(url, timeout=30) as resp:
         items = json.loads(resp.read().decode("utf-8"))
     out = []
     for it in items:
@@ -104,7 +105,7 @@ def download_model(cfg: Config, name: str, progress: Callable[[str, int, int], N
             done += f["size"]
             continue
         tmp = dest.with_name(dest.name + ".part")
-        with urllib.request.urlopen(f"{HF}/{repo}/resolve/main/{f['path']}", timeout=60) as resp, open(tmp, "wb") as out:
+        with net.urlopen(f"{HF}/{repo}/resolve/main/{f['path']}", timeout=60) as resp, open(tmp, "wb") as out:
             while True:
                 if stop is not None and stop.is_set():
                     out.close()

@@ -32,6 +32,12 @@ DEFAULTS = {
     "lan": 0,
     # 啟動時自動掃描新增的檔案
     "scan_on_start": 1,
+    # 掃描後自動用 AI 分析新照片（Ollama 與視覺模型都準備好時）
+    "auto_analyze": 1,
+    # 檢視照片時，下方顯示星等與顏色標籤列
+    "viewer_rating_bar": 1,
+    # 左側選單隱藏的功能（逗號分隔的路徑，例如 /map,/duplicates）
+    "nav_hidden": "",
     # 圖庫開著時避免 Mac 閒置睡眠（接電源時），手機才能持續連線
     "keep_awake": 1,
     # Lightroom 同步：星等、顏色標籤、關鍵字寫回 .xmp（RAW）
@@ -77,6 +83,9 @@ class Config:
     port: int = DEFAULTS["port"]
     lan: int = DEFAULTS["lan"]
     scan_on_start: int = DEFAULTS["scan_on_start"]
+    auto_analyze: int = DEFAULTS["auto_analyze"]
+    viewer_rating_bar: int = DEFAULTS["viewer_rating_bar"]
+    nav_hidden: str = DEFAULTS["nav_hidden"]
     keep_awake: int = DEFAULTS["keep_awake"]
     xmp_sync: int = DEFAULTS["xmp_sync"]
     xmp_embed: int = DEFAULTS["xmp_embed"]

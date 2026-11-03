@@ -20,6 +20,7 @@ dependencies = [
     "onnxruntime>=1.17",
     "tokenizers>=0.15",
     "imageio-ffmpeg>=0.5",
+    "certifi>=2024.2",
 ]
 
 [project.optional-dependencies]

@@ -3,7 +3,7 @@
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 datas, binaries, hiddenimports = [], [], []
-for pkg in ("onnxruntime", "tokenizers", "pillow_heif", "imageio_ffmpeg"):
+for pkg in ("onnxruntime", "tokenizers", "pillow_heif", "imageio_ffmpeg", "certifi"):
     try:
         d, b, h = collect_all(pkg)
         datas += d

@@ -23,11 +23,12 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 
 from . import __version__, db, fileops
 from .analyzer import OllamaClient, OllamaUnavailable
+from .net import ca_file
 from .auth import COOKIE, SESSION_DAYS, Auth
 from .config import CONFIG_KEYS, Config
 from .jobs import JobRunner
 from .media import BROWSER_VIDEO, MediaError, encode, exiftool, load_image, thumb_path, tool_status, write_thumbnail
-from .models import RECOMMENDED, same_model
+from .models import annotated, machine_info, recommend, same_model
 from .search import STACK_COUNT_SQL, search, summarize, tag_covers, top_tags
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -37,6 +38,7 @@ SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces", "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "xmp_sync", "xmp_embed", "stack_enabled", "burst_seconds",
+    "auto_analyze", "viewer_rating_bar", "nav_hidden",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -180,6 +182,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "jobs": jobs().snapshot(),
                 "models": {"vision": cfg.vision_model, "embed": cfg.embed_model, "language": cfg.language},
                 "tools": tool_status(),
+                "ssl_ca": bool(ca_file()),
+                "ai": cached_ai_status(),
                 "local": request.state.local,
                 "platform": sys.platform,
                 "home": str(cfg.home) if request.state.local else None,
@@ -618,6 +622,64 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             ids = [int(i) for i in body.get("ids") or []]
             set_groups(c, ids, add=body.get("add"), remove=body.get("remove"), replace=body.get("replace"))
             return {"ok": True}
+        finally:
+            c.close()
+
+    ai_cache: dict = {"at": 0.0, "value": None}
+
+    def cached_ai_status(force: bool = False) -> dict:
+        import time
+
+        from .analyzer import ai_status
+
+        now = time.monotonic()
+        if force or ai_cache["value"] is None or now - ai_cache["at"] > 15:
+            ai_cache["value"] = ai_status(client_factory(), cfg)
+            ai_cache["at"] = now
+        return ai_cache["value"]
+
+    @app.get("/api/ai/status")
+    def ai_state():
+        return cached_ai_status(force=True)
+
+    @app.post("/api/ai/test")
+    def ai_test(body: dict = Body(default={})):
+        """用一張照片實際跑一次分析，回傳花費時間、結果或完整錯誤（不寫入圖庫）。"""
+        import time
+
+        from .analyzer import build_prompt, normalize_result
+        from .media import analysis_images
+
+        c = conn()
+        try:
+            image_id = body.get("id")
+            if image_id:
+                image = db.get_image(c, int(image_id))
+            else:
+                image = c.execute(
+                    "SELECT * FROM images WHERE status = 'ok' AND media_type = 'photo' ORDER BY sort_at DESC LIMIT 1"
+                ).fetchone()
+            if image is None:
+                raise HTTPException(404, "圖庫裡還沒有照片")
+            model = str(body.get("model") or cfg.vision_model)
+            out = {"id": image["id"], "name": image["filename"], "model": model, "ok": False}
+            t0 = time.monotonic()
+            try:
+                path = db.absolute_path(c, image)
+                images = analysis_images(path, image["media_type"], bool(image["is_raw"]), cfg.analyze_max_side,
+                                         image["duration"], image["orientation"])
+                out["prepare_seconds"] = round(time.monotonic() - t0, 1)
+                t1 = time.monotonic()
+                raw = client_factory().describe(model, build_prompt(cfg, image, len(images)), images)
+                out["seconds"] = round(time.monotonic() - t1, 1)
+                out["result"] = normalize_result(raw)
+                out["ok"] = bool(out["result"]["description"] or out["result"]["tags"])
+                if not out["ok"]:
+                    out["error"] = "模型回傳空白結果"
+            except Exception as exc:  # noqa: BLE001  診斷用：把任何錯誤原封不動回報
+                out["seconds"] = round(time.monotonic() - t0, 1)
+                out["error"] = f"{type(exc).__name__}：{exc}"
+            return out
         finally:
             c.close()
 
@@ -1104,13 +1166,15 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         except OllamaUnavailable as exc:
             installed, error = [], str(exc)
         names = [m["name"] for m in installed]
+        machine = machine_info()
+        ai_cache["at"] = 0.0  # 模型清單變了，下次重新檢查
         return {
             "ollama_ok": error is None,
             "error": error,
             "installed": installed,
-            "recommended": [
-                {**m, "installed": any(same_model(m["name"], n) for n in names)} for m in RECOMMENDED
-            ],
+            "machine": machine,
+            "picks": recommend(machine["ram_gb"]),
+            "recommended": annotated(machine["ram_gb"], names),
             "active": {"vision": cfg.vision_model, "embed": cfg.embed_model, "text": cfg.text_model},
             "ollama_url": cfg.ollama_url,
         }
