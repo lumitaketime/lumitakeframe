@@ -32,10 +32,11 @@ from .search import search, summarize, tag_covers, top_tags
 
 WEB_DIR = Path(__file__).parent / "web"
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
-LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan"}
+LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces", "query_rewrite", "clip_enabled", "clip_model",
+    "keep_awake",
 }
 MAX_IDS = 5000
 
@@ -928,6 +929,17 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             cfg.save_setting("lan", 1 if body["enabled"] else 0)
         return {"enabled": bool(cfg.lan), "has_password": auth.has_password}
 
+    @app.post("/api/open-url")
+    def open_url(body: dict = Body(...)):
+        """App 視窗裡的外部連結（例如 Ollama 下載頁）改用預設瀏覽器開啟。"""
+        url = str(body.get("url", ""))
+        if not url.startswith(("https://", "http://")):
+            raise HTTPException(400, "只能開啟網址")
+        import webbrowser
+
+        webbrowser.open(url)
+        return {"ok": True}
+
     @app.post("/api/restart")
     def restart(body: dict = Body(default={})):
         def later():
@@ -936,6 +948,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             time.sleep(0.6)
             jobs().close()
             exiftool().close()
+            if getattr(sys, "frozen", False):  # Mac App 內打包的執行檔
+                os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
             os.execv(sys.executable, [sys.executable, "-m", "lumilib", *sys.argv[1:]])
 
         threading.Thread(target=later, daemon=True).start()
@@ -975,6 +989,12 @@ def serve(cfg: Config, host: str | None = None, port: int | None = None, open_br
     if host != "127.0.0.1":
         for u in lan_addresses(port):
             print(f"  手機／平板（同一個 Wi-Fi）：{u}")
+    if cfg.keep_awake and sys.platform == "darwin":
+        import subprocess
+
+        # 程式結束時 caffeinate 會跟著結束（-w 監看本程序）
+        subprocess.Popen(["caffeinate", "-i", "-s", "-w", str(os.getpid())],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if open_browser:
         import webbrowser
 

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>Lumitake Library</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column;
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "PingFang TC", sans-serif; background: #f4f5f8; color: #1f2125;
+    -webkit-user-select: none; user-select: none;
+  }
+  @media (prefers-color-scheme: dark) { body { background: #121316; color: #e8e9ee; } .muted { color: #9a9eab !important; } }
+  img { width: 96px; height: 96px; margin-bottom: 18px; }
+  h1 { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+  .muted { color: #6b7080; font-size: 13px; }
+  .spinner { width: 22px; height: 22px; border-radius: 50%; border: 3px solid #4250af; border-right-color: transparent; animation: spin .8s linear infinite; margin: 18px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #error { display: none; max-width: 520px; text-align: center; color: #c62f3b; }
+  code { font-size: 12px; word-break: break-all; -webkit-user-select: text; user-select: text; }
+</style>
+</head>
+<body>
+  <img src="icon.png" alt="">
+  <h1>Lumitake Library</h1>
+  <div class="spinner" id="spinner"></div>
+  <p class="muted" id="msg">正在啟動圖庫…</p>
+  <div id="error">
+    <p id="error-text"></p>
+    <p class="muted">請結束後重新開啟。如果一直出現，請把記錄檔傳給開發者：<br><code id="error-log"></code></p>
+  </div>
+<script>
+  setTimeout(() => {
+    document.getElementById("msg").textContent = "第一次開啟需要比較久（macOS 正在檢查程式），請稍候…";
+  }, 12000);
+  window.showError = (text, log) => {
+    document.getElementById("spinner").style.display = "none";
+    document.getElementById("msg").style.display = "none";
+    document.getElementById("error").style.display = "block";
+    document.getElementById("error-text").textContent = text;
+    document.getElementById("error-log").textContent = log;
+  };
+</script>
+</body>
+</html>

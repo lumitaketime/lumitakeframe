@@ -1,12 +1,14 @@
 """離線地名：把 GPS 座標換成最近的城鎮名稱（中文優先），完全不需要連網。
 
-資料來自 GeoNames（CC BY 4.0），透過 geonamescache 套件內附的「人口 1000 以上城鎮」清單。
+資料來自 GeoNames（CC BY 4.0，https://www.geonames.org），精簡後內附在 lumilib/data/places.tsv.gz。
 """
 
 from __future__ import annotations
 
+import gzip
 import sqlite3
 import threading
+from pathlib import Path
 
 import numpy as np
 
@@ -40,37 +42,41 @@ def _zh_name(alternates: list[str]) -> str | None:
     return cjk[0]
 
 
+DATA_DIR = Path(__file__).parent / "data"
+
+
 def _load() -> dict:
     global _data
     with _lock:
         if _data is not None:
             return _data
-        import geonamescache
-
-        gc = geonamescache.GeonamesCache(min_city_population=1000)
-        # 去掉「Paris 03 Temple」這類編號行政分區
-        cities = [c for c in gc.get_cities().values() if not any(ch.isdigit() for ch in c["name"])]
-        countries = gc.get_countries()
-        lat = np.radians(np.array([c["latitude"] for c in cities], dtype=np.float64))
-        lon = np.radians(np.array([c["longitude"] for c in cities], dtype=np.float64))
+        lats, lons, en, zh, cc = [], [], [], [], []
+        with gzip.open(DATA_DIR / "places.tsv.gz", "rt", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("#"):
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) != 5:
+                    continue
+                lats.append(float(parts[0]))
+                lons.append(float(parts[1]))
+                en.append(parts[2])
+                zh.append(parts[3] or None)
+                cc.append(parts[4])
+        countries = {}
+        with gzip.open(DATA_DIR / "countries.tsv.gz", "rt", encoding="utf-8") as f:
+            for line in f:
+                code, _, name = line.rstrip("\n").partition("\t")
+                countries[code] = name
+        lat = np.radians(np.array(lats))
+        lon = np.radians(np.array(lons))
         xyz = np.stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)], axis=1).astype(np.float32)
-        _data = {
-            "xyz": xyz,
-            "en": [c["name"] for c in cities],
-            "zh": [_zh_name(c.get("alternatenames") or []) for c in cities],
-            "cc": [c["countrycode"] for c in cities],
-            "country_en": {k: v["name"] for k, v in countries.items()},
-        }
+        _data = {"xyz": xyz, "en": en, "zh": zh, "cc": cc, "country_en": countries}
         return _data
 
 
 def available() -> bool:
-    try:
-        import geonamescache  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+    return (DATA_DIR / "places.tsv.gz").exists()
 
 
 def lookup(points: list[tuple[float, float]]) -> list[dict]:
@@ -128,6 +134,6 @@ def country_names(cc: str | None) -> tuple[str, str]:
     zh = COUNTRY_ZH.get(cc)
     try:
         en = _load()["country_en"].get(cc, cc)
-    except ImportError:
+    except OSError:
         en = cc
     return zh or en, en

@@ -1,3 +1,7 @@
+/** 在 Mac App（Tauri）或 Android App 外殼中執行時，User-Agent 會帶上標記 */
+export const isMacApp = navigator.userAgent.includes("LumitakeApp");
+export const isAndroidApp = navigator.userAgent.includes("LumitakeAndroid");
+
 import { SvelteSet } from "svelte/reactivity";
 
 /** 全域狀態 */

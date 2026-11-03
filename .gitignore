@@ -7,3 +7,6 @@ dist/
 __pycache__/
 *.egg-info/
 .venv/
+target/
+image-library/desktop/src-tauri/gen/
+image-library/desktop/server/build/

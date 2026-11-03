@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "啟動畫面只需要最基本的權限",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

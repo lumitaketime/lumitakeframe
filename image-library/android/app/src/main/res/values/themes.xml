@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#FFFFFF</color>
+    <color name="text">#1F2125</color>
+    <color name="muted">#6B7080</color>
+    <color name="primary">#4250AF</color>
+    <style name="Theme.Lumitake" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorAccent">@color/primary</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

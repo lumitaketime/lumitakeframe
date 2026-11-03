@@ -19,7 +19,7 @@ dependencies = [
     "numpy>=1.24",
     "onnxruntime>=1.17",
     "tokenizers>=0.15",
-    "geonamescache>=2.0",
+    "imageio-ffmpeg>=0.5",
 ]
 
 [project.optional-dependencies]
@@ -32,4 +32,4 @@ lumilib = "lumilib.cli:main"
 packages = ["lumilib"]
 
 [tool.setuptools.package-data]
-lumilib = ["web/*", "web/assets/*", "web/icons/*"]
+lumilib = ["web/*", "web/assets/*", "web/icons/*", "data/*"]

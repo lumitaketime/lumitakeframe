@@ -28,6 +28,8 @@ DEFAULTS = {
     "lan": 0,
     # 啟動時自動掃描新增的檔案
     "scan_on_start": 1,
+    # 圖庫開著時避免 Mac 閒置睡眠（接電源時），手機才能持續連線
+    "keep_awake": 1,
     # 人臉辨識
     "face_enabled": 0,
     "face_model": "buffalo_l",
@@ -56,6 +58,7 @@ class Config:
     port: int = DEFAULTS["port"]
     lan: int = DEFAULTS["lan"]
     scan_on_start: int = DEFAULTS["scan_on_start"]
+    keep_awake: int = DEFAULTS["keep_awake"]
     face_enabled: int = DEFAULTS["face_enabled"]
     face_model: str = DEFAULTS["face_model"]
     face_similarity: int = DEFAULTS["face_similarity"]

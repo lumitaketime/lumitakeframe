@@ -1,0 +1,191 @@
+name: Build apps (Mac DMG + Android APK)
+
+on:
+  push:
+    branches: [main, claude/kind-dijkstra-7t80hs]
+    paths:
+      - "image-library/lumilib/**"
+      - "image-library/desktop/**"
+      - "image-library/android/**"
+      - "image-library/pyproject.toml"
+      - ".github/workflows/apps.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mac:
+    runs-on: macos-14 # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 打包圖庫伺服器（PyInstaller）
+        working-directory: image-library
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+          cd desktop/server
+          pyinstaller --noconfirm lumilib-server.spec
+
+      - name: 內建 exiftool
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/exiftool/exiftool/tags \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['name'])")
+          echo "exiftool $TAG"
+          curl -fsSL "https://github.com/exiftool/exiftool/archive/refs/tags/$TAG.tar.gz" | tar xz
+          DEST=image-library/desktop/server/dist/lumilib-server/tools/exiftool
+          mkdir -p "$DEST"
+          cp -R "exiftool-$TAG/exiftool" "exiftool-$TAG/lib" "$DEST/"
+          "$DEST/exiftool" -ver
+
+      - name: 測試打包後的伺服器
+        run: |
+          SERVER=image-library/desktop/server/dist/lumilib-server/lumilib-server
+          export LUMILIB_HOME="$RUNNER_TEMP/home"
+          "$SERVER" --version
+          "$SERVER" serve --port 8899 > "$RUNNER_TEMP/server.log" 2>&1 &
+          SERVER_PID=$!
+          for i in $(seq 1 90); do
+            curl -fs http://127.0.0.1:8899/api/auth/status && break
+            sleep 1
+          done
+          echo
+          curl -fs http://127.0.0.1:8899/api/server | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          print(d['tools'])
+          assert d['tools']['exiftool'] and d['tools']['ffmpeg'] and d['tools']['heif'], d['tools']
+          "
+          curl -fs -o /dev/null http://127.0.0.1:8899/
+          mkdir -p "$RUNNER_TEMP/photos"
+          python3 -c "from PIL import Image; Image.new('RGB', (64, 48), (200, 40, 40)).save('$RUNNER_TEMP/photos/x.jpg')"
+          curl -fs -X POST -H 'Content-Type: application/json' -d "{\"path\":\"$RUNNER_TEMP/photos\"}" http://127.0.0.1:8899/api/roots
+          sleep 5
+          curl -fs http://127.0.0.1:8899/api/jobs
+          curl -fs -o /dev/null http://127.0.0.1:8899/api/assets/1/thumb
+          kill $SERVER_PID || true
+          cat "$RUNNER_TEMP/server.log" | tail -20
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: 建置 Mac App 與 DMG
+        working-directory: image-library/desktop
+        run: |
+          npm install
+          npx tauri build --bundles app,dmg
+          ls -la src-tauri/target/release/bundle/dmg/
+
+      - name: 確認 App 內容
+        working-directory: image-library/desktop/src-tauri/target/release/bundle/macos
+        run: |
+          ls "Lumitake Library.app/Contents/Resources/server" | head
+          test -x "Lumitake Library.app/Contents/Resources/server/lumilib-server"
+          test -x "Lumitake Library.app/Contents/Resources/server/tools/exiftool/exiftool"
+          codesign -dv "Lumitake Library.app" 2>&1 | head -5
+          du -sh "Lumitake Library.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-dmg
+          path: image-library/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: 簽章金鑰（有設定 Secrets 才使用固定金鑰）
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          else
+            echo "未設定 ANDROID_KEYSTORE_BASE64，使用 debug 金鑰簽章"
+          fi
+
+      - name: 建置 APK
+        working-directory: image-library/android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          gradle --no-daemon assembleRelease
+          mkdir -p out
+          cp app/build/outputs/apk/release/*.apk out/Lumitake-Library.apk
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: image-library/android/out/Lumitake-Library.apk
+          if-no-files-found: error
+
+  release:
+    needs: [mac, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 更新「最新版」下載頁
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          ls -la dist
+          DMG=$(ls dist/*.dmg | head -1)
+          mv "$DMG" "dist/Lumitake-Library-mac.dmg"
+          cat > notes.md <<'EOF'
+          ## Lumitake Library 最新版（自動建置）
+
+          ### Mac（Apple Silicon，M1 以後）
+          1. 下載 **Lumitake-Library-mac.dmg**，打開後把 App 拖進「應用程式」。
+          2. 第一次打開：macOS 會說無法驗證開發者（沒有付費簽章）。到「系統設定 → 隱私權與安全性」，
+             往下找到 Lumitake Library，按「仍要打開」。
+             如果顯示「已損毀」，在終端機執行：`xattr -cr "/Applications/Lumitake Library.app"`
+          3. AI 分析需要另外安裝 Ollama（https://ollama.com/download），App 的設定頁會引導。
+
+          ### Android
+          1. 在手機下載 **Lumitake-Library.apk**，允許「安裝不明來源的應用程式」後安裝。
+          2. 打開 App，掃描 Mac 上「設定 → 手機與平板」的 QR code。
+          3. 新版 APK 如果無法覆蓋安裝，先解除安裝舊版再安裝即可（只需重新掃描 QR code）。
+
+          ### iPhone／iPad
+          用 Safari 開啟 Mac 設定頁顯示的網址，按「分享 → 加入主畫面」。
+          EOF
+          gh release delete app-latest --repo "$REPO" --cleanup-tag --yes || true
+          gh release create app-latest --repo "$REPO" --prerelease \
+            --title "Lumitake Library 最新版" --notes-file notes.md \
+            --target "${{ github.sha }}" \
+            dist/Lumitake-Library-mac.dmg dist/Lumitake-Library.apk

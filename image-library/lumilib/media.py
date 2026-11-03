@@ -65,10 +65,35 @@ def media_kind(path: str | Path) -> tuple[str, bool] | None:
     return None
 
 
+def _bundled_tool_dirs() -> list[Path]:
+    """Mac App 內建的工具：LUMILIB_TOOLS 或打包後執行檔旁的 tools/。"""
+    dirs = []
+    env = os.environ.get("LUMILIB_TOOLS")
+    if env:
+        dirs.append(Path(env))
+    import sys
+
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        dirs += [base / "tools", Path(sys.executable).parent / "tools"]
+    return dirs
+
+
 def which(name: str) -> str | None:
+    for d in _bundled_tool_dirs():
+        for candidate in (d / name, d / name / name):
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
     found = shutil.which(name)
     if found:
         return found
+    if name == "ffmpeg":
+        try:  # pip 套件 imageio-ffmpeg 內附的 ffmpeg
+            import imageio_ffmpeg
+
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            pass
     for prefix in ("/opt/homebrew/bin", "/usr/local/bin"):  # macOS 從 Finder 啟動時 PATH 可能不含 Homebrew
         candidate = Path(prefix) / name
         if candidate.exists():

@@ -3,7 +3,7 @@
   import Icon from "./Icon.svelte";
   import InfoPanel from "./InfoPanel.svelte";
   import { api, originalUrl, previewUrl, thumbUrl } from "../lib/api.js";
-  import { app, viewer, refresh, toast } from "../lib/state.svelte.js";
+  import { app, viewer, refresh, toast, isMacApp } from "../lib/state.svelte.js";
   import { addToAlbum, analyzeAssets, moveAssets, reveal, setFavorite, trashAssets, copyText } from "../lib/actions.js";
   import {
     mdiArrowLeft, mdiChevronLeft, mdiChevronRight, mdiDeleteOutline, mdiDotsVertical, mdiDownload, mdiFolderOpenOutline,
@@ -218,7 +218,9 @@
         <Icon path={detail?.favorite ? mdiHeart : mdiHeartOutline} />
       </button>
       <button class="icon-btn" class:active={showInfo} onclick={toggleInfo} aria-label="資訊"><Icon path={mdiInformationOutline} /></button>
-      <a class="icon-btn desktop" href={item ? originalUrl(item, true) : "#"} aria-label="下載原檔" title="下載原檔"><Icon path={mdiDownload} /></a>
+      {#if !isMacApp}
+        <a class="icon-btn desktop" href={item ? originalUrl(item, true) : "#"} aria-label="下載原檔" title="下載原檔"><Icon path={mdiDownload} /></a>
+      {/if}
       <button class="icon-btn" onclick={remove} aria-label="移到垃圾桶" disabled={!detail}><Icon path={mdiDeleteOutline} /></button>
       <div class="menu-wrap">
         <button class="icon-btn" onclick={() => (menu = !menu)} aria-label="更多"><Icon path={mdiDotsVertical} /></button>
@@ -229,7 +231,9 @@
             <button onclick={move}><Icon path={mdiFolderMoveOutline} size={20} />搬移到資料夾</button>
             <button onclick={() => { menu = false; analyzeAssets([item.id]); }}><Icon path={mdiCreation} size={20} />重新 AI 分析</button>
             <button onclick={() => { menu = false; detail && copyText(detail.path); }}><Icon path={mdiContentCopy} size={20} />複製檔案路徑</button>
-            <a href={item ? originalUrl(item, true) : "#"} onclick={() => (menu = false)}><Icon path={mdiDownload} size={20} />下載原檔</a>
+            {#if !isMacApp}
+              <a href={item ? originalUrl(item, true) : "#"} onclick={() => (menu = false)}><Icon path={mdiDownload} size={20} />{app.server?.local ? "下載原檔" : "存到這台裝置"}</a>
+            {/if}
           </div>
         {/if}
       </div>
