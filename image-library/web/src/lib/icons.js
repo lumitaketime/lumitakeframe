@@ -9,6 +9,6 @@ export {
   mdiMagnifyPlusOutline, mdiMagnifyMinusOutline, mdiAlbum, mdiStarFourPoints, mdiServerNetwork, mdiLockOutline,
   mdiCheckboxMarkedCircle, mdiCheckboxBlankCircleOutline, mdiPlayCircle, mdiArrowUp, mdiFolderHome,
   mdiAccountBoxOutline, mdiAccountMultiplePlusOutline, mdiAccountRemoveOutline, mdiEyeOffOutline, mdiEyeOutline,
-  mdiFaceRecognition, mdiTranslate, mdiImageSearchOutline, mdiViewDashboardOutline,
+  mdiFaceRecognition, mdiTranslate, mdiImageSearchOutline, mdiViewDashboardOutline, mdiDatabaseOutline, mdiBroom,
   mdiStar, mdiStarOutline, mdiCameraOutline, mdiTagMultipleOutline, mdiAccountGroupOutline, mdiTuneVariant, mdiCloseCircle, mdiFlagRemove, mdiLayers, mdiLayersOff, mdiContentDuplicate, mdiAutoFix, mdiHistory, mdiImageFilterCenterFocus,
 } from "@mdi/js";

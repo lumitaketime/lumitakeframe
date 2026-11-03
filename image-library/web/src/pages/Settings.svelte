@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import Icon from "../components/Icon.svelte";
   import JobList from "../components/JobList.svelte";
+  import StoragePanel from "../components/StoragePanel.svelte";
   import { api } from "../lib/api.js";
   import { app, refresh, showDialog, toast } from "../lib/state.svelte.js";
   import { link } from "../lib/router.svelte.js";
@@ -10,7 +11,7 @@
   import {
     mdiHarddisk, mdiRefresh, mdiPencilOutline, mdiDeleteOutline, mdiPlus, mdiCreation, mdiCheck, mdiDownload,
     mdiCellphone, mdiStop, mdiThemeLightDark, mdiServerNetwork, mdiAlertCircleOutline, mdiFaceRecognition,
-    mdiImageSearchOutline, mdiStar, mdiTuneVariant, mdiArrowLeft, mdiViewDashboardOutline,
+    mdiImageSearchOutline, mdiStar, mdiTuneVariant, mdiArrowLeft, mdiViewDashboardOutline, mdiDatabaseOutline,
   } from "../lib/icons.js";
 
 
@@ -24,6 +25,7 @@
     { id: "lightroom", label: "Lightroom 與檢視", icon: mdiStar },
     { id: "features", label: "功能與選單", icon: mdiViewDashboardOutline },
     { id: "phone", label: "手機與平板", icon: mdiCellphone },
+    { id: "storage", label: "儲存空間與模型", icon: mdiDatabaseOutline },
     { id: "look", label: "外觀與系統", icon: mdiThemeLightDark },
     { id: "advanced", label: "進階", icon: mdiTuneVariant },
   ];
@@ -216,11 +218,16 @@
   async function removeRoot(r) {
     const ok = await confirm(
       `從圖庫移除「${r.name}」？`,
-      "只會移除圖庫中的紀錄（AI 分析、相簿中的項目），硬碟上的檔案完全不受影響。之後重新加入需要重新分析。",
-      { ok: "移除", danger: true },
+      "會一起清除這個資料夾的縮圖、AI 分析結果與人臉資料，釋放空間。硬碟上的照片完全不受影響，之後重新加入需要重新分析。",
+      { ok: "移除並清除資料", danger: true },
     );
     if (!ok) return;
-    await api(`/api/roots/${r.id}`, { method: "DELETE" });
+    try {
+      const res = await api(`/api/roots/${r.id}`, { method: "DELETE" });
+      toast(`已移除「${r.name}」${res.freed ? `，釋放約 ${bytes(res.freed)}` : ""}`);
+    } catch (e) {
+      toast(e.message, "error");
+    }
     roots = await api("/api/roots");
     refresh();
   }
@@ -813,6 +820,9 @@
         {/if}
       {/if}
     </section>
+    {/if}
+    {#if current === "storage"}
+      <StoragePanel />
     {/if}
     {#if current === "look"}
     <!-- 外觀與系統 -->

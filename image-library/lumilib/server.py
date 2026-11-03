@@ -33,7 +33,7 @@ from .search import STACK_COUNT_SQL, search, summarize, tag_covers, top_tags
 
 WEB_DIR = Path(__file__).parent / "web"
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
-LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url", "/api/ollama/start"}
+LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces", "query_rewrite", "clip_enabled", "clip_model",
@@ -1190,11 +1190,74 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     @app.delete("/api/roots/{root_id:int}")
     def delete_root(root_id: int):
+        """移除資料夾：連同縮圖、人臉與分析資料一起清掉（照片檔案不受影響）。"""
+        from .storage import remove_root
+
         c = conn()
         try:
-            return {"removed": db.remove_root(c, root_id)}
+            return remove_root(c, cfg, root_id)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
         finally:
             c.close()
+
+    # ---- 儲存空間與模型管理 ----
+    @app.get("/api/storage")
+    def storage_usage():
+        from .storage import usage
+
+        try:
+            ollama = client_factory().installed()
+            ollama_ok = True
+        except Exception:  # noqa: BLE001
+            ollama, ollama_ok = [], False
+        c = conn()
+        try:
+            return {**usage(c, cfg, ollama), "ollama_ok": ollama_ok}
+        finally:
+            c.close()
+
+    @app.post("/api/storage/clean")
+    def storage_clean(body: dict = Body(default={})):
+        from .storage import clean_orphans
+
+        c = conn()
+        try:
+            return clean_orphans(c, cfg)
+        finally:
+            c.close()
+
+    @app.post("/api/storage/clear-analysis")
+    def storage_clear_analysis(body: dict = Body(default={})):
+        from .storage import clear_analysis
+
+        root_id = body.get("root_id")
+        c = conn()
+        try:
+            return {"cleared": clear_analysis(c, int(root_id) if root_id is not None else None)}
+        finally:
+            c.close()
+
+    @app.post("/api/storage/models/delete")
+    def storage_delete_model(body: dict = Body(...)):
+        """刪除任何一種模型：Ollama（視覺、語意、翻譯）、人臉、圖像搜尋。"""
+        from .storage import delete_model_files
+
+        kind, name = str(body.get("kind", "")), str(body.get("name", ""))
+        if kind == "ollama":
+            client_factory().delete(name)
+            return {"ok": True}
+        if kind in ("face", "clip"):
+            try:
+                return {"ok": True, "freed": delete_model_files(cfg, kind, name)}
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(400, "未知的模型類型")
+
+    @app.post("/api/storage/reveal")
+    def storage_reveal(body: dict = Body(default={})):
+        fileops.reveal(cfg.home, select=False)
+        return {"ok": True}
 
     @app.post("/api/pick-folder")
     def pick(body: dict = Body(default={})):
