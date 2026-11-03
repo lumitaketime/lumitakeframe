@@ -1,4 +1,5 @@
 <script>
+  import ExploreTabs from "../components/ExploreTabs.svelte";
   import Grid from "../components/Grid.svelte";
   import Icon from "../components/Icon.svelte";
   import { api, thumbUrl } from "../lib/api.js";
@@ -47,7 +48,8 @@
 </script>
 
 <div class="page">
-  <div class="page-head"><h1>器材</h1></div>
+  <div class="page-head"><h1>探索</h1></div>
+  <ExploreTabs />
   {#if !stats}
     <p class="muted"><span class="spinner"></span></p>
   {:else if !stats.cameras.length}

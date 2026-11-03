@@ -1,4 +1,5 @@
 <script>
+  import ExploreTabs from "../components/ExploreTabs.svelte";
   import Icon from "../components/Icon.svelte";
   import { api } from "../lib/api.js";
   import { app, refresh, showDialog, toast } from "../lib/state.svelte.js";
@@ -47,7 +48,7 @@
 
 <div class="page">
   <div class="page-head">
-    <h1>人物</h1>
+    <h1>探索</h1>
     {#if selecting}
       <span class="muted small">已選 {picked.size} 位</span>
       <button class="icon-btn" onclick={() => { selecting = false; picked = new Set(); }} aria-label="取消"><Icon path={mdiClose} /></button>
@@ -56,6 +57,7 @@
     {/if}
     <label class="small muted"><input type="checkbox" bind:checked={showHidden} /> 顯示已隱藏</label>
   </div>
+  <ExploreTabs />
 
   {#if selecting && picked.size}
     <div class="assign">

@@ -1,6 +1,7 @@
 <script>
   import { onMount } from "svelte";
   import Icon from "../components/Icon.svelte";
+  import JobList from "../components/JobList.svelte";
   import { api } from "../lib/api.js";
   import { app, refresh, showDialog, toast } from "../lib/state.svelte.js";
   import { link } from "../lib/router.svelte.js";
@@ -82,7 +83,14 @@
   const s = $derived(app.server);
   const jobs = $derived(s?.jobs);
   const local = $derived(!!s?.local);
-  const pulling = $derived(jobs?.current?.kind === "pull" ? jobs.current.model : null);
+  // 下載中的模型（可以同時下載好幾個）：{ 模型名稱: 工作 }
+  const downloads = $derived(Object.fromEntries((jobs?.active || []).filter((j) => j.lane === "download").map((j) => [j.model, j])));
+  const dlText = (name) => {
+    const j = downloads[name];
+    if (!j) return null;
+    return j.total ? `下載中 ${Math.round((j.done / j.total) * 100)}%` : "下載中…";
+  };
+  const aiRunning = $derived((jobs?.active || []).some((j) => j.kind === "analyze"));
   const vision = $derived(models?.recommended.filter((m) => m.kind === "vision") || []);
   const embeds = $derived(models?.recommended.filter((m) => m.kind === "embed") || []);
   const otherInstalled = $derived(
@@ -140,7 +148,6 @@
     loadExtra();
   });
 
-  const busyModel = $derived(["face_model", "clip_model"].includes(jobs?.current?.kind) ? jobs.current.model : null);
 
   async function useFaceModel(name) {
     if (settings.face_model !== name && s?.stats.faces) {
@@ -368,26 +375,16 @@
       <h2><Icon path={mdiCreation} />AI 分析</h2>
       {#if s}
         <div class="stats">
-          <div><b>{count(s.stats.photos)}</b><span>照片</span></div>
-          <div><b>{count(s.stats.videos)}</b><span>影片</span></div>
-          <div><b>{count(s.stats.analyzed)}</b><span>已分析</span></div>
-          <div><b>{count(s.stats.pending)}</b><span>待分析</span></div>
-          <div><b>{count(s.stats.failed)}</b><span>失敗</span></div>
-          <div><b>{count(s.stats.missing)}</b><span>遺失</span></div>
+          <a href="/" use:link><b>{count(s.stats.photos)}</b><span>照片</span></a>
+          <a href="/videos" use:link><b>{count(s.stats.videos)}</b><span>影片</span></a>
+          <a href="/search?q=is:analyzed" use:link><b>{count(s.stats.analyzed)}</b><span>已分析</span></a>
+          <a href="/search?q=is:pending" use:link><b>{count(s.stats.pending)}</b><span>待分析</span></a>
+          <a href="/search?q=is:failed" use:link class:bad={s.stats.failed}><b>{count(s.stats.failed)}</b><span>失敗</span></a>
+          <a href="/search?q=is:missing" use:link><b>{count(s.stats.missing)}</b><span>遺失</span></a>
         </div>
       {/if}
-      {#if jobs?.current}
-        <div class="job">
-          <span class="spinner"></span>
-          <div class="grow">
-            <b>{jobs.current.label}</b>
-            <div class="small muted msg">{jobs.current.message}</div>
-            {#if jobs.current.total}<progress max={jobs.current.total} value={jobs.current.done}></progress>{/if}
-            {#if jobs.queued.length}<div class="tiny muted">排隊中：{jobs.queued.map((j) => j.label).join("、")}</div>{/if}
-          </div>
-          <button class="btn ghost small" onclick={() => api("/api/jobs/stop", { body: {} }).then(refresh)}><Icon path={mdiStop} size={18} />停止</button>
-        </div>
-      {:else if jobs?.last}
+      <JobList />
+      {#if jobs?.last && !jobs.active?.length}
         <p class="small" class:danger-text={jobs.last.error}>上次「{jobs.last.label}」：{jobs.last.message}</p>
       {/if}
       {#if s?.ai}
@@ -401,7 +398,7 @@
         {/if}
       {/if}
       <div class="row wrap">
-        <button class="btn" onclick={() => job("analyze")} disabled={!s?.ai?.ready}>開始 AI 分析{s?.stats.pending ? `（${count(s.stats.pending)} 個）` : ""}</button>
+        <button class="btn" onclick={() => job("analyze")} disabled={!s?.ai?.ready || aiRunning}>開始 AI 分析{s?.stats.pending ? `（${count(s.stats.pending)} 個）` : ""}</button>
         <button class="btn ghost" onclick={testAnalyze} disabled={aiTesting || !s?.ai?.ollama}>{aiTesting ? "測試中…（第一次載入模型可能要一分鐘）" : "用一張照片測試"}</button>
       </div>
       {#if aiTest}
@@ -419,9 +416,32 @@
       {/if}
       {#if settings}
         <label class="toggle"><input type="checkbox" checked={!!settings.auto_analyze} onchange={(e) => saveSetting("auto_analyze", e.currentTarget.checked ? 1 : 0)} />掃描到新照片後自動 AI 分析</label>
+      <div class="row wrap">
+        <label class="field">分析時段
+          <select class="input" value={settings.analyze_schedule} onchange={(e) => saveSetting("analyze_schedule", e.currentTarget.value)}>
+            <option value="always">隨時</option>
+            <option value="ac">只在接上電源時（建議筆電）</option>
+            <option value="night">只在夜間</option>
+            <option value="ac_night">夜間且接上電源時</option>
+          </select>
+        </label>
+        {#if settings.analyze_schedule === "night" || settings.analyze_schedule === "ac_night"}
+          <label class="field">夜間從
+            <select class="input" value={String(settings.night_start)} onchange={(e) => saveSetting("night_start", Number(e.currentTarget.value))}>
+              {#each Array.from({ length: 24 }, (_, h) => h) as h (h)}<option value={String(h)}>{h}:00</option>{/each}
+            </select>
+          </label>
+          <label class="field">到
+            <select class="input" value={String(settings.night_end)} onchange={(e) => saveSetting("night_end", Number(e.currentTarget.value))}>
+              {#each Array.from({ length: 24 }, (_, h) => h) as h (h)}<option value={String(h)}>{h}:00</option>{/each}
+            </select>
+          </label>
+        {/if}
+      </div>
+      <p class="muted tiny">不在時段內時，分析會自動暫停，時間到或接上電源後接著做。</p>
       {/if}
       <div class="row wrap">
-        <button class="btn ghost" onclick={() => job("index")} disabled={!!jobs?.current}>掃描並分析全部</button>
+        <button class="btn ghost" onclick={() => job("index")}>掃描並分析全部</button>
         <button class="btn ghost" onclick={() => job("scan")}>只掃描</button>
         {#if s?.stats.failed}<button class="btn ghost" onclick={() => job("analyze", { retry_failed: true })}>重試失敗的 {s.stats.failed} 個</button>{/if}
       </div>
@@ -459,11 +479,11 @@
               <span class="tiny muted">{info ? `約 ${info.size_gb} GB · ` : ""}{hint}</span>
               {#if using}
                 <span class="using"><Icon path={mdiCheck} size={18} />使用中{info && !info.installed ? "（下載中或尚未下載）" : ""}</span>
-                {#if info && !info.installed}<button class="btn small soft" disabled={!models.ollama_ok || !!pulling} onclick={() => pull(name)}>{pulling === name ? "下載中…" : "下載"}</button>{/if}
+                {#if info && !info.installed}<button class="btn small soft" disabled={!models.ollama_ok || !!downloads[name]} onclick={() => pull(name)}>{dlText(name) || "下載"}</button>{/if}
               {:else if info?.installed}
                 <button class="btn small" onclick={() => useModel("vision", name)}>使用</button>
               {:else}
-                <button class="btn small soft" disabled={!models.ollama_ok || !!pulling} onclick={() => pullAndUse(name)}><Icon path={mdiDownload} size={16} />下載並使用</button>
+                <button class="btn small soft" disabled={!models.ollama_ok || !!downloads[name]} onclick={() => pullAndUse(name)}><Icon path={mdiDownload} size={16} />{dlText(name) || "下載並使用"}</button>
               {/if}
             </div>
           {/each}
@@ -487,8 +507,8 @@
                   <button class="btn small" onclick={() => useModel("vision", m.name)}>使用</button>
                 {/if}
                 {#if !m.installed}
-                  <button class="btn small soft" disabled={!models.ollama_ok || !!pulling} onclick={() => pull(m.name)}>
-                    <Icon path={mdiDownload} size={16} />{pulling === m.name ? "下載中…" : "下載"}
+                  <button class="btn small soft" disabled={!models.ollama_ok || !!downloads[m.name]} onclick={() => pull(m.name)}>
+                    <Icon path={mdiDownload} size={16} />{dlText(m.name) || "下載"}
                   </button>
                 {:else if !active}
                   <button class="icon-btn" title="刪除模型" onclick={() => deleteModel(m.name)}><Icon path={mdiDeleteOutline} size={20} /></button>
@@ -528,8 +548,8 @@
                 {:else if m.installed}
                   <button class="btn small" onclick={async () => { await useModel("embed", m.name); job("embed"); }}>使用</button>
                 {:else}
-                  <button class="btn small soft" disabled={!models.ollama_ok || !!pulling} onclick={() => pull(m.name)}>
-                    <Icon path={mdiDownload} size={16} />{pulling === m.name ? "下載中…" : "下載"}
+                  <button class="btn small soft" disabled={!models.ollama_ok || !!downloads[m.name]} onclick={() => pull(m.name)}>
+                    <Icon path={mdiDownload} size={16} />{dlText(m.name) || "下載"}
                   </button>
                 {/if}
               </div>
@@ -587,8 +607,8 @@
               <p class="small">{m.note}</p>
               <div class="row">
                 {#if !m.installed}
-                  <button class="btn small soft" disabled={!!busyModel || (m.custom && !m.url)} onclick={() => job("face_model", { model: m.name })}>
-                    <Icon path={mdiDownload} size={16} />{busyModel === m.name ? "下載中…" : "下載"}
+                  <button class="btn small soft" disabled={!!downloads[m.name] || (m.custom && !m.url)} onclick={() => job("face_model", { model: m.name })}>
+                    <Icon path={mdiDownload} size={16} />{dlText(m.name) || "下載"}
                   </button>
                 {/if}
                 {#if active}
@@ -620,7 +640,8 @@
           </label>
         </div>
         {#if s}
-          <p class="small">已找到 {count(s.stats.faces)} 張臉、{count(s.stats.people)} 位人物；尚未偵測 {count(s.stats.faces_pending)} 張照片。</p>
+          <JobList kinds={["faces", "cluster", "face_model"]} compact />
+        <p class="small">已找到 {count(s.stats.faces)} 張臉、{count(s.stats.people)} 位人物；尚未偵測 {count(s.stats.faces_pending)} 張照片。</p>
         {/if}
         <div class="row wrap">
           <button class="btn" disabled={!faceModels.find((m) => m.active)?.installed} onclick={() => job("faces")}>偵測人臉</button>
@@ -661,8 +682,8 @@
               <p class="small">{m.note}</p>
               <div class="row">
                 {#if !m.installed}
-                  <button class="btn small soft" disabled={!!busyModel || (m.custom && !m.repo)} onclick={() => job("clip_model", { model: m.name })}>
-                    <Icon path={mdiDownload} size={16} />{busyModel === m.name ? "下載中…" : "下載"}
+                  <button class="btn small soft" disabled={!!downloads[m.name] || (m.custom && !m.repo)} onclick={() => job("clip_model", { model: m.name })}>
+                    <Icon path={mdiDownload} size={16} />{dlText(m.name) || "下載"}
                   </button>
                 {/if}
                 {#if active}
@@ -677,7 +698,8 @@
             </div>
           {/each}
         </div>
-        {#if s}<p class="small">已建立圖像索引：{count(s.stats.clip_done)} / {count(s.stats.images)}</p>{/if}
+        <JobList kinds={["clip", "clip_model"]} compact />
+      {#if s}<p class="small">已建立圖像索引：{count(s.stats.clip_done)} / {count(s.stats.images)}</p>{/if}
         <div class="row wrap">
           <button class="btn ghost" disabled={!clipModels.find((m) => m.active)?.installed} onclick={() => job("clip")}>建立圖像索引</button>
         </div>
@@ -950,12 +972,13 @@
   .row { display: flex; gap: 8px; align-items: center; }
   .row.wrap { flex-wrap: wrap; margin-top: 10px; }
   .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 12px 0; }
-  .stats div { background: var(--bg); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; align-items: center; }
+  .stats a { background: var(--bg); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; align-items: center; text-decoration: none; color: var(--text); border: 2px solid transparent; }
+  .stats a:hover { border-color: var(--primary-soft); }
+  .stats a.bad b { color: var(--danger); }
   .stats b { font-size: 18px; }
   .stats span { font-size: 12px; color: var(--muted); }
   .job { display: flex; gap: 12px; align-items: flex-start; background: var(--bg); padding: 12px; border-radius: 14px; }
   .msg { word-break: break-all; }
-  progress { width: 100%; height: 6px; accent-color: var(--primary); }
   .models { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
   .model { background: var(--bg); border-radius: 14px; padding: 12px; border: 2px solid transparent; display: flex; flex-direction: column; }
   .model.active { border-color: var(--primary); }

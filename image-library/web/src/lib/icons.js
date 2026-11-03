@@ -4,7 +4,7 @@ export {
   mdiDeleteOutline, mdiDotsVertical, mdiDownload, mdiFolderMoveOutline, mdiFolderOpenOutline, mdiFolderOutline,
   mdiFolderPlusOutline, mdiHarddisk, mdiHeart, mdiHeartOutline, mdiImageAlbum, mdiImageMultipleOutline,
   mdiImageOutline, mdiInformationOutline, mdiLogout, mdiMagnify, mdiMapMarkerOutline, mdiMapOutline, mdiMenu,
-  mdiPencilOutline, mdiPlay, mdiPlus, mdiRefresh, mdiStop, mdiTagOutline, mdiVideoOutline, mdiWeatherNight,
+  mdiPencilOutline, mdiPlay, mdiPause, mdiPlayBoxMultipleOutline, mdiPlus, mdiRefresh, mdiStop, mdiTagOutline, mdiVideoOutline, mdiWeatherNight,
   mdiWhiteBalanceSunny, mdiThemeLightDark, mdiCalendarOutline, mdiFileOutline, mdiImageRemoveOutline,
   mdiMagnifyPlusOutline, mdiMagnifyMinusOutline, mdiAlbum, mdiStarFourPoints, mdiServerNetwork, mdiLockOutline,
   mdiCheckboxMarkedCircle, mdiCheckboxBlankCircleOutline, mdiPlayCircle, mdiArrowUp, mdiFolderHome,

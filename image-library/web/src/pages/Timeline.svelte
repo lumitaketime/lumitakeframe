@@ -5,6 +5,8 @@
   import Memories from "../components/Memories.svelte";
   import Scrubber from "../components/Scrubber.svelte";
   import DatePill from "../components/DatePill.svelte";
+  import FilterBar from "../components/FilterBar.svelte";
+  import { filterParams, filterActive, clearFilter } from "../lib/filter.svelte.js";
   import { api } from "../lib/api.js";
   import { app, selection } from "../lib/state.svelte.js";
   import { link } from "../lib/router.svelte.js";
@@ -23,6 +25,9 @@
   let scrubActive = $state(-1);
   let dragging = $state(false);
 
+  const fullScope = $derived({ ...scope, ...filterParams() });
+  const fkey = $derived(JSON.stringify(filterParams()));
+  let lastKey = null;
   const rowTarget = $derived(width > 1600 ? 260 : width > 1000 ? 230 : 190);
   const total = $derived(buckets.reduce((s, b) => s + b.count, 0));
 
@@ -67,7 +72,7 @@
   }
 
   async function loadBuckets() {
-    const list = await api("/api/timeline/buckets", { params: scope });
+    const list = await api("/api/timeline/buckets", { params: fullScope });
     const old = new Map(buckets.map((b) => [b.month, b]));
     buckets = list.map((b) => {
       const o = old.get(b.month);
@@ -91,7 +96,7 @@
     const before = el?.offsetHeight || 0;
     const above = el && scroller && el.offsetTop + before <= scroller.scrollTop + 1;
     try {
-      b.assets = await api("/api/timeline/bucket", { params: { ...scope, month: b.month } });
+      b.assets = await api("/api/timeline/bucket", { params: { ...fullScope, month: b.month } });
     } catch {
       /* 下次捲到再試 */
     } finally {
@@ -130,7 +135,12 @@
 
   $effect(() => {
     app.refreshKey;
-    untrack(() => loadBuckets().catch(() => (ready = true)));
+    const k = fkey;
+    untrack(() => {
+      if (lastKey !== null && lastKey !== k) buckets = []; // 換了篩選條件：重新載入
+      lastKey = k;
+      loadBuckets().catch(() => (ready = true));
+    });
   });
 
   // ---- 右側時間捲軸 ----
@@ -171,13 +181,16 @@
   <div class="content"><div class="inner" bind:clientWidth={width}>
     {#if title}
       <div class="page-head"><h1>{title}</h1><span class="muted small">{count(total)} 個項目</span></div>
-    {:else}
+    {:else if !filterActive()}
       <Memories />
     {/if}
+    {#if total || filterActive()}<FilterBar kinds={scope.type !== "video"} />{/if}
 
     {#if ready && !buckets.length}
       <div class="empty">
-        {#if emptyText}
+        {#if filterActive()}
+          <h2>沒有符合篩選條件的項目</h2><p><button class="btn ghost" onclick={clearFilter}>清除篩選</button></p>
+        {:else if emptyText}
           <h2>{title || "沒有項目"}</h2><p>{emptyText}</p>
         {:else}
           <h2>歡迎使用 Lumitake Library</h2>

@@ -10,6 +10,18 @@
   let more = $state(false);
   const q = $derived(route.query.q || "");
   const canSemantic = $derived(!!app.server?.models?.embed);
+  const failedView = $derived(q.split(/\s+/).includes("is:failed"));
+  let reasons = $state([]);
+
+  $effect(() => {
+    app.refreshKey;
+    if (failedView) api("/api/analysis/errors").then((r) => (reasons = r)).catch(() => {});
+  });
+
+  async function retryFailed() {
+    await api("/api/jobs", { body: { kind: "analyze", retry_failed: true } });
+    toast("已開始重新分析失敗的照片");
+  }
 
   const QUICK = [
     ["rating:3", "★3 以上"], ["rating:5", "★5"], ["is:rejected", "已拒絕"], ["label:red", "紅標"], ["label:green", "綠標"],
@@ -70,6 +82,16 @@
     {/each}
   </div>
   {#if result?.warning}<p class="danger-text small">{result.warning}</p>{/if}
+  {#if failedView && reasons.length}
+    <div class="reasons">
+      <b>失敗原因</b>
+      <ul>
+        {#each reasons as r (r.reason)}<li><span class="n">{r.count.toLocaleString()} 張</span><span class="why">{r.reason}</span></li>{/each}
+      </ul>
+      <div class="row"><button class="btn small" onclick={retryFailed}>重新分析失敗的照片</button>
+        <span class="tiny muted">點照片後按 ⓘ 可以看單張的錯誤。</span></div>
+    </div>
+  {/if}
   {#if result?.expanded?.length || result?.modes?.includes("image")}
     <p class="muted small smart">
       {#if result.expanded?.length}也搜尋了：{result.expanded.slice(0, 12).join("、")}{/if}
@@ -107,6 +129,12 @@
 </div>
 
 <style>
+  .reasons { background: var(--bg-2); border-radius: 16px; padding: 12px 16px; margin: 6px 0 14px; }
+  .reasons ul { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+  .reasons li { display: flex; gap: 12px; font-size: 13px; }
+  .reasons .n { flex-shrink: 0; width: 72px; font-weight: 600; color: var(--danger); font-variant-numeric: tabular-nums; }
+  .reasons .why { word-break: break-all; color: var(--muted); }
+  .reasons .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .quick { margin-bottom: 14px; }
   .smart { margin: -6px 0 12px; }
   .sem { display: flex; align-items: center; gap: 6px; font-size: 14px; }

@@ -225,6 +225,26 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             args.append(int(params["album"]))
         if params.get("missing") == "1":
             where[0] = "i.status = 'missing'"
+        # 快速篩選：星等、顏色標籤、檔案類型
+        rating = str(params.get("rating", ""))
+        if rating.lstrip("-").isdigit() and int(rating) != 0:
+            where.append("i.rating = -1" if int(rating) < 0 else "i.rating >= ?")
+            if int(rating) > 0:
+                args.append(int(rating))
+        if params.get("label"):
+            where.append("i.label = ?")
+            args.append(str(params["label"]))
+        kind = params.get("kind")
+        if kind in ("raw", "jpeg", "video"):
+            if "i.stack_top = 1" in where:
+                where.remove("i.stack_top = 1")  # 疊放裡的 RAW 或 JPEG 也要找得到
+            if kind == "raw":
+                where.append("i.is_raw = 1")
+            elif kind == "video":
+                where.append("i.media_type = 'video'")
+            else:
+                where.append("i.media_type = 'photo' AND i.is_raw = 0 AND "
+                             "(lower(i.rel_path) LIKE '%.jpg' OR lower(i.rel_path) LIKE '%.jpeg')")
         return " AND ".join(where), args
 
     @app.get("/api/timeline/buckets")
@@ -869,6 +889,19 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             c.close()
 
     # ---- 搜尋與探索 ----
+    @app.get("/api/analysis/errors")
+    def analysis_errors():
+        """分析失敗的原因統計（依錯誤訊息分組）。"""
+        c = conn()
+        try:
+            rows = c.execute(
+                "SELECT substr(error, 1, 160) AS reason, COUNT(*) AS count FROM images "
+                "WHERE status = 'ok' AND analyzed_at IS NULL AND error IS NOT NULL GROUP BY reason ORDER BY count DESC LIMIT 8"
+            ).fetchall()
+            return [{"reason": r["reason"], "count": r["count"]} for r in rows]
+        finally:
+            c.close()
+
     @app.get("/api/search")
     def do_search(q: str = "", limit: int = 200, offset: int = 0, semantic: int = 0, smart: int = 1):
         from .analyzer import rewrite_query

@@ -150,7 +150,7 @@
   }
 
   function onkey(e) {
-    if (e.target.closest?.("input, textarea")) return;
+    if (e.target.closest?.("input:not([type=range]), textarea, select")) return;
     if (!e.metaKey && !e.ctrlKey && !e.altKey) {
       if ("012345".includes(e.key) && e.key.length === 1) return setXmp({ rating: Number(e.key) });
       const labelKey = { 6: "red", 7: "yellow", 8: "green", 9: "blue" }[e.key];
@@ -158,6 +158,8 @@
       if (e.key === "x") return setXmp({ rating: -1 });
       if (e.key === "u" && detail?.rating === -1) return setXmp({ rating: 0 });
     }
+    if ((e.key === "+" || e.key === "=") && !isVideo) return setZoom(zoom * 1.25);
+    if ((e.key === "-" || e.key === "_") && !isVideo) return setZoom(zoom / 1.25);
     if (e.key === "Escape") close();
     else if (e.key === "ArrowRight") go(1);
     else if (e.key === "ArrowLeft") go(-1);
@@ -322,6 +324,15 @@
           {/key}
         {/if}
       {/if}
+      {#if !isVideo}
+        <div class="zoom-bar" class:hidden={!chrome} role="group" aria-label="縮放">
+          <button class="zb" onclick={() => setZoom(zoom / 1.25)} disabled={zoom <= 1} aria-label="縮小（-）" title="縮小（-）"><Icon path={mdiMagnifyMinusOutline} size={20} /></button>
+          <input type="range" min="1" max="8" step="0.05" value={zoom} aria-label="縮放比例"
+            oninput={(e) => setZoom(Number(e.currentTarget.value))} />
+          <button class="zb" onclick={() => setZoom(zoom * 1.25)} disabled={zoom >= 8} aria-label="放大（+）" title="放大（+）"><Icon path={mdiMagnifyPlusOutline} size={20} /></button>
+          <button class="pct" onclick={() => setZoom(1)} title="符合視窗">{Math.round(zoom * 100)}%</button>
+        </div>
+      {/if}
       {#if detail && !isVideo && app.server?.ui?.viewer_rating_bar !== 0}
         <div class="rate-bar" class:hidden={!chrome}>
           <button class="reject" class:on={detail.rating === -1} title="拒絕（X）" onclick={() => setXmp({ rating: detail.rating === -1 ? 0 : -1 })}>
@@ -406,6 +417,15 @@
   .nav:hover { background: rgba(255,255,255,.2); }
   .nav.left { left: 16px; }
   .nav.right { right: 16px; }
+  .zoom-bar {
+    position: absolute; right: 18px; bottom: 18px; z-index: 3; display: flex; align-items: center; gap: 4px;
+    background: rgba(0,0,0,.55); border-radius: 999px; padding: 4px 8px; color: #fff; transition: opacity .2s;
+  }
+  .zoom-bar input { width: 120px; accent-color: #fff; }
+  .zoom-bar .zb { border: 0; background: none; color: #fff; display: flex; padding: 4px; cursor: pointer; border-radius: 50%; }
+  .zoom-bar .zb:disabled { opacity: .35; cursor: default; }
+  .zoom-bar .pct { border: 0; background: none; color: #fff; font-size: 12px; min-width: 44px; cursor: pointer; font-variant-numeric: tabular-nums; }
+  @media (max-width: 760px) { .zoom-bar { display: none; } }
   .rate-bar {
     position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center;
     gap: 2px; background: rgba(0,0,0,.55); border-radius: 999px; padding: 4px 10px; transition: opacity .2s;

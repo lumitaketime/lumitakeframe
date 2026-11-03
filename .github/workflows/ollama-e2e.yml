@@ -12,7 +12,7 @@ on:
     inputs:
       models:
         description: "要測試的模型（JSON 陣列）"
-        default: '["qwen3-vl:4b", "gemma4:e2b", "gemma4:e4b"]'
+        default: '["gemma4:e4b", "gemma4:e2b", "qwen3-vl:4b-instruct"]'
 
 concurrency:
   group: ollama-e2e-${{ github.ref }}
@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: ${{ fromJSON(github.event.inputs.models || '["qwen3-vl:4b", "qwen3-vl:4b-instruct", "gemma4:e4b"]') }}
+        model: ${{ fromJSON(github.event.inputs.models || '["gemma4:e4b", "gemma4:e2b"]') }}
     steps:
       - uses: actions/checkout@v4
 

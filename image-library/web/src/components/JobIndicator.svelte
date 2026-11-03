@@ -9,6 +9,7 @@
   const cur = $derived(jobs?.current);
   const pct = $derived(cur?.total ? Math.round((cur.done / cur.total) * 100) : null);
   const ai = $derived(app.server?.ai);
+  const more = $derived((jobs?.active?.length || 1) - 1 + (jobs?.queued?.length || 0));
 
   async function start() {
     try {
@@ -24,7 +25,7 @@
 {#if cur}
   <button class="job" onclick={() => navigate("/settings/ai")} title={cur.message}>
     <span class="spinner"></span>
-    <span class="txt"><b>{cur.label}</b>{pct !== null ? ` ${pct}%` : ""}{jobs.queued.length ? `（另有 ${jobs.queued.length} 項）` : ""}</span>
+    <span class="txt"><b>{cur.label}</b>{pct !== null ? ` ${pct}%` : ""}{more ? `（另有 ${more} 項）` : ""}</span>
     {#if pct !== null}<span class="bar" style:width="{pct}%"></span>{/if}
   </button>
 {:else if app.server && app.server.stats.pending > 0 && ai && !ai.ready}

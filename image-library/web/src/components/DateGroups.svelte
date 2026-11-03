@@ -7,7 +7,12 @@
   import Grid from "./Grid.svelte";
   import Scrubber from "./Scrubber.svelte";
   import DatePill from "./DatePill.svelte";
+  import FilterBar from "./FilterBar.svelte";
+  import Slideshow from "./Slideshow.svelte";
+  import Icon from "./Icon.svelte";
+  import { mdiPlayBoxMultipleOutline } from "../lib/icons.js";
   import { fullDayLabel, monthLabel, count } from "../lib/format.js";
+  import { matches, filterActive, clearFilter } from "../lib/filter.svelte.js";
 
   let { assets = [], storeKey = "", defaultGroup = "month" } = $props();
 
@@ -19,6 +24,7 @@
   let scroller;
   let active = $state(0);
   let dragging = $state(false);
+  let showing = $state(false);
 
   function read(k) {
     try {
@@ -44,7 +50,7 @@
   }
 
   const sorted = $derived.by(() => {
-    const list = [...assets];
+    const list = assets.filter(matches);
     list.sort((a, b) => {
       const x = a.at || "";
       const y = b.at || "";
@@ -115,6 +121,7 @@
 
 <div class="dg" bind:this={root}>
   <div class="body">
+    <FilterBar />
     <div class="tools">
       <div class="seg" role="group" aria-label="分組方式">
         {#each GROUPS as [v, label] (v)}
@@ -125,8 +132,12 @@
         <button class:on={order === "desc"} onclick={() => setOrder("desc")}>新 → 舊</button>
         <button class:on={order === "asc"} onclick={() => setOrder("asc")}>舊 → 新</button>
       </div>
+      <button class="play" onclick={() => (showing = true)} disabled={!sorted.length}><Icon path={mdiPlayBoxMultipleOutline} size={18} />播放</button>
     </div>
-    {#each groups as g (g.key)}
+    {#if !sorted.length && filterActive()}
+      <div class="empty"><h2>沒有符合篩選條件的項目</h2><p><button class="btn ghost" onclick={clearFilter}>清除篩選</button></p></div>
+    {/if}
+    {#each groups.filter((g) => g.items.length) as g (g.key)}
       <section data-group={g.key} data-label={g.label || null}>
         {#if g.label}<h2 class="title">{g.label}<span>{count(g.items.length)} 張</span></h2>{/if}
         <Grid assets={g.items} list={sorted} offset={g.offset} />
@@ -137,6 +148,7 @@
     <Scrubber {marks} {active} onjump={jump} bind:dragging />
   {/if}
   {#if group !== "none"}<DatePill />{/if}
+  {#if showing}<Slideshow items={sorted} onclose={() => (showing = false)} />{/if}
 </div>
 
 <style>
@@ -147,6 +159,8 @@
   .seg button { border: 0; background: none; color: var(--muted); padding: 5px 14px; font-size: 13px; cursor: pointer; }
   .seg button + button { border-left: 1px solid var(--line); }
   .seg button.on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+  .play { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: none; color: var(--text); border-radius: 999px; padding: 4px 14px; font-size: 13px; cursor: pointer; }
+  .play:hover { border-color: var(--primary); color: var(--primary); }
   .title { font-size: 17px; font-weight: 600; margin: 18px 0 8px; display: flex; align-items: baseline; gap: 10px; }
   .title span { font-size: 12px; font-weight: 400; color: var(--muted); }
 </style>

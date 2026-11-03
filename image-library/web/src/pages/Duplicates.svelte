@@ -9,7 +9,7 @@
   let data = $state(null);
   let tab = $state("similar");
   let keep = $state({}); // 每組選擇保留的 id
-  const running = $derived(app.server?.jobs?.current?.kind === "dups");
+  const running = $derived((app.server?.jobs?.active || []).some((j) => j.kind === "dups"));
 
   $effect(() => {
     app.refreshKey;

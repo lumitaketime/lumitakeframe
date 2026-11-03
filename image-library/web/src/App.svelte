@@ -27,7 +27,7 @@
   import { route, navigate, link } from "./lib/router.svelte.js";
   import {
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
-    mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiAccountBoxOutline, mdiContentDuplicate, mdiCameraOutline, mdiTagMultipleOutline,
+    mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiContentDuplicate,
     mdiChevronRight, mdiChevronDown,
   } from "./lib/icons.js";
 
@@ -44,16 +44,13 @@
       { href: "/favorites", label: "我的最愛", icon: mdiHeartOutline },
       { href: "/videos", label: "影片", icon: mdiVideoOutline },
     ] },
-    { id: "browse", label: "分類", items: [
-      { href: "/people", label: "人物", icon: mdiAccountBoxOutline },
-      { href: "/gear", label: "器材", icon: mdiCameraOutline },
-      { href: "/keywords", label: "關鍵字", icon: mdiTagMultipleOutline },
-    ] },
     { id: "tools", label: "工具", items: [
       { href: "/duplicates", label: "重複照片", icon: mdiContentDuplicate },
     ] },
   ];
   const NAV = NAV_GROUPS.flatMap((g) => g.items);
+  // 人物、器材、關鍵字整合在「探索」的分頁裡
+  const EXPLORE_PAGES = ["/explore", "/people", "/gear", "/keywords"];
 
   const hidden = $derived(new Set((app.server?.ui?.nav_hidden || "").split(",").filter(Boolean)));
   const visible = (n) => n.fixed || !hidden.has(n.href);
@@ -91,6 +88,7 @@
 
   function active(href) {
     if (href === "/") return page === "";
+    if (href === "/explore") return EXPLORE_PAGES.some((p) => route.path === p || route.path.startsWith(p + "/"));
     return route.path === href || route.path.startsWith(href + "/");
   }
 
@@ -110,7 +108,7 @@
     try {
       const s = await api("/api/server");
       app.server = s;
-      const running = !!s.jobs.current;
+      const running = !!s.jobs.running;
       const fin = s.jobs.last?.finished_at;
       const total = s.stats.images;
       if ((wasRunning && !running) || (fin && lastFinished && fin !== lastFinished)) {

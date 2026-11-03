@@ -1,4 +1,5 @@
 <script>
+  import ExploreTabs from "../components/ExploreTabs.svelte";
   import { api, thumbUrl } from "../lib/api.js";
   import { navigate, link } from "../lib/router.svelte.js";
   import { app } from "../lib/state.svelte.js";
@@ -15,6 +16,7 @@
 
 <div class="page">
   <div class="page-head"><h1>探索</h1></div>
+  <ExploreTabs />
   {#if !data}
     <p class="muted"><span class="spinner"></span></p>
   {:else}

@@ -26,7 +26,7 @@
   const s = $derived(app.server);
   const roots = $derived(s?.roots || []);
   const isMac = $derived(s?.platform === "darwin");
-  const pullJob = $derived(s?.jobs?.current?.kind === "pull" ? s.jobs.current : null);
+  const pullJob = $derived((s?.jobs?.active || []).find((j) => j.kind === "pull" && j.model === models?.active?.vision) || null);
   const pullQueued = $derived((s?.jobs?.queued || []).some((j) => j.kind === "pull"));
   const index = $derived(STEPS.indexOf(step));
 
@@ -127,7 +127,7 @@
     await api("/api/settings", { body: { onboarded: 1 } }).catch(() => {});
     if (app.server?.ui) app.server.ui.onboarded = 1;
     // 模型已準備好、又有待分析的照片：直接開始
-    if (ai?.ready && s?.stats.pending && !s?.jobs?.current) {
+    if (ai?.ready && s?.stats.pending && !(s?.jobs?.active || []).some((j) => j.kind === "analyze")) {
       await api("/api/jobs", { body: { kind: "analyze" } }).catch(() => {});
     }
     refresh();

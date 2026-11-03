@@ -1,4 +1,5 @@
 <script>
+  import ExploreTabs from "../components/ExploreTabs.svelte";
   import { api } from "../lib/api.js";
   import { navigate } from "../lib/router.svelte.js";
   import { app } from "../lib/state.svelte.js";
@@ -33,12 +34,13 @@
 
 <div class="page">
   <div class="page-head">
-    <h1>關鍵字</h1>
+    <h1>探索</h1>
     <select class="input year" bind:value={year} aria-label="年份">
       <option value="">全部年份</option>
       {#each data?.years || [] as y (y)}<option value={y}>{y}</option>{/each}
     </select>
   </div>
+  <ExploreTabs />
   <div class="chips bar">
     <button class="chip" class:on={source === "all"} onclick={() => (source = "all")}>全部</button>
     <button class="chip" class:on={source === "mine"} onclick={() => (source = "mine")}>我的與 Lightroom</button>
