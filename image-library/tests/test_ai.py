@@ -168,7 +168,7 @@ class AutoAnalyzeTests(unittest.TestCase):
         try:
             runner.submit("pull", model="qwen2.5vl:7b")
             self.assertTrue(runner.wait_idle(30))
-            self.assertEqual(runner.last["kind"], "analyze")
+            self.assertIn("analyze", [j["kind"] for j in runner.recent])
         finally:
             runner.close()
 
@@ -250,3 +250,76 @@ class CertificateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LaneTests(unittest.TestCase):
+    def test_scan_and_downloads_do_not_wait_for_analysis(self):
+        import time
+
+        from lumilib.scanner import scan_all
+
+        tmp = Path(tempfile.mkdtemp())
+        release = threading.Event()
+
+        class SlowClient(ReadyClient):
+            def describe(self, model, prompt, images):
+                release.wait(10)
+                return super().describe(model, prompt, images)
+
+            def pull(self, model, progress=None, stop=None):
+                time.sleep(0.2)
+
+        try:
+            make_photo(tmp / "p" / "a.jpg", (230, 30, 30))
+            cfg = load_config(tmp / "home", vision_model="qwen2.5vl:7b", auto_analyze=0)
+            conn = db.connect(cfg.db_path)
+            db.add_root(conn, tmp / "p")
+            scan_all(conn, cfg)
+            conn.close()
+            runner = JobRunner(cfg, SlowClient)
+            try:
+                runner.submit("analyze")
+                time.sleep(0.2)
+                runner.submit("scan")
+                runner.submit("pull", model="a:1b")
+                runner.submit("pull", model="b:1b")
+                snap = runner.snapshot()
+                self.assertEqual(len([j for j in snap["active"] if j["lane"] == "download"]), 2)  # 同時下載
+                end = time.monotonic() + 10
+                while time.monotonic() < end and any(j["kind"] != "analyze" for j in runner.snapshot()["active"] + runner.snapshot()["queued"]):
+                    time.sleep(0.05)
+                kinds = [j["kind"] for j in runner.recent]
+                self.assertIn("scan", kinds)  # 分析還在跑，掃描已經做完
+                self.assertEqual(kinds.count("pull"), 2)
+                self.assertEqual([j["kind"] for j in runner.snapshot()["active"]], ["analyze"])
+                job_id = runner.snapshot()["active"][0]["id"]
+                runner.stop(job_id)
+                release.set()
+                self.assertTrue(runner.wait_idle(10))
+            finally:
+                release.set()
+                runner.close()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class ScheduleTests(unittest.TestCase):
+    def test_night_window_and_power(self):
+        from datetime import datetime
+
+        from lumilib import schedule
+
+        cfg = load_config(tempfile.mkdtemp())
+        self.assertTrue(schedule.analysis_allowed(cfg)[0])
+        cfg.analyze_schedule = "night"
+        self.assertTrue(schedule.analysis_allowed(cfg, datetime(2026, 1, 1, 23))[0])
+        self.assertTrue(schedule.analysis_allowed(cfg, datetime(2026, 1, 1, 6))[0])
+        ok, reason = schedule.analysis_allowed(cfg, datetime(2026, 1, 1, 12))
+        self.assertFalse(ok)
+        self.assertIn("夜間", reason)
+        cfg.analyze_schedule = "ac"
+        schedule._power.update(at=float("inf"), ac=False)
+        try:
+            self.assertFalse(schedule.analysis_allowed(cfg)[0])
+        finally:
+            schedule._power.update(at=0.0, ac=True)

@@ -36,14 +36,14 @@ RECOMMENDED = [
         "note": "Gemma 4 最大版，最細緻，適合 48GB 以上的 Mac Studio／MacBook Pro。",
     },
     {
-        "name": "qwen3-vl:4b", "kind": "vision", "family": "Qwen3-VL", "size_gb": 3.3, "min_ram": 8,
+        "name": "qwen3-vl:4b-instruct", "kind": "vision", "family": "Qwen3-VL", "size_gb": 3.3, "min_ram": 8,
         "quality": 3, "speed": 2, "speed_text": "慢",
-        "note": "檔案小，但實測分析每張照片比 Gemma 4 慢很多，暫不建議大量使用。",
+        "note": "不思考的版本（qwen3-vl:4b 預設會先思考，實測無法輸出結果）。可以用，但比 Gemma 4 慢不少。",
     },
     {
-        "name": "qwen3-vl:8b", "kind": "vision", "family": "Qwen3-VL", "size_gb": 6.1, "min_ram": 16,
+        "name": "qwen3-vl:8b-instruct", "kind": "vision", "family": "Qwen3-VL", "size_gb": 6.1, "min_ram": 16,
         "quality": 4, "speed": 2, "speed_text": "慢",
-        "note": "中文與文字辨識強，但同系列的 4b 實測很慢，建議先用 Gemma 4。",
+        "note": "不思考的版本。中文與文字辨識強，但速度比 Gemma 4 慢，建議先用 Gemma 4。",
     },
     {
         "name": "qwen3-vl:30b", "kind": "vision", "family": "Qwen3-VL", "size_gb": 19, "min_ram": 32,

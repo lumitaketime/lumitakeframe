@@ -34,6 +34,10 @@ DEFAULTS = {
     "scan_on_start": 1,
     # 掃描後自動用 AI 分析新照片（Ollama 與視覺模型都準備好時）
     "auto_analyze": 1,
+    # AI 分析時段：always 隨時、ac 只在接電源、night 只在夜間、ac_night 兩者都要
+    "analyze_schedule": "always",
+    "night_start": 22,
+    "night_end": 7,
     # 檢視照片時，下方顯示星等與顏色標籤列
     "viewer_rating_bar": 1,
     # 左側選單隱藏的功能（逗號分隔的路徑，例如 /map,/duplicates）
@@ -88,6 +92,9 @@ class Config:
     lan: int = DEFAULTS["lan"]
     scan_on_start: int = DEFAULTS["scan_on_start"]
     auto_analyze: int = DEFAULTS["auto_analyze"]
+    analyze_schedule: str = DEFAULTS["analyze_schedule"]
+    night_start: int = DEFAULTS["night_start"]
+    night_end: int = DEFAULTS["night_end"]
     viewer_rating_bar: int = DEFAULTS["viewer_rating_bar"]
     nav_hidden: str = DEFAULTS["nav_hidden"]
     grid_style: str = DEFAULTS["grid_style"]

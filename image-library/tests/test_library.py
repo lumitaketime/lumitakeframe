@@ -481,8 +481,10 @@ class ServerTests(LibraryTestCase):
         self.post("/api/jobs", {"kind": "pull", "model": "bge-m3"})
         self.post("/api/jobs", {"kind": "scan"})
         snap = wait_jobs(self.client)
-        self.assertEqual(snap["last"]["label"], "掃描")
-        self.assertIsNone(snap["last"]["error"])
+        scans = [j for j in snap["recent"] if j["label"] == "掃描"]
+        self.assertTrue(scans and scans[0]["error"] is None, snap["recent"])
+        pulls = [j for j in snap["recent"] if j["kind"] == "pull"]
+        self.assertTrue(pulls and pulls[0]["error"] is None, snap["recent"])
         s = self.post("/api/settings", {"vision_model": "qwen2.5vl:3b", "port": 1}).json()
         self.assertEqual((s["vision_model"], s["port"]), ("qwen2.5vl:3b", 8765))  # port 不能從網頁改
 

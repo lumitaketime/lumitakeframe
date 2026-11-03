@@ -38,7 +38,7 @@ SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces", "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "xmp_sync", "xmp_embed", "stack_enabled", "burst_seconds",
-    "auto_analyze", "viewer_rating_bar", "nav_hidden", "grid_style", "onboarded",
+    "auto_analyze", "analyze_schedule", "night_start", "night_end", "viewer_rating_bar", "nav_hidden", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -1181,7 +1181,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     @app.post("/api/jobs/stop")
     def stop_job(body: dict = Body(default={})):
-        return jobs().stop()
+        job_id = body.get("id")
+        return jobs().stop(int(job_id) if job_id is not None else None)
 
     # ---- 模型與設定 ----
     @app.get("/api/models")

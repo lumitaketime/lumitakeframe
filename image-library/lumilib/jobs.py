@@ -1,7 +1,13 @@
-"""背景工作佇列：掃描、分析、建立向量、下載模型，依序一次執行一個。"""
+"""背景工作：分成三個通道同時進行，彼此不會互相卡住。
+
+- main：掃描、人臉、圖像索引、疊放、找重複（依序執行）
+- ai：AI 分析、語意向量（依序執行；可設定只在接電源或夜間進行）
+- download：下載模型，每個下載各自進行，可以同時下載好幾個
+"""
 
 from __future__ import annotations
 
+import itertools
 import threading
 import traceback
 from collections import deque
@@ -19,10 +25,21 @@ LABELS = {
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放",
 }
+LANES = {"analyze": "ai", "embed": "ai", "pull": "download", "face_model": "download", "clip_model": "download"}
+QUEUED_LANES = ("main", "ai")
+_ids = itertools.count(1)
+
+
+def lane_of(kind: str) -> str:
+    return LANES.get(kind, "main")
 
 
 def _fmt_bytes(n: int) -> str:
     return f"{n / 1e9:.1f} GB" if n >= 1e9 else f"{n / 1e6:.0f} MB"
+
+
+def _public(job: dict) -> dict:
+    return {k: v for k, v in job.items() if k not in ("options", "stop")}
 
 
 class JobRunner:
@@ -31,33 +48,65 @@ class JobRunner:
         self.client_factory = client_factory or (lambda: OllamaClient(cfg.ollama_url, cfg.request_timeout))
         self.lock = threading.Lock()
         self.wake = threading.Condition(self.lock)
-        self.queue: deque[dict] = deque()
-        self.stop_event = threading.Event()
+        self.queues: dict[str, deque] = {lane: deque() for lane in QUEUED_LANES}
+        self.active: dict[int, dict] = {}
         self.closed = False
-        self.current: dict | None = None
         self.last: dict | None = None
-        self.thread = threading.Thread(target=self._worker, daemon=True, name="lumilib-jobs")
-        self.thread.start()
+        self.recent: deque = deque(maxlen=8)
+        self.threads = [threading.Thread(target=self._worker, args=(lane,), daemon=True, name=f"lumilib-{lane}")
+                        for lane in QUEUED_LANES]
+        for t in self.threads:
+            t.start()
 
     # ---- public ----
     def submit(self, kind: str, **options) -> dict:
         if kind not in LABELS:
             raise ValueError(f"未知的工作：{kind}")
-        job = {"kind": kind, "label": LABELS[kind], "options": options}
+        lane = lane_of(kind)
+        job = {"id": next(_ids), "kind": kind, "label": LABELS[kind], "lane": lane, "options": options,
+               "model": options.get("model"), "message": "排隊中…", "done": 0, "total": 0, "error": None,
+               "started_at": None, "stop": threading.Event()}
         with self.wake:
-            # 同樣的工作已在排隊就不重複加入
-            if any(j["kind"] == kind and j["options"] == options for j in self.queue):
+            if self.closed:
                 return self.snapshot_locked()
-            self.queue.append(job)
-            self.wake.notify()
+            same = lambda j: j["kind"] == kind and j["options"] == options  # noqa: E731
+            if lane == "download":
+                # 同一個模型已經在下載就不重複
+                if any(same(j) for j in self.active.values()):
+                    return self.snapshot_locked()
+                job["started_at"] = datetime.now().isoformat(timespec="seconds")
+                job["message"] = "準備下載…"
+                self.active[job["id"]] = job
+                threading.Thread(target=self._execute, args=(job,), daemon=True, name=f"lumilib-dl-{job['id']}").start()
+                return self.snapshot_locked()
+            # 同樣的工作已在排隊（或 AI 分析已在進行且沒有指定範圍）就不重複加入
+            if any(same(j) for j in self.queues[lane]):
+                return self.snapshot_locked()
+            if kind == "analyze" and not options and any(
+                    j["kind"] == "analyze" and not j["options"] for j in self.active.values()):
+                return self.snapshot_locked()
+            self.queues[lane].append(job)
+            self.wake.notify_all()
             return self.snapshot_locked()
 
-    def stop(self) -> dict:
+    def stop(self, job_id: int | None = None) -> dict:
+        """停止指定的工作；沒有指定就全部停止並清空排隊。"""
         with self.lock:
-            self.queue.clear()
-            if self.current:
-                self.stop_event.set()
-                self.current["message"] = "停止中…"
+            if job_id is not None:
+                for q in self.queues.values():
+                    for j in list(q):
+                        if j["id"] == job_id:
+                            q.remove(j)
+                job = self.active.get(job_id)
+                if job:
+                    job["stop"].set()
+                    job["message"] = "停止中…"
+            else:
+                for q in self.queues.values():
+                    q.clear()
+                for job in self.active.values():
+                    job["stop"].set()
+                    job["message"] = "停止中…"
             return self.snapshot_locked()
 
     def snapshot(self) -> dict:
@@ -65,75 +114,102 @@ class JobRunner:
             return self.snapshot_locked()
 
     def snapshot_locked(self) -> dict:
-        cur = self.current
+        active = sorted(self.active.values(), key=lambda j: j["id"])
+        # 頂端顯示：優先顯示下載與掃描這類較快結束的工作
+        order = {"download": 0, "main": 1, "ai": 2}
+        current = min(active, key=lambda j: (order[j["lane"]], j["id"])) if active else None
         return {
-            "running": cur is not None,
-            "current": {k: v for k, v in cur.items() if k != "options"} if cur else None,
-            "queued": [{"kind": j["kind"], "label": j["label"]} for j in self.queue],
+            "running": bool(active),
+            "current": _public(current) if current else None,
+            "active": [_public(j) for j in active],
+            "queued": [{"id": j["id"], "kind": j["kind"], "label": j["label"], "lane": j["lane"]}
+                       for lane in QUEUED_LANES for j in self.queues[lane]],
             "last": self.last,
+            "recent": list(self.recent),
         }
 
     def close(self) -> None:
         with self.wake:
             self.closed = True
-            self.queue.clear()
-            self.stop_event.set()
+            for q in self.queues.values():
+                q.clear()
+            for job in self.active.values():
+                job["stop"].set()
             self.wake.notify_all()
 
     def wait_idle(self, timeout: float = 30) -> bool:
-        """測試用：等到佇列清空。"""
+        """測試用：等到所有通道都空了。"""
         import time
 
         end = time.monotonic() + timeout
         while time.monotonic() < end:
             with self.lock:
-                if not self.queue and self.current is None:
+                if not self.active and not any(self.queues.values()):
                     return True
             time.sleep(0.05)
         return False
 
     # ---- worker ----
-    def _update(self, **kw) -> None:
+    def _update(self, job: dict, **kw) -> None:
         with self.lock:
-            if self.current is not None:
-                self.current.update(kw)
+            job.update(kw)
 
-    def _worker(self) -> None:
+    def _worker(self, lane: str) -> None:
         while True:
             with self.wake:
-                while not self.queue and not self.closed:
+                while not self.queues[lane] and not self.closed:
                     self.wake.wait()
                 if self.closed:
                     return
-                job = self.queue.popleft()
-                self.stop_event.clear()
-                self.current = {
-                    "kind": job["kind"], "label": job["label"], "options": job["options"],
-                    "model": job["options"].get("model"), "message": "準備中…", "done": 0, "total": 0, "error": None,
-                    "started_at": datetime.now().isoformat(timespec="seconds"),
-                }
-            try:
-                message = self._run(job["kind"], job["options"])
-                error = None
-            except (OllamaUnavailable, MediaError) as exc:
-                message, error = str(exc), str(exc)
-            except Exception as exc:  # 背景工作不能讓服務停掉
-                traceback.print_exc()
-                from .net import describe_error
+                job = self.queues[lane].popleft()
+                job["started_at"] = datetime.now().isoformat(timespec="seconds")
+                job["message"] = "準備中…"
+                self.active[job["id"]] = job
+            self._execute(job)
 
-                message, error = f"發生錯誤：{describe_error(exc)}", describe_error(exc)
-            if self.stop_event.is_set() and not error:
-                message = f"已停止。{message}"
-            elif job["kind"] == "scan" and not error:
-                message = self._follow_up(message)
-            elif job["kind"] == "pull" and not error:
-                message = self._after_pull(job["options"].get("model"), message)
-            with self.lock:
-                self.last = {
-                    "kind": job["kind"], "label": job["label"], "message": message, "error": error,
-                    "finished_at": datetime.now().isoformat(timespec="seconds"),
-                }
-                self.current = None
+    def _execute(self, job: dict) -> None:
+        error = None
+        try:
+            message = self._run(job)
+        except (OllamaUnavailable, MediaError) as exc:
+            message, error = str(exc), str(exc)
+        except Exception as exc:  # 背景工作不能讓服務停掉
+            traceback.print_exc()
+            from .net import describe_error
+
+            message, error = f"發生錯誤：{describe_error(exc)}", describe_error(exc)
+        stopped = job["stop"].is_set()
+        if stopped and not error:
+            message = f"已停止。{message}"
+        elif job["kind"] == "scan" and not error:
+            message = self._follow_up(message)
+        elif job["kind"] == "pull" and not error:
+            message = self._after_pull(job["options"].get("model"), message)
+        with self.lock:
+            self.last = {
+                "id": job["id"], "kind": job["kind"], "label": job["label"], "lane": job["lane"],
+                "model": job.get("model"), "message": message, "error": error,
+                "finished_at": datetime.now().isoformat(timespec="seconds"),
+            }
+            self.recent.appendleft(self.last)
+            self.active.pop(job["id"], None)
+
+    def _wait_schedule(self, job: dict) -> bool:
+        """AI 分析每張照片前檢查排程；不在允許的時段就暫停等待。回傳 False 表示要停止。"""
+        from .schedule import analysis_allowed
+
+        stop = job["stop"]
+        paused = False
+        while not stop.is_set():
+            ok, reason = analysis_allowed(self.cfg)
+            if ok:
+                if paused:
+                    self._update(job, message="繼續分析…", paused=False)
+                return True
+            paused = True
+            self._update(job, message=f"暫停：{reason}", paused=True)
+            stop.wait(30)
+        return False
 
     def _follow_up(self, message: str) -> str:
         """掃描完自動接著做：人臉、圖像索引、AI 分析（各自需要的模型都準備好才做）。"""
@@ -152,7 +228,7 @@ class JobRunner:
             if self.cfg.auto_analyze and st["pending"]:
                 status = ai_status(self.client_factory(), self.cfg)
                 if status["ready"]:
-                    self.submit("analyze")
+                    self.submit("analyze")  # 在 AI 通道執行，不會擋住之後的掃描
                 else:
                     message += f"；尚未開始 AI 分析：{status['message']}"
         except Exception as exc:  # noqa: BLE001  後續工作失敗不影響掃描結果
@@ -193,13 +269,16 @@ class JobRunner:
             return True
         return bool(self.cfg.clip_enabled) and model_installed(self.cfg, self.cfg.clip_model)
 
-    def _run(self, kind: str, opts: dict) -> str:
+    def _run(self, job: dict) -> str:
+        kind, opts, stop = job["kind"], job["options"], job["stop"]
+        upd = lambda **kw: self._update(job, **kw)  # noqa: E731
         conn = db.connect(self.cfg.db_path)
-        stop = self.stop_event
         try:
             parts: list[str] = []
+            if kind == "index":
+                opts = {**opts}
             if kind in ("scan", "index"):
-                results = scan_all(conn, self.cfg, opts.get("roots"), progress=lambda m: self._update(message=m), stop=stop)
+                results = scan_all(conn, self.cfg, opts.get("roots"), progress=lambda m: upd(message=m), stop=stop)
                 for r in results:
                     if r.offline:
                         parts.append(f"{r.root}：未連接，已略過")
@@ -211,7 +290,7 @@ class JobRunner:
                 from .faces import cluster_faces, detect_faces
 
                 res = detect_faces(conn, self.cfg, ids=opts.get("ids"), stop=stop,
-                                   progress=lambda i, n, m: self._update(done=i, total=n, message=f"人臉 {i}/{n}　{m}"))
+                                   progress=lambda i, n, m: upd(done=i, total=n, message=f"人臉 {i}/{n}　{m}"))
                 c = cluster_faces(conn, self.cfg, stop=stop)
                 parts.append(f"人臉：處理 {res.scanned} 張、找到 {res.faces} 張臉、新人物 {c.people_new} 位")
             if kind == "cluster":
@@ -223,37 +302,41 @@ class JobRunner:
                 from .faces import download_model
 
                 name = opts["model"]
-                download_model(self.cfg, name, lambda st, d, t: self._update(
+                download_model(self.cfg, name, lambda st, d, t: upd(
                     message=f"{name}：{_fmt_bytes(d)} / {_fmt_bytes(t)}" if t else st, done=d, total=t), stop)
                 parts.append(f"人臉模型 {name} 下載完成")
             if kind in ("clip", "index") and not stop.is_set() and self._clip_ready(kind):
                 from .clip import index_images
 
                 n = index_images(conn, self.cfg, stop=stop,
-                                 progress=lambda i, t, m: self._update(done=i, total=t, message=f"圖像索引 {i}/{t}　{m}"))
+                                 progress=lambda i, t, m: upd(done=i, total=t, message=f"圖像索引 {i}/{t}　{m}"))
                 parts.append(f"圖像搜尋索引 {n} 張")
             if kind == "clip_model":
                 from .clip import download_model as download_clip
 
                 name = opts["model"]
-                download_clip(self.cfg, name, lambda st, d, t: self._update(
+                download_clip(self.cfg, name, lambda st, d, t: upd(
                     message=f"{st}：{_fmt_bytes(d)} / {_fmt_bytes(t)}" if t else st, done=d, total=t), stop)
                 parts.append(f"圖像搜尋模型 {name} 下載完成")
-            if kind in ("analyze", "index") and not stop.is_set() and (kind == "analyze" or not opts.get("skip_ai")):
+            if kind == "index" and not stop.is_set() and not opts.get("skip_ai"):
+                self.submit("analyze")  # AI 分析在自己的通道執行，不擋住掃描與人臉
+                parts.append("已排入 AI 分析")
+            if kind == "analyze" and not stop.is_set():
                 res = analyze_images(
                     conn, self.cfg, self.client_factory(),
                     redo=bool(opts.get("redo")), retry_failed=bool(opts.get("retry_failed")),
                     ids=opts.get("ids"), folder=opts.get("folder"), root_id=opts.get("root_id"),
                     album_id=opts.get("album_id"),
-                    progress=lambda i, n, m: self._update(done=i, total=n, message=f"{i}/{n}　{m}"),
+                    progress=lambda i, n, m: upd(done=i, total=n, message=f"{i}/{n}　{m}"),
                     stop=stop,
+                    wait=lambda: self._wait_schedule(job),
                 )
                 parts.append(f"分析 {res.analyzed} 個、失敗 {res.failed} 個" + (f"、向量 {res.embedded} 個" if res.embedded else ""))
             if kind == "dups":
                 from .organize import find_duplicates
 
                 res = find_duplicates(conn, self.cfg, stop=stop,
-                                      progress=lambda i, n, m: self._update(done=i, total=n, message=f"{m} {i}/{n}"))
+                                      progress=lambda i, n, m: upd(done=i, total=n, message=f"{m} {i}/{n}"))
                 parts.append(f"完全相同 {len(res['exact'])} 組、幾乎一樣 {len(res['similar'])} 組")
             if kind == "stacks":
                 from .organize import rebuild_stacks
@@ -269,7 +352,7 @@ class JobRunner:
                     text = f"{name}：{status}"
                     if total:
                         text += f"（{_fmt_bytes(done)} / {_fmt_bytes(total)}）"
-                    self._update(message=text, done=done, total=total)
+                    upd(message=text, done=done, total=total)
 
                 self.client_factory().pull(name, report, stop)
                 parts.append(f"{name} 下載完成")

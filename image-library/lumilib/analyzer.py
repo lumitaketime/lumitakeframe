@@ -381,6 +381,7 @@ def analyze_images(
     ids: list[int] | None = None,
     folder: str | None = None,
     album_id: int | None = None,
+    wait: Callable[[], bool] | None = None,
 ) -> AnalyzeResult:
     result = AnalyzeResult()
     rows = _pending_images(conn, redo, retry_failed, root_id, ids, folder, album_id)
@@ -390,6 +391,8 @@ def analyze_images(
     streak: list[tuple[int, str]] = []  # 連續發生的伺服器錯誤：同一個問題就停下來，不要把整批都標成失敗
     for index, image in enumerate(rows, 1):
         if stop is not None and stop.is_set():
+            break
+        if wait is not None and not wait():  # 排程：不在允許的時段就等待
             break
         path = db.absolute_path(conn, image)
         if not path.exists():
