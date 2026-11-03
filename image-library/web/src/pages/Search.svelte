@@ -30,19 +30,56 @@
     ["is:pending", "待分析"], ["is:failed", "分析失敗"], ["is:missing", "遺失檔案"],
   ];
 
+  // 先秀結果，再補強：關鍵字（含人名、寵物名）立刻顯示；智慧搜尋（同義詞、畫面比對、語意）在背景跑完再補進來
+  let seq = 0;
+  let enhancing = $state(false);
+  let added = $state(0);
+  let smartWarning = $state("");
+
   async function run(append = false) {
     if (!q) {
       result = null;
       return;
     }
+    if (append) {
+      loading = true;
+      try {
+        const data = await api("/api/search", { params: { q, limit: 300, offset: result.results.length, semantic: semantic ? 1 : 0 } });
+        const known = new Set(result.results.map((r) => r.id));
+        result = { ...result, results: [...result.results, ...data.results.filter((r) => !known.has(r.id))] };
+        more = result.results.length < result.total;
+      } finally {
+        loading = false;
+      }
+      return;
+    }
+    const mine = ++seq;
     loading = true;
+    added = 0;
+    smartWarning = "";
     try {
-      const offset = append ? result.results.length : 0;
-      const data = await api("/api/search", { params: { q, limit: 300, offset, semantic: semantic ? 1 : 0 } });
-      result = append ? { ...data, results: [...result.results, ...data.results] } : data;
-      more = result.results.length < result.total;
+      const quick = await api("/api/search", { params: { q, limit: 300, smart: 0 } });
+      if (mine !== seq) return;
+      result = quick;
+      more = quick.results.length < quick.total;
     } finally {
-      loading = false;
+      if (mine === seq) loading = false;
+    }
+    if (!result?.query?.terms?.length) return; // 只有篩選條件時不需要智慧搜尋
+    enhancing = true;
+    try {
+      const full = await api("/api/search", { params: { q, limit: 300, semantic: semantic ? 1 : 0, smart: 1 } });
+      if (mine !== seq) return;
+      const known = new Set(result.results.map((r) => r.id));
+      const extra = full.results.filter((r) => !known.has(r.id));
+      added = extra.length;
+      smartWarning = full.warning || "";
+      result = { ...full, results: [...result.results, ...extra], total: Math.max(full.total, result.total) };
+      more = result.results.length < result.total;
+    } catch {
+      /* 智慧搜尋失敗時保留關鍵字結果 */
+    } finally {
+      if (mine === seq) enhancing = false;
     }
   }
 
@@ -72,7 +109,7 @@
   <div class="page-head">
     <BackButton to="/" />
     <h1>{q ? `「${q}」` : "搜尋"}</h1>
-    {#if result}<span class="muted small">{result.total.toLocaleString()} 個結果{result.mode === "hybrid" ? "（含語意相近）" : ""}</span>{/if}
+    {#if result}<span class="muted small">{result.total.toLocaleString()} 個結果</span>{/if}
     {#if q}<button class="btn small ghost" onclick={saveSmart}>存成智慧相簿</button>{/if}
     {#if canSemantic}
       <label class="sem"><input type="checkbox" bind:checked={semantic} /> 語意搜尋</label>
@@ -83,7 +120,12 @@
       <button class="chip" class:on={q.split(/\s+/).includes(token)} onclick={() => toggle(token)}>{label}</button>
     {/each}
   </div>
-  {#if result?.warning}<p class="danger-text small">{result.warning}</p>{/if}
+  {#if enhancing}
+    <div class="status-pill" role="status"><span class="ring"></span>正在尋找相近結果…</div>
+  {:else if added}
+    <div class="status-pill done" role="status">已加入 {added.toLocaleString()} 個相近結果</div>
+  {/if}
+  {#if smartWarning && !enhancing}<p class="muted small">{smartWarning}</p>{/if}
   {#if failedView && reasons.length}
     <div class="reasons">
       <b>失敗原因</b>
@@ -138,6 +180,14 @@
   .reasons .why { word-break: break-all; color: var(--muted); }
   .reasons .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .quick { margin-bottom: 14px; }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 12px; height: 48px; padding: 0 24px 0 16px; margin: 0 0 12px;
+    border-radius: var(--corner-full); background: var(--secondary-container); color: var(--on-secondary-container); font-size: 15px;
+    animation: m3-enter var(--duration-medium2) var(--easing-emphasized-decelerate);
+  }
+  .status-pill.done { padding-left: 24px; }
+  .ring { width: 22px; height: 22px; border-radius: 50%; border: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); border-top-color: var(--primary); animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .smart { margin: -6px 0 12px; }
   .sem { display: flex; align-items: center; gap: 6px; font-size: 14px; }
   .help table { border-collapse: collapse; width: 100%; max-width: 760px; font-size: 14px; }

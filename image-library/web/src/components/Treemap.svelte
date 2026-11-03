@@ -87,14 +87,14 @@
   .cell:focus-visible { outline: 2px solid var(--on-surface); outline-offset: -2px; }
   .name, .val {
     max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: fit-content;
-    background: color-mix(in srgb, var(--surface) 82%, transparent); padding: 1px 6px; border-radius: 4px;
+    background: var(--surface); padding: 1px 6px; border-radius: 4px;
   }
   .name { font-size: 13px; font-weight: 500; }
   .val { font-size: 12px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
   .tip {
     position: absolute; z-index: 3; pointer-events: none; transform: translate(12px, 12px); display: flex; flex-direction: column; gap: 2px;
     background: var(--inverse-surface); color: var(--inverse-on-surface); padding: 8px 12px; border-radius: var(--corner-small);
-    font-size: 12px; line-height: 16px; box-shadow: var(--elevation-level2); white-space: nowrap; max-width: 280px;
+    font-size: 12px; line-height: 16px; white-space: nowrap; max-width: 280px;
   }
   .tip.flip { transform: translate(calc(-100% - 12px), 12px); }
   .tip b { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; }

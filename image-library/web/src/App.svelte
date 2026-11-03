@@ -9,6 +9,7 @@
   import Dialogs from "./components/Dialogs.svelte";
   import JobIndicator from "./components/JobIndicator.svelte";
   import Onboarding from "./components/Onboarding.svelte";
+  import SearchBox from "./components/SearchBox.svelte";
   import Timeline from "./pages/Timeline.svelte";
   import Explore from "./pages/Explore.svelte";
   import Search from "./pages/Search.svelte";
@@ -69,14 +70,15 @@
     return g.id === "tools" ? [...items, ...pinned.map((t) => ({ ...t, pinned: true }))] : items;
   }
 
-  // 左側選單隨視窗寬度變化（像 Google 相簿）：
-  // 寬（≥1200）完整選單，可手動收合成圖示列；中等寬度自動變成圖示列；窄（≤760）整個收起。
-  // 非完整選單時，按左上角「≡」從左邊滑出完整的抽屜。
+  // 三種版面（像 Google 相簿）：
+  // 電腦（≥1200）：完整選單，≡ 可收成圖示列；
+  // 平板（841–1199）：只有圖示的窄欄，≡ 從左邊滑出完整選單；
+  // 手機（≤840）：選單收起，下方保留小圖示分頁，≡ 滑出和平板相同的選單。
   let rail = $state(readRail());
   let drawer = $state(false);
   let winW = $state(typeof window === "undefined" ? 1400 : window.innerWidth);
   const wide = $derived(winW >= 1200);
-  const narrow = $derived(winW <= 760);
+  const narrow = $derived(winW <= 840);
   const showRail = $derived(!narrow && (!wide || rail));
   let searchOpen = $state(false);
   function readRail() {
@@ -127,7 +129,6 @@
     }
   }
 
-  let q = $state(route.query.q || "");
   let lastFinished = null;
   let wasRunning = false;
   let lastTotal = null;
@@ -145,10 +146,6 @@
     if (href === "/explore") return EXPLORE_PAGES.some((p) => route.path === p || route.path.startsWith(p + "/"));
     return route.path === href || route.path.startsWith(href + "/");
   }
-
-  $effect(() => {
-    q = page === "search" ? route.query.q || "" : "";
-  });
 
   // 換頁時清除選取與情境
   $effect(() => {
@@ -223,13 +220,6 @@
   $effect(() => {
     if (app.refreshKey) api("/api/server").then((s) => (app.server = s)).catch(() => {});
   });
-
-  function submit(e) {
-    e.preventDefault();
-    const text = q.trim();
-    navigate(text ? `/search?q=${encodeURIComponent(text)}` : "/search");
-    document.activeElement?.blur?.();
-  }
 </script>
 
 <svelte:window bind:innerWidth={winW} />
@@ -248,14 +238,7 @@
         <span>Lumitake <b>Library</b></span>
       </a>
       {#if narrow && !searchOpen}<span class="spacer"></span>{/if}
-      <form class="search" class:collapsed={narrow && !searchOpen} class:expanded={narrow && searchOpen} onsubmit={submit} role="search">
-        {#if narrow && searchOpen}<button type="button" class="icon-btn" onclick={() => (searchOpen = false)} aria-label="關閉搜尋"><Icon path={mdiArrowLeft} /></button>{/if}
-        {#if narrow && !searchOpen}
-          <button type="button" class="icon-btn" onclick={async () => { searchOpen = true; await tick(); document.querySelector(".search input")?.focus(); }} aria-label="搜尋"><Icon path={mdiMagnify} /></button>
-        {:else if !narrow}<Icon path={mdiMagnify} />{/if}
-        <input bind:value={q} type="search" placeholder="搜尋照片、地點、物品、文字…" aria-label="搜尋" enterkeyhint="search" />
-        {#if q}<button type="button" class="icon-btn clear" onclick={() => (q = "")} aria-label="清除"><Icon path={mdiClose} size={20} /></button>{/if}
-      </form>
+      <SearchBox narrow={winW <= 600} bind:expanded={searchOpen} />
       <div class="right">
         <JobIndicator />
         <a class="icon-btn" class:active={page === "settings"} href="/settings" use:link aria-label="設定"><Icon path={mdiCogOutline} /></a>
@@ -305,12 +288,8 @@
       {@render navContent(showRail)}
     </nav>
     {#if drawer}
-      <button class="scrim" onclick={() => (drawer = false)} aria-label="關閉選單" transition:fade={{ duration: 200 }}></button>
-      <nav class="sidebar drawer" aria-label="主選單" transition:fly={{ x: -320, duration: 280, opacity: 1, easing: cubicOut }}>
-        <div class="drawer-head">
-          <button class="icon-btn menu-btn" onclick={() => (drawer = false)} aria-label="關閉選單"><Icon path={mdiMenu} /></button>
-          <img src="/icon.svg" alt="" width="28" height="28" /><span>Lumitake <b>Library</b></span>
-        </div>
+      <button class="scrim" onclick={() => (drawer = false)} aria-label="關閉選單"></button>
+      <nav class="sidebar drawer" aria-label="主選單" transition:fly={{ x: -300, duration: 240, opacity: 1, easing: cubicOut }}>
         {@render navContent(false)}
       </nav>
     {/if}
@@ -393,9 +372,8 @@
     display: grid; height: 100vh; height: 100dvh; background: var(--surface-container);
     grid-template-columns: var(--nav-w) minmax(0, 1fr); grid-template-rows: var(--topbar) minmax(0, 1fr);
     grid-template-areas: "top top" "side main";
-    transition: grid-template-columns var(--spring-standard-default-spatial-duration) var(--spring-standard-default-spatial);
   }
-  .shell:has(.sidebar.rail) { --nav-w: 96px; }
+  .shell:has(.sidebar.rail) { --nav-w: 80px; }
   .topbar {
     grid-area: top; display: flex; align-items: center; gap: 8px; padding: 0 16px 0 12px;
     padding-top: env(safe-area-inset-top); z-index: 20;
@@ -404,19 +382,6 @@
   .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--on-surface); min-width: calc(var(--sidebar) - 64px); padding-right: 16px; flex-shrink: 0; }
   .brand span { font-size: 22px; line-height: 28px; white-space: nowrap; }
   .brand b { font-weight: 500; color: var(--primary); }
-  .search {
-    flex: 1; max-width: 720px; display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 6px 0 16px;
-    background: var(--surface-container-high); border-radius: var(--corner-full); color: var(--on-surface-variant);
-    transition: background-color var(--spring-effects-default-duration) var(--spring-effects-default),
-      box-shadow var(--spring-effects-default-duration) var(--spring-effects-default);
-  }
-  .search:hover { background: var(--surface-container-highest); }
-  .search:focus-within { background: var(--surface); box-shadow: var(--elevation-level2); }
-  .search.collapsed:focus-within { box-shadow: none; background: none; }
-  .search input { flex: 1; border: 0; outline: none; background: none; color: var(--on-surface); min-width: 0; font-size: 16px; line-height: 24px; letter-spacing: 0.5px; }
-  .search input::placeholder { color: var(--on-surface-variant); }
-  .search input::-webkit-search-cancel-button { display: none; }
-  .clear { width: 36px; height: 36px; }
   .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
   .right .icon-btn { color: var(--on-surface-variant); }
 
@@ -459,7 +424,7 @@
   .drag-ghost {
     position: fixed; z-index: 400; pointer-events: none; transform: translate(-50%, -130%); display: flex; align-items: center; gap: 8px;
     padding: 10px 16px; border-radius: var(--corner-full); background: var(--inverse-surface); color: var(--inverse-on-surface);
-    font-size: 14px; font-weight: 500; box-shadow: var(--elevation-level3); white-space: nowrap;
+    font-size: 14px; font-weight: 500; white-space: nowrap;
     animation: m3-pop var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
   }
   .drag-ghost.over { background: var(--primary); color: var(--on-primary); }
@@ -467,22 +432,21 @@
     position: fixed; z-index: 390; left: 12px; top: 50%; transform: translateY(-50%); width: 132px; padding: 24px 12px; text-align: center;
     display: flex; flex-direction: column; align-items: center; gap: 8px; border-radius: var(--corner-extra-large);
     border: 2px dashed var(--outline); background: var(--surface-container-high); color: var(--on-surface-variant); font-size: 13px;
-    box-shadow: var(--elevation-level2); animation: m3-enter var(--duration-medium2) var(--easing-emphasized-decelerate);
+    animation: m3-enter var(--duration-medium2) var(--easing-emphasized-decelerate);
   }
   .drop-float.over { border-color: var(--primary); color: var(--primary); background: var(--primary-container); }
 
-  /* 收合：只有圖示的導覽列 */
-  .sidebar.rail { padding: 0 8px 24px; }
-  .sidebar.rail .group, .sidebar.rail .roots-group, .sidebar.rail .unpin, .sidebar.rail .drop-hint { display: none; }
-  .sidebar.rail .nav-group + .nav-group { border-top: 1px solid var(--outline-variant); margin-top: 6px; padding-top: 6px; }
+  /* 平板：只有圖示的窄欄（像 Google 相簿）——圓形指示、分組之間一條短線 */
+  .sidebar.rail { padding: 0 12px 24px; align-items: center; }
+  .sidebar.rail .group, .sidebar.rail .roots-group, .sidebar.rail .unpin, .sidebar.rail .drop-hint, .sidebar.rail .lbl { display: none; }
+  .sidebar.rail .nav-group { align-items: center; gap: 4px; border-radius: 0; width: 100%; }
+  .sidebar.rail .nav-group + .nav-group { margin-top: 12px; padding-top: 12px; position: relative; }
+  .sidebar.rail .nav-group + .nav-group::before { content: ""; position: absolute; top: 0; left: 50%; width: 32px; height: 1px; margin-left: -16px; background: var(--outline-variant); }
   .sidebar.rail .nav-group:first-child { margin-top: 4px; }
-  .sidebar.rail a { flex-direction: column; justify-content: center; gap: 4px; height: 64px; padding: 0; border-radius: 0; font-size: 12px; line-height: 16px; }
-  .sidebar.rail a .lbl { flex: none; max-width: 80px; text-align: center; }
-  .sidebar.rail .ind { width: 56px; height: 32px; align-items: center; justify-content: center; border-radius: var(--corner-full); position: relative; isolation: isolate; }
-  .sidebar.rail a.active::after { display: none; }
-  .sidebar.rail a.active .ind { background: var(--secondary-container); animation: nav-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial); }
-  .sidebar.rail a:hover .ind { background: color-mix(in srgb, var(--on-surface) 8%, transparent); }
-  .sidebar.rail a.active:hover .ind { background: var(--secondary-container); }
+  .sidebar.rail a { width: 56px; height: 56px; padding: 0; justify-content: center; border-radius: 50%; }
+  .sidebar.rail a.active::after { animation: none; }
+  .sidebar.rail a:hover:not(.active)::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: color-mix(in srgb, var(--on-surface) 8%, transparent); z-index: -1; }
+  .sidebar.rail .nav-group.drop { outline: 2px dashed var(--outline); outline-offset: 2px; border-radius: var(--corner-extra-large); }
 
   main {
     grid-area: main; position: relative; background: var(--surface); border-radius: var(--corner-extra-large) var(--corner-extra-large) 0 0;
@@ -492,35 +456,19 @@
   .bottom { display: none; }
   .spacer { flex: 1; }
 
-  /* 從左邊滑出的完整抽屜（中等與窄視窗） */
-  .scrim { position: fixed; inset: 0; z-index: 250; border: 0; padding: 0; background: rgb(0 0 0 / .32); cursor: default; }
+  /* ≡ 滑出的完整選單（平板、手機相同）：在頂欄下方，和外框同色，不加陰影也不變暗 */
+  .scrim { position: fixed; inset: var(--topbar) 0 0 0; z-index: 250; border: 0; padding: 0; background: transparent; cursor: default; }
   .sidebar.drawer {
-    position: fixed; z-index: 260; left: 0; top: 0; bottom: 0; width: min(320px, 86vw); background: var(--surface-container-low);
-    border-radius: 0 var(--corner-large) var(--corner-large) 0; padding: calc(8px + env(safe-area-inset-top)) 12px 24px;
-    box-shadow: var(--elevation-level1);
+    position: fixed; z-index: 260; left: 0; top: calc(var(--topbar) + env(safe-area-inset-top)); bottom: 0; width: 280px; max-width: 86vw;
+    background: var(--surface-container); padding: 0 12px 24px; will-change: transform;
   }
-  .drawer-head { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 4px; margin-bottom: 4px; flex-shrink: 0; }
-  .drawer-head span { font-size: 20px; white-space: nowrap; color: var(--on-surface); }
-  .drawer-head b { font-weight: 500; color: var(--primary); }
-  .topbar { position: relative; }
 
-  @media (max-width: 1199px) {
-    .brand span { font-size: 20px; }
-  }
-  @media (max-width: 760px) {
+  @media (max-width: 840px) {
     .shell { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "main"; }
     .sidebar:not(.drawer) { display: none; }
-    .topbar { gap: 4px; padding: 0 4px 0 4px; padding-top: env(safe-area-inset-top); }
     .brand { min-width: 0; padding-right: 0; }
-    .brand span { font-size: 18px; }
-    .search.collapsed { flex: 0 0 auto; background: none; padding: 0; height: 48px; width: auto; }
-    .search.collapsed input, .search.collapsed .clear { display: none; }
-    .search.expanded {
-      position: absolute; z-index: 30; left: 4px; right: 4px; top: calc(8px + env(safe-area-inset-top)); height: 48px; max-width: none;
-      padding-left: 0; background: var(--surface-container-highest); animation: search-open .22s cubic-bezier(.2,0,0,1);
-    }
-    @keyframes search-open { from { clip-path: inset(0 0 0 85% round 24px); } to { clip-path: inset(0 0 0 0 round 24px); } }
-    main { margin: 0; border-radius: var(--corner-large) var(--corner-large) 0 0; }
+    main { margin: 0 8px; }
+    .route { padding-bottom: 80px; }
     .bottom {
       display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface-container);
       padding-bottom: env(safe-area-inset-bottom); height: calc(80px + env(safe-area-inset-bottom));
@@ -531,8 +479,12 @@
     }
     .bottom .ind { position: relative; display: flex; align-items: center; justify-content: center; width: 64px; height: 32px; border-radius: var(--corner-full); }
     .bottom a.active { color: var(--on-surface); }
-    .bottom a.active .ind { color: var(--on-secondary-container); background: var(--secondary-container);
-      animation: nav-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial); }
+    .bottom a.active .ind { color: var(--on-secondary-container); background: var(--secondary-container); }
+  }
+  @media (max-width: 600px) {
+    .topbar { gap: 4px; padding: 0 4px; padding-top: env(safe-area-inset-top); }
+    .brand span { font-size: 18px; }
+    main { margin: 0; border-radius: var(--corner-large) var(--corner-large) 0 0; }
   }
   @media (max-width: 420px) { .brand span { display: none; } }
 </style>

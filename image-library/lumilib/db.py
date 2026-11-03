@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 9  # v9：寵物辨識
+SCHEMA_VERSION = 10  # v10：重建有人名、寵物名的照片的搜尋索引
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -226,6 +226,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         fixed = split_keywords(json_list(row["keywords"]))
         conn.execute("UPDATE images SET keywords = ? WHERE id = ?", (json.dumps(fixed, ensure_ascii=False), row["id"]))
         refresh_search_text(conn, row["id"])
+    # v10：有命名人物或寵物的照片重建搜尋索引，舊版本留下的索引可能沒有名字
+    for row in conn.execute(
+        "SELECT DISTINCT f.image_id FROM faces f JOIN persons p ON p.id = f.person_id WHERE p.name IS NOT NULL AND p.name != ''"
+        " UNION SELECT DISTINCT d.image_id FROM pet_detections d JOIN pets p ON p.id = d.pet_id WHERE p.name IS NOT NULL AND p.name != ''"
+    ).fetchall():
+        refresh_search_text(conn, row[0])
     if "folder" not in existing:  # 從 v1 升級：補齊資料夾與排序時間
         for row in conn.execute("SELECT id, rel_path, taken_at, mtime FROM images").fetchall():
             conn.execute(

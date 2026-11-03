@@ -107,6 +107,23 @@ class PetTests(unittest.TestCase):
         self.assertEqual(list_pets(self.conn), [])
         self.assertEqual(search(self.conn, "小橘")["total"], 0)
 
+    def test_suggest_and_name_search(self):
+        """輸入第一個字就建議寵物名；搜尋索引過時也找得到名字。"""
+        from lumilib.search import suggest
+
+        self.run_all()
+        pets = {p["kind"]: p for p in list_pets(self.conn)}
+        rename_pet(self.conn, pets["cat"]["id"], "小橘")
+        rename_pet(self.conn, pets["dog"]["id"], "小黑")
+        names = [p["name"] for p in suggest(self.conn, "小")["pets"]]
+        self.assertEqual(sorted(names), ["小橘", "小黑"])
+        self.assertEqual([p["name"] for p in suggest(self.conn, "橘")["pets"]], ["小橘"])
+        # 模擬舊版本留下、沒有名字的搜尋索引
+        self.conn.execute("UPDATE images SET search_text = ''")
+        self.assertEqual(search(self.conn, "小橘")["total"], 3)
+        self.assertEqual(search(self.conn, "小黑")["total"], 3)
+        self.assertEqual(search(self.conn, "小橘 小黑")["total"], 0)
+
     def test_api(self):
         from fastapi.testclient import TestClient
 

@@ -323,6 +323,20 @@ def search(
     scored = {r["id"]: [keyword_score(r, query.terms, groups), r, "keyword"] for r in rows}
     modes = ["keyword"]
 
+    # 人名、寵物名直接從人物與寵物資料比對（不依賴搜尋索引），並排在前面
+    named = name_matches(conn, query.terms)
+    if named:
+        for image_id in named & set(scored):
+            scored[image_id][0] += 8
+        missing = named - set(scored)
+        if missing:
+            f_where, f_params = _filter_sql(query, include_terms=False)
+            ids = list(missing)[:5000]
+            for r in conn.execute(
+                f"{base} WHERE {f_where} AND i.id IN ({','.join('?' * len(ids))})", f_params + ids
+            ):
+                scored[r["id"]] = [8 + 0.5 * len(query.terms), r, "keyword"]
+
     if use_clip or use_semantic:
         f_where, f_params = _filter_sql(query, include_terms=False)
         allowed = {r[0] for r in conn.execute(f"SELECT i.id FROM images i JOIN roots r ON r.id = i.root_id WHERE {f_where}", f_params)}
@@ -375,6 +389,95 @@ def search(
         "query": {"terms": query.terms, "excludes": query.excludes, "filters": query.filters},
         "results": [_to_result(conn, r, sc, m) for sc, r, m in page],
     }
+
+
+def name_matches(conn: sqlite3.Connection, terms: list[str]) -> set[int]:
+    """每個詞都對得上某個人名或寵物名時，回傳同時符合的照片；否則空集合。"""
+    if not terms:
+        return set()
+    result: set[int] | None = None
+    for term in terms:
+        like = _like(term.lower())
+        ids = {r[0] for r in conn.execute(
+            "SELECT DISTINCT f.image_id FROM faces f JOIN persons p ON p.id = f.person_id "
+            "WHERE p.name IS NOT NULL AND lower(p.name) LIKE ? ESCAPE '\\'", (like,))}
+        try:
+            ids |= {r[0] for r in conn.execute(
+                "SELECT DISTINCT d.image_id FROM pet_detections d JOIN pets p ON p.id = d.pet_id "
+                "WHERE p.name IS NOT NULL AND lower(p.name) LIKE ? ESCAPE '\\'", (like,))}
+        except sqlite3.OperationalError:
+            pass
+        if not ids:
+            return set()
+        result = ids if result is None else result & ids
+    return result or set()
+
+
+def suggest(conn: sqlite3.Connection, q: str, limit: int = 6) -> dict:
+    """搜尋框的即時建議：輸入第一個字就列出人物、寵物、相簿、地點、關鍵字、資料夾。開頭相符的排前面。"""
+    text = q.strip().lower()
+    if not text:
+        people = conn.execute(
+            """SELECT p.id, p.name, p.cover_face_id AS cover, COUNT(DISTINCT f.image_id) AS n FROM persons p
+               JOIN faces f ON f.person_id = p.id WHERE p.hidden = 0 AND p.name IS NOT NULL AND p.name != ''
+               GROUP BY p.id ORDER BY n DESC LIMIT 8"""
+        ).fetchall()
+        return {"people": [dict(r) for r in people], "pets": [], "albums": [], "places": [], "tags": [], "folders": []}
+    like, prefix = _like(text), text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    order = "ORDER BY (lower(name) LIKE ? ESCAPE '\\') DESC, n DESC LIMIT ?"
+    people = conn.execute(
+        f"""SELECT p.id, p.name, p.cover_face_id AS cover, COUNT(DISTINCT f.image_id) AS n FROM persons p
+            JOIN faces f ON f.person_id = p.id WHERE p.hidden = 0 AND p.name IS NOT NULL AND lower(p.name) LIKE ? ESCAPE '\\'
+            GROUP BY p.id {order}""", (like, prefix, limit)
+    ).fetchall()
+    try:
+        pets = conn.execute(
+            f"""SELECT p.id, p.name, p.cover_id AS cover, p.kind, COUNT(DISTINCT d.image_id) AS n FROM pets p
+                JOIN pet_detections d ON d.pet_id = p.id WHERE p.hidden = 0 AND p.name IS NOT NULL AND lower(p.name) LIKE ? ESCAPE '\\'
+                GROUP BY p.id {order}""", (like, prefix, limit)
+        ).fetchall()
+    except sqlite3.OperationalError:
+        pets = []
+    albums = conn.execute(
+        f"""SELECT a.id, a.name, COALESCE(a.cover_id, (SELECT ai.image_id FROM album_items ai WHERE ai.album_id = a.id LIMIT 1)) AS cover,
+                   (SELECT COUNT(*) FROM album_items ai WHERE ai.album_id = a.id) AS n
+            FROM albums a WHERE lower(a.name) LIKE ? ESCAPE '\\' {order}""", (like, prefix, limit)
+    ).fetchall()
+    places = conn.execute(
+        f"""SELECT place AS name, COUNT(*) AS n, MAX(id) AS cover FROM images
+            WHERE status = 'ok' AND place IS NOT NULL AND lower(place) LIKE ? ESCAPE '\\'
+            GROUP BY place {order.replace('lower(name)', 'lower(place)')}""", (like, prefix, limit)
+    ).fetchall()
+    folders = conn.execute(
+        f"""SELECT i.root_id, i.folder AS path, COUNT(*) AS n FROM images i
+            WHERE i.status = 'ok' AND i.folder != '' AND lower(i.folder) LIKE ? ESCAPE '\\'
+            GROUP BY i.root_id, i.folder ORDER BY (lower(i.folder) LIKE ? ESCAPE '\\') DESC, n DESC LIMIT ?""",
+        (like, prefix, 4),
+    ).fetchall()
+    tags = [{"name": t, "n": n} for t, n in _tag_index(conn) if text in t.lower()]
+    tags.sort(key=lambda t: (not t["name"].lower().startswith(text), -t["n"]))
+    return {
+        "people": [dict(r) for r in people],
+        "pets": [dict(r) for r in pets],
+        "albums": [dict(r) for r in albums],
+        "places": [dict(r) for r in places],
+        "tags": tags[:limit],
+        "folders": [{**dict(r), "name": r["path"].rsplit("/", 1)[-1]} for r in folders],
+    }
+
+
+_TAG_CACHE: dict = {"at": 0.0, "count": -1, "items": []}
+
+
+def _tag_index(conn: sqlite3.Connection) -> list[tuple[str, int]]:
+    """所有關鍵字與次數；照片數沒變時沿用（避免每打一個字就掃整個圖庫）。"""
+    import time
+
+    count = conn.execute("SELECT COUNT(*) || ':' || COALESCE(MAX(analyzed_at), '') FROM images").fetchone()[0]
+    if _TAG_CACHE["count"] == count and time.time() - _TAG_CACHE["at"] < 120:
+        return _TAG_CACHE["items"]
+    _TAG_CACHE.update(at=time.time(), count=count, items=top_tags(conn, limit=5000))
+    return _TAG_CACHE["items"]
 
 
 def _ts(value: str | None) -> float:

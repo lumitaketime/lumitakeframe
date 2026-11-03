@@ -934,6 +934,16 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    @app.get("/api/search/suggest")
+    def search_suggest(q: str = ""):
+        from .search import suggest
+
+        c = conn()
+        try:
+            return suggest(c, q[:60])
+        finally:
+            c.close()
+
     @app.get("/api/search")
     def do_search(q: str = "", limit: int = 200, offset: int = 0, semantic: int = 0, smart: int = 1):
         from .analyzer import rewrite_query

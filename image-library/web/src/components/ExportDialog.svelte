@@ -255,7 +255,7 @@
   }
   .purpose b { font-size: 14px; font-weight: 500; }
   .purpose span { font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
-  .purpose.on { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, transparent); box-shadow: inset 0 0 0 1px var(--primary); }
+  .purpose.on { border: 2px solid var(--primary); padding: 11px 13px; background: color-mix(in srgb, var(--primary) 8%, transparent); }
   .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .name-pick { width: auto; min-width: 160px; }
   .grow-in { flex: 1; min-width: 200px; }

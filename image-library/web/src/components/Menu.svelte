@@ -57,7 +57,7 @@
   .badge { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); z-index: 3; }
   .menu {
     position: absolute; right: 0; top: calc(100% + 4px); z-index: 120; min-width: 220px; max-width: 320px; padding: 8px 0;
-    background: var(--surface-container); border-radius: var(--corner-extra-small); box-shadow: var(--elevation-level2);
+    background: var(--surface-container-high); border-radius: var(--corner-extra-small); border: 1px solid var(--outline-variant);
     transform-origin: top right; animation: menu-in var(--spring-standard-fast-spatial-duration) var(--spring-standard-fast-spatial);
   }
   @keyframes menu-in { from { opacity: 0; transform: scale(.85, .6); } }
