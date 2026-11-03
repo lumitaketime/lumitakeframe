@@ -30,6 +30,8 @@
   let password = $state("");
   let theme = $state(readTheme());
   let restarting = $state(false);
+  let aiTest = $state(null);
+  let aiTesting = $state(false);
 
   const s = $derived(app.server);
   const jobs = $derived(s?.jobs);
@@ -222,6 +224,18 @@
     toast("已儲存");
   }
 
+  async function testAnalyze() {
+    aiTesting = true;
+    aiTest = null;
+    try {
+      aiTest = await api("/api/ai/test", { body: {} });
+    } catch (e) {
+      aiTest = { ok: false, error: e.message };
+    } finally {
+      aiTesting = false;
+    }
+  }
+
   // ---- 手機連線 ----
   async function savePassword() {
     try {
@@ -321,13 +335,42 @@
     {:else if jobs?.last}
       <p class="small" class:danger-text={jobs.last.error}>上次「{jobs.last.label}」：{jobs.last.message}</p>
     {/if}
+    {#if s?.ai}
+      {#if s.ai.ready}
+        <p class="small ok-text"><Icon path={mdiCheck} size={16} />AI 已就緒：{s.ai.model}{settings?.auto_analyze ? "，掃描後會自動分析新照片" : ""}</p>
+      {:else}
+        <div class="warn">
+          <Icon path={mdiAlertCircleOutline} />
+          <div><b>AI 分析還不能開始</b><p class="small">{s.ai.message}</p></div>
+        </div>
+      {/if}
+    {/if}
     <div class="row wrap">
-      <button class="btn" onclick={() => job("index")} disabled={!!jobs?.current}>掃描並分析全部</button>
+      <button class="btn" onclick={() => job("analyze")} disabled={!s?.ai?.ready}>開始 AI 分析{s?.stats.pending ? `（${count(s.stats.pending)} 個）` : ""}</button>
+      <button class="btn ghost" onclick={testAnalyze} disabled={aiTesting || !s?.ai?.ollama}>{aiTesting ? "測試中…（第一次載入模型可能要一分鐘）" : "用一張照片測試"}</button>
+    </div>
+    {#if aiTest}
+      <div class="test-result" class:bad={!aiTest.ok}>
+        {#if aiTest.ok}
+          <b>✓ 成功</b>：{aiTest.name}，模型 {aiTest.model} 花了 {aiTest.seconds} 秒
+          <p class="small">{aiTest.result.description}</p>
+          <p class="tiny muted">{aiTest.result.tags.join("、")}</p>
+        {:else}
+          <b>✗ 失敗</b>{#if aiTest.name}：{aiTest.name}（{aiTest.seconds} 秒）{/if}
+          <p class="small mono">{aiTest.error}</p>
+          <p class="tiny muted">把這段文字截圖給開發者，就能知道原因。</p>
+        {/if}
+      </div>
+    {/if}
+    {#if settings}
+      <label class="toggle"><input type="checkbox" checked={!!settings.auto_analyze} onchange={(e) => saveSetting("auto_analyze", e.currentTarget.checked ? 1 : 0)} />掃描到新照片後自動 AI 分析</label>
+    {/if}
+    <div class="row wrap">
+      <button class="btn ghost" onclick={() => job("index")} disabled={!!jobs?.current}>掃描並分析全部</button>
       <button class="btn ghost" onclick={() => job("scan")}>只掃描</button>
-      <button class="btn ghost" onclick={() => job("analyze")}>只分析新項目</button>
       {#if s?.stats.failed}<button class="btn ghost" onclick={() => job("analyze", { retry_failed: true })}>重試失敗的 {s.stats.failed} 個</button>{/if}
     </div>
-    <p class="muted tiny">AI 分析可隨時停止，下次會從未完成的項目繼續。十萬張建議先用 3B 小模型快速掃一輪；也可以在資料夾或相簿頁只分析特定作品。</p>
+    <p class="muted tiny">AI 分析可隨時停止，下次會從未完成的項目繼續。照片很多時，可以先用「速度優先」的模型掃一輪；也可以在資料夾或相簿頁只分析特定作品。</p>
   </section>
 
   <!-- 模型 -->
@@ -348,14 +391,19 @@
     {:else}
       <p class="muted small">使用中的視覺模型：<b class="primary">{models.active.vision}</b>。模型在這台 Mac 上執行，照片不會上傳。</p>
     {/if}
+    {#if models?.machine?.ram_gb}
+      <p class="small machine">這台電腦：<b>{models.machine.chip}</b> · <b>{models.machine.ram_gb} GB</b> 記憶體。
+        建議：品質優先 <b class="primary">{models.picks.best}</b>、速度優先 <b class="primary">{models.picks.fast}</b>。
+        灰色的模型對這台電腦太大。</p>
+    {/if}
     {#if models}
       <h3>視覺模型（描述照片、產生關鍵字、辨識文字）</h3>
       <div class="models">
         {#each vision as m (m.name)}
           {@const active = sameModel(models.active.vision, m.name)}
-          <div class="model" class:active>
+          <div class="model" class:active class:too-big={m.fit === "too_big" && !m.installed}>
             <div class="mhead"><b>{m.name}</b>{#if m.badge}<span class="badge">{m.badge}</span>{/if}</div>
-            <div class="tiny muted">約 {m.size_gb} GB · {m.speed}</div>
+            <div class="tiny muted">{m.family} · 約 {m.size_gb} GB · {m.speed_text}{m.fit === "tight" ? " · 記憶體吃緊" : m.fit === "too_big" ? ` · 建議 ${m.min_ram}GB 以上記憶體` : ""}</div>
             <p class="small">{m.note}</p>
             <div class="row">
               {#if active}
@@ -460,7 +508,7 @@
           {#each models.installed as m (m.name)}<option value={m.name}>{m.name}{m.parameter_size ? ` · ${m.parameter_size}` : ""} · {bytes(m.size)}</option>{/each}
         </select>
       </div>
-      <p class="muted tiny">清單是 Ollama 已下載的所有模型；要用沒下載的模型，在上方「AI 模型」區最下面輸入名稱並下載。請選支援圖片輸入的模型（例如 qwen2.5vl、gemma3、llava、minicpm-v）。</p>
+      <p class="muted tiny">清單是 Ollama 已下載的所有模型；要用沒下載的模型，在上方「AI 模型」區最下面輸入名稱並下載。請選支援圖片輸入的模型（例如 gemma4、qwen3-vl、qwen2.5vl、minicpm-v）。</p>
 
       <h3>搜尋翻譯用的文字模型</h3>
       <div class="row">
@@ -530,6 +578,11 @@
       <p class="muted small">在 Lightroom Classic：「目錄設定 → 中繼資料」勾選「自動將變更寫入 XMP」，兩邊的修改才會互相看到；
         Lightroom 看到本程式的修改需要對照片按「中繼資料 → 從檔案讀取中繼資料」。
         檢視照片時可用與 Lightroom 相同的快捷鍵：0–5 星等、6–9 顏色、X 拒絕、U 取消拒絕。</p>
+      <label class="toggle">
+        <input type="checkbox" checked={!!settings.viewer_rating_bar}
+          onchange={async (e) => { settings = await api("/api/settings", { body: { viewer_rating_bar: e.currentTarget.checked ? 1 : 0 } }); refresh(); }} />
+        檢視照片時，在下方顯示星等與顏色標籤列（關閉後快捷鍵仍可使用）
+      </label>
       <label class="toggle">
         <input type="checkbox" checked={!!settings.stack_enabled}
           onchange={async (e) => { settings = await api("/api/settings", { body: { stack_enabled: e.currentTarget.checked ? 1 : 0 } }); job("stacks"); }} />
@@ -747,6 +800,13 @@
   .models { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
   .model { background: var(--bg); border-radius: 14px; padding: 12px; border: 2px solid transparent; display: flex; flex-direction: column; }
   .model.active { border-color: var(--primary); }
+  .model.too-big { opacity: .55; }
+  .machine { background: var(--bg); border-radius: 12px; padding: 10px 12px; }
+  .ok-text { color: var(--primary); display: flex; align-items: center; gap: 6px; }
+  .test-result { background: var(--bg); border-radius: 14px; padding: 12px; margin: 10px 0; border-left: 4px solid var(--primary); }
+  .test-result.bad { border-left-color: var(--danger); }
+  .test-result p { margin: 6px 0 0; }
+  .mono { font-family: ui-monospace, Menlo, monospace; word-break: break-all; white-space: pre-wrap; }
   .model p { margin: 6px 0 10px; flex: 1; }
   .mhead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .badge { background: var(--primary-soft); color: var(--primary); font-size: 11px; padding: 1px 8px; border-radius: 999px; font-weight: 600; }

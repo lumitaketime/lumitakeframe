@@ -322,7 +322,7 @@
           {/key}
         {/if}
       {/if}
-      {#if detail && !isVideo}
+      {#if detail && !isVideo && app.server?.ui?.viewer_rating_bar !== 0}
         <div class="rate-bar" class:hidden={!chrome}>
           <button class="reject" class:on={detail.rating === -1} title="拒絕（X）" onclick={() => setXmp({ rating: detail.rating === -1 ? 0 : -1 })}>
             <Icon path={mdiFlagRemove} size={20} />
