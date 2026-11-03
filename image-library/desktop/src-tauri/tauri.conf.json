@@ -14,7 +14,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app"
+    ],
     "category": "Photography",
     "shortDescription": "離線 AI 照片與影片圖庫",
     "copyright": "Lumitake",
@@ -25,9 +27,6 @@
       "icons/icon.icns",
       "icons/icon.png"
     ],
-    "resources": {
-      "../server/dist/lumilib-server/**/*": "server/"
-    },
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": "-"

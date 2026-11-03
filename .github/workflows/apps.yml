@@ -83,26 +83,46 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: 建置 Mac App 與 DMG
+      - name: 建置 Mac App
         working-directory: image-library/desktop
         run: |
           npm install
-          npx tauri build --bundles app,dmg
-          ls -la src-tauri/target/release/bundle/dmg/
+          npx tauri build --bundles app
 
-      - name: 確認 App 內容
-        working-directory: image-library/desktop/src-tauri/target/release/bundle/macos
+      - name: 放入伺服器、重新簽章、製作 DMG
+        working-directory: image-library/desktop
         run: |
-          ls "Lumitake Library.app/Contents/Resources/server" | head
-          test -x "Lumitake Library.app/Contents/Resources/server/lumilib-server"
-          test -x "Lumitake Library.app/Contents/Resources/server/tools/exiftool/exiftool"
-          codesign -dv "Lumitake Library.app" 2>&1 | head -5
-          du -sh "Lumitake Library.app"
+          APP="src-tauri/target/release/bundle/macos/Lumitake Library.app"
+          # 用 ditto 複製，保留資料夾結構、權限與符號連結
+          ditto server/dist/lumilib-server "$APP/Contents/Resources/server"
+          test -x "$APP/Contents/Resources/server/lumilib-server"
+          test -x "$APP/Contents/Resources/server/tools/exiftool/exiftool"
+          test -d "$APP/Contents/Resources/server/tools/exiftool/lib/Image"
+          # 沒有 Apple 開發者帳號：整個 App 以 ad-hoc 簽章（Apple Silicon 必須有簽章才能執行）
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+          du -sh "$APP"
+          # 實際從 App 內啟動伺服器確認可用
+          export LUMILIB_HOME="$RUNNER_TEMP/home-app"
+          "$APP/Contents/Resources/server/lumilib-server" serve --port 8898 > "$RUNNER_TEMP/app-server.log" 2>&1 &
+          PID=$!
+          for i in $(seq 1 90); do curl -fs http://127.0.0.1:8898/api/auth/status && break; sleep 1; done
+          echo
+          curl -fs http://127.0.0.1:8898/api/server | python3 -c "import json,sys; t=json.load(sys.stdin)['tools']; print(t); assert all(t.values()), t"
+          kill $PID || true
+          # 製作 DMG：App ＋「應用程式」捷徑
+          STAGE="$RUNNER_TEMP/dmg"
+          mkdir -p "$STAGE"
+          ditto "$APP" "$STAGE/Lumitake Library.app"
+          ln -s /Applications "$STAGE/Applications"
+          mkdir -p out
+          hdiutil create -volname "Lumitake Library" -srcfolder "$STAGE" -ov -format UDZO "out/Lumitake-Library-mac.dmg"
+          ls -la out
 
       - uses: actions/upload-artifact@v4
         with:
           name: mac-dmg
-          path: image-library/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          path: image-library/desktop/out/Lumitake-Library-mac.dmg
           if-no-files-found: error
 
   android:
@@ -164,8 +184,6 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           ls -la dist
-          DMG=$(ls dist/*.dmg | head -1)
-          mv "$DMG" "dist/Lumitake-Library-mac.dmg"
           cat > notes.md <<'EOF'
           ## Lumitake Library 最新版（自動建置）
 

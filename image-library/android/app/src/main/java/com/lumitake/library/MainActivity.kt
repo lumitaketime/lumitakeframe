@@ -108,7 +108,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         web.webChromeClient = object : WebChromeClient() {
-            override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+            override fun onShowCustomView(view: View, callback: WebChromeClient.CustomViewCallback) {
                 enterFullscreen(view, callback)
             }
 

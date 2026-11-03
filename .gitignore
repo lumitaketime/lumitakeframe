@@ -10,3 +10,4 @@ __pycache__/
 target/
 image-library/desktop/src-tauri/gen/
 image-library/desktop/server/build/
+image-library/desktop/out/
