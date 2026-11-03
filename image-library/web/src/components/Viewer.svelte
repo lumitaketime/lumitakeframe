@@ -51,6 +51,7 @@
     loaded = false;
     zoom = 1;
     tx = ty = 0;
+    zoomOpen = false;
     menu = false;
     api(`/api/assets/${id}`)
       .then((d) => {
@@ -175,6 +176,59 @@
     }
   }
 
+  // ---- 縮放面板（照片導覽縮圖＋縮放條，像 Google 相簿） ----
+  let stageW = $state(0);
+  let stageH = $state(0);
+  let zoomOpen = $state(false);
+  let navDrag = false;
+  // 照片在 100% 時實際顯示的大小
+  const fit = $derived(item ? Math.min(stageW / (item.w || 1), stageH / (item.h || 1)) : 1);
+  const dispW = $derived((item?.w || 1) * fit);
+  const dispH = $derived((item?.h || 1) * fit);
+  // 目前看到的範圍（以整張照片 0–1 表示）
+  const view = $derived.by(() => {
+    const w = Math.min(1, stageW / (dispW * zoom || 1));
+    const h = Math.min(1, stageH / (dispH * zoom || 1));
+    const cx = 0.5 - tx / (dispW * zoom || 1);
+    const cy = 0.5 - ty / (dispH * zoom || 1);
+    return {
+      x: Math.min(Math.max(cx - w / 2, 0), 1 - w), y: Math.min(Math.max(cy - h / 2, 0), 1 - h), w, h,
+    };
+  });
+
+  // 導覽縮圖的大小：寬最多 160、高最多 120，維持照片比例
+  const navSize = $derived.by(() => {
+    const ar = (item?.w || 1) / (item?.h || 1);
+    return ar >= 160 / 120 ? { w: 160, h: Math.round(160 / ar) } : { w: Math.round(120 * ar), h: 120 };
+  });
+
+  function toggleZoom() {
+    if (zoom > 1 || zoomOpen) {
+      setZoom(1);
+      zoomOpen = false;
+    } else {
+      zoomOpen = true;
+      setZoom(2);
+    }
+  }
+  function panTo(nx, ny) {
+    tx = (0.5 - Math.min(Math.max(nx, 0), 1)) * dispW * zoom;
+    ty = (0.5 - Math.min(Math.max(ny, 0), 1)) * dispH * zoom;
+  }
+  function navPoint(e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    panTo((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+  }
+  function navDown(e) {
+    if (zoom <= 1) return;
+    navDrag = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    navPoint(e);
+  }
+  function navMove(e) {
+    if (navDrag) navPoint(e);
+  }
+
   // ---- 縮放與手勢 ----
   const pointers = new Map();
   let start = null;
@@ -205,7 +259,7 @@
   }
 
   function down(e) {
-    if (isVideo || e.target.closest("button")) return;
+    if (isVideo || e.target.closest("button, input, .zoom-panel, .rate-bar")) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.size === 1) start = { x: e.clientX, y: e.clientY, tx, ty, t: Date.now() };
@@ -258,7 +312,7 @@
       <span class="count">{viewer.index + 1} / {viewer.list.length}</span>
       <span class="spacer"></span>
       {#if !isVideo}
-        <button class="icon-btn desktop" onclick={() => setZoom(zoom > 1 ? 1 : 2.5)} aria-label="縮放">
+        <button class="icon-btn desktop" class:active={zoomOpen || zoom > 1} onclick={toggleZoom} aria-label="縮放" title="縮放">
           <Icon path={zoom > 1 ? mdiMagnifyMinusOutline : mdiMagnifyPlusOutline} />
         </button>
       {/if}
@@ -290,6 +344,8 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="stage"
+      bind:clientWidth={stageW}
+      bind:clientHeight={stageH}
       onwheel={wheel}
       onpointerdown={down}
       onpointermove={moveP}
@@ -324,12 +380,33 @@
           {/key}
         {/if}
       {/if}
-      {#if !isVideo}
-        <div class="zoom-bar" class:hidden={!chrome} role="group" aria-label="縮放">
-          <button class="zb" onclick={() => setZoom(zoom / 1.25)} disabled={zoom <= 1} aria-label="縮小（-）" title="縮小（-）"><Icon path={mdiMagnifyMinusOutline} size={20} /></button>
-          <input type="range" min="1" max="8" step="0.05" value={zoom} aria-label="縮放比例"
-            oninput={(e) => setZoom(Number(e.currentTarget.value))} />
-          <button class="zb" onclick={() => setZoom(zoom * 1.25)} disabled={zoom >= 8} aria-label="放大（+）" title="放大（+）"><Icon path={mdiMagnifyPlusOutline} size={20} /></button>
+      {#if !isVideo && item && (zoomOpen || zoom > 1)}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="zoom-panel" onpointerdown={(e) => e.stopPropagation()} onwheel={(e) => e.stopPropagation()}>
+          <div
+            class="znav"
+            style:width="{navSize.w}px"
+            style:height="{navSize.h}px"
+            role="slider"
+            tabindex="-1"
+            aria-label="目前看到的範圍"
+            aria-valuenow={Math.round(zoom * 100)}
+            onpointerdown={navDown}
+            onpointermove={navMove}
+            onpointerup={() => (navDrag = false)}
+            onpointercancel={() => (navDrag = false)}
+          >
+            <img src={thumbUrl(item)} alt="" draggable="false" />
+            {#if zoom > 1}
+              <span class="view" style:left="{view.x * 100}%" style:top="{view.y * 100}%" style:width="{view.w * 100}%" style:height="{view.h * 100}%"></span>
+            {/if}
+          </div>
+          <div class="zrow">
+            <button onclick={() => setZoom(zoom / 1.25)} disabled={zoom <= 1} aria-label="縮小（-）" title="縮小（-）">−</button>
+            <input type="range" min="0" max="1000" step="1" value={Math.round((Math.log(zoom) / Math.log(8)) * 1000)} aria-label="縮放比例"
+              oninput={(e) => setZoom(Math.pow(8, Number(e.currentTarget.value) / 1000))} />
+            <button onclick={() => setZoom(zoom * 1.25)} disabled={zoom >= 8} aria-label="放大（+）" title="放大（+）">+</button>
+          </div>
           <button class="pct" onclick={() => setZoom(1)} title="符合視窗">{Math.round(zoom * 100)}%</button>
         </div>
       {/if}
@@ -417,15 +494,22 @@
   .nav:hover { background: rgba(255,255,255,.2); }
   .nav.left { left: 16px; }
   .nav.right { right: 16px; }
-  .zoom-bar {
-    position: absolute; right: 18px; bottom: 18px; z-index: 3; display: flex; align-items: center; gap: 4px;
-    background: rgba(0,0,0,.55); border-radius: 999px; padding: 4px 8px; color: #fff; transition: opacity .2s;
+  .top .icon-btn.active { background: rgba(255, 255, 255, .2); }
+  .zoom-panel {
+    position: absolute; top: 72px; right: 16px; z-index: 4; width: 176px; padding: 8px; border-radius: 12px;
+    background: rgba(20, 20, 24, .82); backdrop-filter: blur(8px); color: #fff; display: flex; flex-direction: column; gap: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .35); cursor: default;
   }
-  .zoom-bar input { width: 120px; accent-color: #fff; }
-  .zoom-bar .zb { border: 0; background: none; color: #fff; display: flex; padding: 4px; cursor: pointer; border-radius: 50%; }
-  .zoom-bar .zb:disabled { opacity: .35; cursor: default; }
-  .zoom-bar .pct { border: 0; background: none; color: #fff; font-size: 12px; min-width: 44px; cursor: pointer; font-variant-numeric: tabular-nums; }
-  @media (max-width: 760px) { .zoom-bar { display: none; } }
+  .znav { position: relative; flex-shrink: 0; align-self: center; overflow: hidden; border-radius: 4px; cursor: crosshair; touch-action: none; }
+  .znav img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: .55; pointer-events: none; }
+  .znav .view { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); pointer-events: none; }
+  .zrow { display: flex; align-items: center; gap: 4px; }
+  .zrow button { border: 0; background: none; color: #fff; width: 24px; height: 24px; border-radius: 50%; font-size: 18px; line-height: 1; cursor: pointer; }
+  .zrow button:hover:not(:disabled) { background: rgba(255, 255, 255, .15); }
+  .zrow button:disabled { opacity: .35; cursor: default; }
+  .zrow input { flex: 1; min-width: 0; accent-color: #fff; }
+  .zoom-panel .pct { align-self: center; border: 0; background: none; color: rgba(255, 255, 255, .8); font-size: 12px; cursor: pointer; font-variant-numeric: tabular-nums; }
+  @media (max-width: 760px) { .zoom-panel { display: none; } }
   .rate-bar {
     position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center;
     gap: 2px; background: rgba(0,0,0,.55); border-radius: 999px; padding: 4px 10px; transition: opacity .2s;

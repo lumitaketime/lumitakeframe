@@ -287,7 +287,9 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     def detail(c, image) -> dict:
         path = db.absolute_path(c, image)
         root = db.get_root(c, image["root_id"])
-        data = {k: image[k] for k in image.keys() if k not in ("embedding", "search_text")}
+        # 向量等二進位欄位（例如圖像搜尋索引）不能放進 JSON
+        data = {k: image[k] for k in image.keys()
+                if k not in ("embedding", "search_text", "clip") and not isinstance(image[k], (bytes, bytearray, memoryview))}
         for key in ("tags", "objects", "user_tags", "keywords"):
             data[key] = db.json_list(image[key])
         albums = c.execute(

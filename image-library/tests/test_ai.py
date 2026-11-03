@@ -323,3 +323,14 @@ class ScheduleTests(unittest.TestCase):
             self.assertFalse(schedule.analysis_allowed(cfg)[0])
         finally:
             schedule._power.update(at=0.0, ac=True)
+
+
+class SalvageTests(unittest.TestCase):
+    def test_truncated_json_keeps_complete_fields(self):
+        from lumilib.analyzer import salvage_json
+
+        text = '{"description": "雜誌內頁，日文排版。", "tags": ["雜誌", "書籍", "日語", "文'
+        out = salvage_json(text)
+        self.assertEqual(out["description"], "雜誌內頁，日文排版。")
+        self.assertEqual(out["tags"], ["雜誌", "書籍", "日語"])
+        self.assertIsNone(salvage_json("<think>still thinking"))

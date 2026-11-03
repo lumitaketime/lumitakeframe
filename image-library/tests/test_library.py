@@ -488,6 +488,18 @@ class ServerTests(LibraryTestCase):
         s = self.post("/api/settings", {"vision_model": "qwen2.5vl:3b", "port": 1}).json()
         self.assertEqual((s["vision_model"], s["port"]), ("qwen2.5vl:3b", 8765))  # port 不能從網頁改
 
+    def test_detail_with_binary_columns(self):
+        self.post("/api/jobs", {"kind": "scan"})
+        wait_jobs(self.client)
+        conn = db.connect(self.cfg.db_path)
+        image_id = conn.execute("SELECT id FROM images LIMIT 1").fetchone()[0]
+        conn.execute("UPDATE images SET clip = ?, embedding = ? WHERE id = ?", (b"\xae\xcb\x00\xff" * 8, b"\xae\x01", image_id))
+        conn.commit()
+        conn.close()
+        r = self.client.get(f"/api/assets/{image_id}")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertNotIn("clip", r.json())
+
     def test_spa_and_errors(self):
         self.assertEqual(self.client.get("/albums/3").status_code, 200)
         self.assertEqual(self.client.get("/api/assets/99999").status_code, 404)

@@ -563,6 +563,8 @@ def load_image(path: Path, media_type: str, is_raw: bool, max_side: int,
     except MediaError:
         raise
     except Exception as exc:
+        if getattr(exc, "errno", None) in (60, 110):  # ETIMEDOUT：雲端硬碟（OneDrive 等）還沒下載到這台電腦
+            raise MediaError("讀取檔案逾時：檔案可能還在雲端（例如 OneDrive）尚未下載到這台電腦") from exc
         raise MediaError(f"無法讀取：{exc}") from exc
 
 

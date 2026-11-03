@@ -38,14 +38,14 @@ PROMPTS = {
   每個重要主體同時附上常見英文詞，例如「狗」與「dog」、「海邊」與「beach」。
 - objects：畫面中可以辨識的具體物品名稱。
 - scene：一個詞描述場景類型，例如：室內、街道、海邊、山區、餐廳、辦公室、文件、螢幕截圖。
-- text_in_image：圖片中清楚可讀的文字原文（招牌、文件、螢幕內容），沒有就輸出空字串。
+- text_in_image：圖片中清楚可讀的重要文字原文（標題、招牌、螢幕內容），最多約 200 字；文件或書頁只抄標題與重點，沒有就輸出空字串。
 規則：只描述看得到的內容；不要猜測人物的真實身分或姓名。""",
     "en": """You are the tagging assistant of a photo library. Look carefully at the image and output JSON:
 - description: 2-4 sentences describing subject, action, place, time of day, weather, mood and composition.
 - tags: 10-25 search keywords covering subjects, objects, scene, colors, activities, style, season, mood.
 - objects: concrete objects visible in the image.
 - scene: one short phrase for the scene type, e.g. indoor, street, beach, mountain, restaurant, document, screenshot.
-- text_in_image: legible text in the image verbatim (signs, documents, screens), or an empty string.
+- text_in_image: the main legible text verbatim (titles, signs, screens), at most about 200 characters; for documents or book pages only the title and key lines; or an empty string.
 Rules: describe only what is visible; never guess the real identity or name of a person.""",
 }
 
@@ -168,7 +168,7 @@ class OllamaClient:
     _no_format: set = set()
 
     def chat(self, model: str, messages: list[dict], schema: dict | None, temperature: float,
-             num_ctx: int | None = None, num_predict: int = 1500) -> dict:
+             num_ctx: int | None = None, num_predict: int = 2500) -> dict:
         """呼叫 /api/chat，回傳整個回應。
 
         - think=False：Qwen3-VL、Gemma 4 這類會「先思考」的模型，關閉後每張快很多，
@@ -218,6 +218,9 @@ class OllamaClient:
         try:
             return parse_model_json(content)
         except ValueError:
+            partial = salvage_json(content)  # 輸出被截斷時，保留已經完整的欄位
+            if partial:
+                return partial
             if data.get("done_reason") == "length":
                 raise ValueError("模型輸出太長被截斷（可能不斷重複）。建議改用 Gemma 4 或其他模型。") from None
             raise
@@ -250,6 +253,25 @@ def json_instruction(schema: dict) -> str:
 
     sample = json.dumps(example(schema), ensure_ascii=False)
     return f"\n\n只輸出一個 JSON 物件，不要加說明文字或 ``` 標記。格式：{sample}"
+
+
+def salvage_json(content: str) -> dict | None:
+    """從被截斷的 JSON 取出已經完整的欄位（描述、關鍵字等）。至少要有描述或關鍵字才算數。"""
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.S)
+    out: dict = {}
+    for key in ("description", "scene", "text_in_image"):
+        m = re.search(rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)"', content, flags=re.S)
+        if m:
+            try:
+                out[key] = json.loads(f'"{m.group(1)}"')
+            except ValueError:
+                out[key] = m.group(1)
+    for key in ("tags", "objects"):
+        m = re.search(rf'"{key}"\s*:\s*\[(.*?)(\]|$)', content, flags=re.S)
+        if m:
+            out[key] = [json.loads(f'"{x}"') if "\\" in x else x
+                        for x in re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1))]
+    return out if (out.get("description") or out.get("tags")) else None
 
 
 def parse_model_json(content: str) -> dict:
