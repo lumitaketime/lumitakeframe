@@ -39,7 +39,7 @@ SETTING_KEYS = {
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "pet_enabled", "pet_model", "pet_similarity", "pet_min_photos", "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "xmp_sync", "xmp_embed", "stack_enabled", "burst_seconds",
-    "auto_analyze", "blur_threshold", "under_luma", "over_percent", "analysis_detail", "analyze_schedule", "night_start", "night_end", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "blur_threshold", "under_luma", "over_percent", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -822,14 +822,46 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    # 合併可以復原：記下合併前的樣子，給前端一個代碼（只保留最近 30 次）
+    import secrets
+    from collections import OrderedDict
+
+    undo_store: "OrderedDict[str, tuple[str, dict]]" = OrderedDict()
+
+    def keep_undo(kind: str, snap: dict) -> str:
+        token = secrets.token_urlsafe(9)
+        undo_store[token] = (kind, snap)
+        while len(undo_store) > 30:
+            undo_store.popitem(last=False)
+        return token
+
+    def take_undo(kind: str, token: str) -> dict:
+        item = undo_store.pop(str(token or ""), None)
+        if item is None or item[0] != kind:
+            raise HTTPException(410, "已經無法復原（可能已經復原過，或程式重新啟動過）")
+        return item[1]
+
     @app.post("/api/people/merge")
     def merge_people(body: dict = Body(...)):
-        from .faces import merge_persons
+        from .faces import merge_persons, merge_snapshot
 
+        target, sources = int(body["target"]), [int(x) for x in body.get("sources") or [] if int(x) != int(body["target"])]
         c = conn()
         try:
-            merge_persons(c, int(body["target"]), [int(x) for x in body.get("sources") or []])
-            return {"ok": True}
+            snap = merge_snapshot(c, target, sources)
+            merge_persons(c, target, sources)
+            return {"ok": True, "undo": keep_undo("people", snap)}
+        finally:
+            c.close()
+
+    @app.post("/api/people/unmerge")
+    def unmerge_people(body: dict = Body(...)):
+        from .faces import unmerge_persons
+
+        snap = take_undo("people", body.get("undo"))
+        c = conn()
+        try:
+            return {"restored": unmerge_persons(c, snap)}
         finally:
             c.close()
 
@@ -921,6 +953,23 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             c.close()
 
     # ---- 搜尋與探索 ----
+    @app.post("/api/analysis/confirm")
+    def analysis_confirm(body: dict = Body(default={})):
+        """「每次先問我」的回答：start=true 開始分析，false 稍後再說。"""
+        jobs().answer_confirm(bool(body.get("start")))
+        return jobs().snapshot()
+
+    @app.get("/api/analysis/schedule")
+    def analysis_schedule_status():
+        """排程說明與現在能不能分析（設定頁顯示用）。"""
+        from .schedule import analysis_allowed, battery_percent, describe, effective, idle_minutes, on_ac_power
+
+        s = effective(cfg)
+        ok, reason = analysis_allowed(cfg)
+        idle = idle_minutes()
+        return {**s, "summary": describe(s), "ok": ok, "reason": reason, "on_ac": on_ac_power(),
+                "battery_now": battery_percent(), "idle_now": round(idle, 1) if idle is not None else None}
+
     @app.get("/api/analysis/errors")
     def analysis_errors():
         """分析失敗的原因統計（依錯誤訊息分組）。"""
@@ -1448,8 +1497,11 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 name = str(body["name"] or "").strip()[:60]
                 same = c.execute("SELECT id FROM pets WHERE name = ? AND id != ?", (name, pet_id)).fetchone() if name else None
                 if same:
+                    from .petid import merge_snapshot as pet_snapshot
+
+                    snap = pet_snapshot(c, same["id"], [pet_id])
                     merge_pets(c, same["id"], [pet_id])
-                    out = {"id": same["id"], "merged": True}
+                    out = {"id": same["id"], "merged": True, "undo": keep_undo("pets", snap)}
                 else:
                     rename_pet(c, pet_id, name)
             if "hidden" in body:
@@ -1462,12 +1514,25 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     @app.post("/api/petid/merge")
     def merge_pet_ids(body: dict = Body(...)):
-        from .petid import merge_pets
+        from .petid import merge_pets, merge_snapshot as pet_snapshot
 
+        target, sources = int(body["target"]), [int(i) for i in body.get("sources") or [] if int(i) != int(body["target"])]
         c = conn()
         try:
-            merge_pets(c, int(body["target"]), [int(i) for i in body.get("sources") or []])
-            return {"ok": True}
+            snap = pet_snapshot(c, target, sources)
+            merge_pets(c, target, sources)
+            return {"ok": True, "undo": keep_undo("pets", snap)}
+        finally:
+            c.close()
+
+    @app.post("/api/petid/unmerge")
+    def unmerge_pet_ids(body: dict = Body(...)):
+        from .petid import unmerge_pets
+
+        snap = take_undo("pets", body.get("undo"))
+        c = conn()
+        try:
+            return {"restored": unmerge_pets(c, snap)}
         finally:
             c.close()
 

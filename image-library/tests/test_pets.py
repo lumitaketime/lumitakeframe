@@ -124,6 +124,25 @@ class PetTests(unittest.TestCase):
         self.assertEqual(search(self.conn, "小黑")["total"], 3)
         self.assertEqual(search(self.conn, "小橘 小黑")["total"], 0)
 
+    def test_pet_merge_undo(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib.server import create_app
+
+        self.run_all()
+        app = create_app(self.cfg, start_jobs_on_boot=False)
+        with TestClient(app, base_url="http://127.0.0.1:8765", client=("127.0.0.1", 50000)) as client:
+            pets = client.get("/api/pets").json()["pets"]
+            cat = next(p for p in pets if p["kind"] == "cat")
+            dog = next(p for p in pets if p["kind"] == "dog")
+            client.post(f"/api/petid/{cat['id']}", json={"name": "豆豆"})
+            res = client.post(f"/api/petid/{dog['id']}", json={"name": "豆豆"}).json()
+            self.assertTrue(res["merged"])
+            self.assertEqual([p["count"] for p in client.get("/api/pets").json()["pets"]], [6])
+            client.post("/api/petid/unmerge", json={"undo": res["undo"]})
+            after = sorted((p["name"], p["count"]) for p in client.get("/api/pets").json()["pets"])
+            self.assertEqual(after, [("", 3), ("豆豆", 3)])
+
     def test_api(self):
         from fastapi.testclient import TestClient
 

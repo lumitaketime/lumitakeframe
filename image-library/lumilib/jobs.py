@@ -55,6 +55,8 @@ class JobRunner:
         self.closed = False
         self.last: dict | None = None
         self.recent: deque = deque(maxlen=8)
+        # 「每次先問我」：掃描完有新照片時先記下來，等使用者按「開始」
+        self.confirm: dict | None = None
         self.threads = [threading.Thread(target=self._worker, args=(lane,), daemon=True, name=f"lumilib-{lane}")
                         for lane in QUEUED_LANES]
         for t in self.threads:
@@ -128,6 +130,7 @@ class JobRunner:
                        for lane in QUEUED_LANES for j in self.queues[lane]],
             "last": self.last,
             "recent": list(self.recent),
+            "confirm": self.confirm,
         }
 
     def close(self) -> None:
@@ -199,6 +202,12 @@ class JobRunner:
             self.recent.appendleft(self.last)
             self.active.pop(job["id"], None)
 
+    def answer_confirm(self, start: bool) -> dict | None:
+        """使用者回答「要不要開始分析」：開始就排入分析；稍後就先不問，下次掃描到新照片再問。"""
+        with self.lock:
+            self.confirm = None
+        return self.submit("analyze", confirmed=True) if start else None
+
     def _wait_schedule(self, job: dict) -> bool:
         """AI 分析每張照片前檢查排程；不在允許的時段就暫停等待。回傳 False 表示要停止。"""
         from .schedule import analysis_allowed
@@ -252,7 +261,13 @@ class JobRunner:
                 self.submit("quality")  # 本機計算，很快
             if self.cfg.auto_analyze and st["pending"]:
                 status = ai_status(self.client_factory(), self.cfg)
-                if status["ready"]:
+                from .schedule import effective
+
+                if status["ready"] and effective(self.cfg)["mode"] == "ask":
+                    with self.lock:
+                        self.confirm = {"pending": st["pending"], "at": datetime.now().isoformat(timespec="seconds")}
+                    message += f"；{st['pending']} 張照片等你確認後開始 AI 分析"
+                elif status["ready"]:
                     self.submit("analyze")  # 在 AI 通道執行，不會擋住之後的掃描
                 else:
                     message += f"；尚未開始 AI 分析：{status['message']}"

@@ -499,6 +499,42 @@ def rename_pet(conn: sqlite3.Connection, pet_id: int, name: str) -> None:
     conn.commit()
 
 
+def merge_snapshot(conn: sqlite3.Connection, target: int, sources: list[int]) -> dict:
+    t = conn.execute("SELECT * FROM pets WHERE id = ?", (target,)).fetchone()
+    out = {"target": {"id": target, "name": t["name"] if t else None}, "sources": []}
+    for sid in sources:
+        row = conn.execute("SELECT * FROM pets WHERE id = ?", (sid,)).fetchone()
+        if row is None:
+            continue
+        dets = [(r["id"], r["manual"]) for r in conn.execute("SELECT id, manual FROM pet_detections WHERE pet_id = ?", (sid,))]
+        out["sources"].append({"row": dict(row), "dets": dets})
+    return out
+
+
+def unmerge_pets(conn: sqlite3.Connection, snap: dict) -> list[int]:
+    restored = []
+    target = snap["target"]
+    conn.execute("UPDATE pets SET name = ? WHERE id = ?", (target["name"], target["id"]))
+    for src in snap["sources"]:
+        row = src["row"]
+        cols = [k for k in row if k != "id"]
+        if conn.execute("SELECT 1 FROM pets WHERE id = ?", (row["id"],)).fetchone():
+            pid = conn.execute(f"INSERT INTO pets ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                               [row[k] for k in cols]).lastrowid
+        else:
+            conn.execute(f"INSERT INTO pets (id, {','.join(cols)}) VALUES (?, {','.join('?' * len(cols))})",
+                         [row["id"], *[row[k] for k in cols]])
+            pid = row["id"]
+        conn.executemany("UPDATE pet_detections SET pet_id = ?, manual = ? WHERE id = ? AND pet_id = ?",
+                         [(pid, manual, did, target["id"]) for did, manual in src["dets"]])
+        restored.append(pid)
+        _touch(conn, pid)
+    refresh_covers(conn)
+    _touch(conn, target["id"])
+    conn.commit()
+    return restored
+
+
 def merge_pets(conn: sqlite3.Connection, target: int, sources: list[int]) -> None:
     sources = [s for s in sources if s != target]
     if not sources:

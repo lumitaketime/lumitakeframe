@@ -10,6 +10,7 @@
   import { navigate, link } from "../lib/router.svelte.js";
   import { app, showDialog, toast, refresh } from "../lib/state.svelte.js";
   import { confirm } from "../lib/actions.js";
+  import { undoable } from "../lib/undo.svelte.js";
   import { count } from "../lib/format.js";
   import { mdiArrowLeft, mdiEyeOffOutline, mdiEyeOutline, mdiAccountMultiplePlusOutline, mdiPlus, mdiCheck } from "../lib/icons.js";
 
@@ -49,8 +50,12 @@
         if (same) {
           const ok = await confirm(`已經有一位「${same.name}」`, "是同一個人嗎？合併後，兩邊的照片都會歸到同一個人物。", { ok: "是，合併", cancel: "不是" });
           if (ok) {
-            await api("/api/people/merge", { body: { target: same.id, sources: [person.id] } });
-            toast(`已合併到「${same.name}」`);
+            const res = await api("/api/people/merge", { body: { target: same.id, sources: [person.id] } });
+            const back = person.id;
+            undoable(`已合併到「${same.name}」`, async () => {
+              await api("/api/people/unmerge", { body: { undo: res.undo } });
+              navigate(`/people/${back}`, { replace: true });
+            });
             refresh();
             navigate(`/people/${same.id}`, { replace: true });
             return;
@@ -97,8 +102,12 @@
   async function merge() {
     const target = await showDialog("person", { exclude: id, title: "和誰是同一個人？" });
     if (!target) return;
-    await api("/api/people/merge", { body: { target: target.id, sources: [id] } });
-    toast("已合併");
+    const res = await api("/api/people/merge", { body: { target: target.id, sources: [id] } });
+    const back = id;
+    undoable(`已合併到「${target.name || "另一位人物"}」`, async () => {
+      await api("/api/people/unmerge", { body: { undo: res.undo } });
+      navigate(`/people/${back}`, { replace: true });
+    });
     navigate(`/people/${target.id}`, { replace: true });
   }
 

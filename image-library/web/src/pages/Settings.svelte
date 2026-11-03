@@ -143,6 +143,7 @@
 
   function loadExtra() {
     api("/api/faces/models").then((m) => (faceModels = m));
+    loadSched();
     api("/api/pets/models").then((m) => (petModels = m));
     api("/api/pets").then((d) => (petInfo = d)).catch(() => {});
     api("/api/clip/models").then((m) => (clipModels = m));
@@ -168,6 +169,42 @@
     settings = await api("/api/settings", { body: { face_model: name } });
     loadExtra();
     refresh();
+  }
+
+  // ---- 分析時機 ----
+  let schedStatus = $state(null);
+  const sched = $derived.by(() => {
+    const st = schedStatus;
+    return {
+      mode: st?.mode || "always", days: settings?.schedule_days || "1234567",
+      start: settings?.schedule_start || "22:00", end: settings?.schedule_end || "07:00",
+      ac: !!settings?.schedule_ac, idle: Number(settings?.schedule_idle || 0), battery: Number(settings?.schedule_battery || 0),
+    };
+  });
+  function loadSched() {
+    api("/api/analysis/schedule").then((d) => (schedStatus = d)).catch(() => {});
+  }
+  async function saveSched(values) {
+    settings = await api("/api/settings", { body: values });
+    loadSched();
+  }
+  async function setMode(mode) {
+    const extra = {};
+    // 從舊版的「只在夜間／接電源」切換過來時，把原本的時段帶進新排程
+    if (mode === "schedule" && ["ac", "night", "ac_night"].includes(settings.analyze_schedule) && schedStatus) {
+      Object.assign(extra, { schedule_start: schedStatus.start, schedule_end: schedStatus.end, schedule_ac: schedStatus.ac ? 1 : 0 });
+    }
+    await saveSched({ analyze_schedule: mode, ...extra });
+    toast(mode === "ask" ? "掃描到新照片時會先問你要不要分析" : mode === "schedule" ? "已改成依排程分析" : "有新照片就會開始分析");
+  }
+  function toggleDay(d) {
+    const set = new Set(sched.days.split(""));
+    set.has(String(d)) ? set.delete(String(d)) : set.add(String(d));
+    if (!set.size) {
+      toast("至少要選一天");
+      return;
+    }
+    saveSched({ schedule_days: [...set].sort().join("") });
   }
 
   async function usePetModel(name) {
@@ -451,29 +488,74 @@
       {/if}
       {#if settings}
         <label class="toggle"><input type="checkbox" checked={!!settings.auto_analyze} onchange={(e) => saveSetting("auto_analyze", e.currentTarget.checked ? 1 : 0)} />掃描到新照片後自動 AI 分析</label>
-      <div class="row wrap">
-        <label class="field">分析時段
-          <select class="input" value={settings.analyze_schedule} onchange={(e) => saveSetting("analyze_schedule", e.currentTarget.value)}>
-            <option value="always">隨時</option>
-            <option value="ac">只在接上電源時（建議筆電）</option>
-            <option value="night">只在夜間</option>
-            <option value="ac_night">夜間且接上電源時</option>
-          </select>
-        </label>
-        {#if settings.analyze_schedule === "night" || settings.analyze_schedule === "ac_night"}
-          <label class="field">夜間從
-            <select class="input" value={String(settings.night_start)} onchange={(e) => saveSetting("night_start", Number(e.currentTarget.value))}>
-              {#each Array.from({ length: 24 }, (_, h) => h) as h (h)}<option value={String(h)}>{h}:00</option>{/each}
-            </select>
-          </label>
-          <label class="field">到
-            <select class="input" value={String(settings.night_end)} onchange={(e) => saveSetting("night_end", Number(e.currentTarget.value))}>
-              {#each Array.from({ length: 24 }, (_, h) => h) as h (h)}<option value={String(h)}>{h}:00</option>{/each}
-            </select>
-          </label>
+      <div class="sched">
+        <span class="label">什麼時候分析</span>
+        <div class="seg3" role="radiogroup" aria-label="分析時機">
+          {#each [["always", "隨時", "有新照片就開始"], ["schedule", "依排程", "指定星期、時段與條件"], ["ask", "每次先問我", "掃描到新照片時先詢問"]] as [v, label, hint] (v)}
+            <button role="radio" aria-checked={sched.mode === v} class:on={sched.mode === v} onclick={() => setMode(v)}>
+              <b>{label}</b><span>{hint}</span>
+            </button>
+          {/each}
+        </div>
+        {#if sched.mode === "schedule"}
+          <div class="sched-body">
+            <div class="srow">
+              <span class="slabel">星期</span>
+              <div class="days">
+                {#each [1, 2, 3, 4, 5, 6, 7] as d (d)}
+                  <button class="day" class:on={sched.days.includes(String(d))} onclick={() => toggleDay(d)} aria-pressed={sched.days.includes(String(d))}>{"一二三四五六日"[d - 1]}</button>
+                {/each}
+                <span class="presets">
+                  <button class="btn text small" onclick={() => saveSched({ schedule_days: "1234567" })}>每天</button>
+                  <button class="btn text small" onclick={() => saveSched({ schedule_days: "12345" })}>平日</button>
+                  <button class="btn text small" onclick={() => saveSched({ schedule_days: "67" })}>週末</button>
+                </span>
+              </div>
+            </div>
+            <div class="srow">
+              <span class="slabel">時段</span>
+              <div class="times">
+                <label class="toggle inline"><input type="checkbox" checked={sched.start === sched.end} onchange={(e) => saveSched(e.currentTarget.checked ? { schedule_start: "00:00", schedule_end: "00:00" } : { schedule_start: "22:00", schedule_end: "07:00" })} />全天</label>
+                {#if sched.start !== sched.end}
+                  <input class="input time" type="time" value={sched.start} onchange={(e) => saveSched({ schedule_start: e.currentTarget.value })} aria-label="開始時間" />
+                  <span>到</span>
+                  <input class="input time" type="time" value={sched.end} onchange={(e) => saveSched({ schedule_end: e.currentTarget.value })} aria-label="結束時間" />
+                  <span class="muted tiny">{sched.end < sched.start ? "（跨過午夜，到隔天）" : ""}</span>
+                {/if}
+              </div>
+            </div>
+            <div class="srow">
+              <span class="slabel">條件</span>
+              <div class="conds">
+                <label class="toggle"><input type="checkbox" checked={sched.ac} onchange={(e) => saveSched({ schedule_ac: e.currentTarget.checked ? 1 : 0 })} />只在接上電源時</label>
+                <div class="cond">
+                  <label class="toggle"><input type="checkbox" checked={sched.idle > 0} onchange={(e) => saveSched({ schedule_idle: e.currentTarget.checked ? 10 : 0 })} />電腦沒人使用時才分析</label>
+                  {#if sched.idle > 0}
+                    <select class="input mini" value={String(sched.idle)} onchange={(e) => saveSched({ schedule_idle: Number(e.currentTarget.value) })} aria-label="閒置幾分鐘">
+                      {#each [5, 10, 15, 30, 60] as m (m)}<option value={String(m)}>閒置 {m} 分鐘以上</option>{/each}
+                    </select>
+                  {/if}
+                </div>
+                <div class="cond">
+                  <label class="toggle"><input type="checkbox" checked={sched.battery > 0} onchange={(e) => saveSched({ schedule_battery: e.currentTarget.checked ? 50 : 0 })} />用電池時，電量夠才分析</label>
+                  {#if sched.battery > 0}
+                    <select class="input mini" value={String(sched.battery)} onchange={(e) => saveSched({ schedule_battery: Number(e.currentTarget.value) })} aria-label="電量下限">
+                      {#each [20, 30, 50, 70, 90] as p (p)}<option value={String(p)}>電量 {p}% 以上</option>{/each}
+                    </select>
+                  {/if}
+                </div>
+              </div>
+            </div>
+          </div>
+        {/if}
+        {#if schedStatus}
+          <p class="sched-sum">
+            <b>{schedStatus.summary}</b>
+            {#if schedStatus.mode === "schedule"}<span class="now" class:ok={schedStatus.ok}>現在：{schedStatus.ok ? "可以分析" : schedStatus.reason}</span>{/if}
+          </p>
         {/if}
       </div>
-      <p class="muted tiny">不在時段內時，分析會自動暫停，時間到或接上電源後接著做。</p>
+      <p class="muted tiny">不符合排程時，分析會自動暫停，時間到或條件符合後接著做；有人開始用電腦時也會暫停。</p>
       {/if}
       <div class="row wrap">
         <button class="btn ghost" onclick={() => job("index")}>掃描並分析全部</button>
@@ -1088,6 +1170,31 @@
     .cats a { padding: 13px 14px; border-radius: 12px; }
     .back { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: var(--muted); margin: 0 0 10px; }
   }
+  .sched { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 6px; }
+  .sched .label { font-size: 14px; font-weight: 500; }
+  .seg3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .seg3 button { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 10px 14px; border-radius: var(--corner-medium); border: 1px solid var(--outline-variant); background: none; color: var(--on-surface); cursor: pointer; }
+  .seg3 button b { font-weight: 500; font-size: 14px; }
+  .seg3 button span { font-size: 12px; color: var(--on-surface-variant); }
+  .seg3 button.on { border: 2px solid var(--primary); padding: 9px 13px; background: color-mix(in srgb, var(--primary) 8%, transparent); }
+  .sched-body { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px; border-radius: var(--corner-medium); background: var(--surface-container); }
+  .srow { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; align-items: start; }
+  .slabel { font-size: 14px; color: var(--on-surface-variant); padding-top: 8px; }
+  .days { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .day { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--outline); background: none; color: var(--on-surface); font-size: 14px; cursor: pointer; }
+  .day.on { background: var(--secondary-container); color: var(--on-secondary-container); border-color: transparent; font-weight: 500; }
+  .presets { display: inline-flex; margin-left: 4px; }
+  .times { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .time { width: auto; min-width: 120px; }
+  .toggle.inline { flex-direction: row; gap: 8px; }
+  .conds { display: flex; flex-direction: column; gap: 10px; }
+  .cond { display: flex; flex-direction: column; gap: 6px; }
+  .input.mini { width: auto; align-self: flex-start; }
+  .sched-sum { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 2px 0 0; font-size: 14px; }
+  .sched-sum b { font-weight: 500; }
+  .now { color: var(--on-surface-variant); }
+  .now.ok { color: var(--primary); }
+  @media (max-width: 600px) { .seg3 { grid-template-columns: 1fr; } .srow { grid-template-columns: 1fr; gap: 4px; } .slabel { padding-top: 0; } }
   .card { background: var(--surface-container-low); border-radius: var(--corner-large); padding: 20px 24px; margin-bottom: 16px; }
   h2 { display: flex; align-items: center; gap: 12px; font-size: 18px; line-height: 24px; font-weight: 500; margin: 0 0 8px; }
   h3 { font-size: 14px; margin: 20px 0 10px; }

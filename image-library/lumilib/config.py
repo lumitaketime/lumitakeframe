@@ -44,6 +44,12 @@ DEFAULTS = {
     "analyze_schedule": "always",
     "night_start": 22,
     "night_end": 7,
+    "schedule_days": "1234567",  # 星期一＝1 … 星期日＝7
+    "schedule_start": "22:00",
+    "schedule_end": "07:00",  # 和開始相同代表全天
+    "schedule_ac": 1,  # 只在接上電源時
+    "schedule_idle": 0,  # 電腦閒置幾分鐘以上（0＝不限）
+    "schedule_battery": 0,  # 電量高於幾 %（0＝不限）
     # 檢視照片時，下方顯示星等與顏色標籤列
     "viewer_rating_bar": 1,
     # 左側選單隱藏的功能（逗號分隔的路徑，例如 /map,/duplicates）
@@ -110,6 +116,12 @@ class Config:
     analyze_schedule: str = DEFAULTS["analyze_schedule"]
     night_start: int = DEFAULTS["night_start"]
     night_end: int = DEFAULTS["night_end"]
+    schedule_days: str = DEFAULTS["schedule_days"]
+    schedule_start: str = DEFAULTS["schedule_start"]
+    schedule_end: str = DEFAULTS["schedule_end"]
+    schedule_ac: int = DEFAULTS["schedule_ac"]
+    schedule_idle: int = DEFAULTS["schedule_idle"]
+    schedule_battery: int = DEFAULTS["schedule_battery"]
     viewer_rating_bar: int = DEFAULTS["viewer_rating_bar"]
     nav_hidden: str = DEFAULTS["nav_hidden"]
     pinned_tools: str = DEFAULTS["pinned_tools"]

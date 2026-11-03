@@ -1,6 +1,19 @@
 /** 照片的快速篩選（星等、顏色標籤、檔案類型），時間軸、資料夾、相簿共用。 */
 export const filter = $state({ rating: 0, label: "", kind: "" });
 
+/** 頂欄的篩選按鈕：目前頁面可以篩選時才出現（kinds＝是否顯示 RAW／JPEG／影片） */
+export const filterUI = $state({ pages: 0, kinds: true, open: false });
+
+/** 頁面掛上時呼叫，回傳卸載時要執行的函式 */
+export function useFilter(kinds = true) {
+  filterUI.pages += 1;
+  filterUI.kinds = kinds;
+  return () => {
+    filterUI.pages = Math.max(0, filterUI.pages - 1);
+    if (!filterUI.pages) filterUI.open = false;
+  };
+}
+
 export function filterActive() {
   return !!(filter.rating || filter.label || filter.kind);
 }

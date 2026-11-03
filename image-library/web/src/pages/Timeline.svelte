@@ -5,14 +5,13 @@
   import Memories from "../components/Memories.svelte";
   import Scrubber from "../components/Scrubber.svelte";
   import DatePill from "../components/DatePill.svelte";
-  import FilterBar from "../components/FilterBar.svelte";
-  import { filterParams, filterActive, clearFilter } from "../lib/filter.svelte.js";
+  import { filterParams, filterActive, clearFilter, useFilter } from "../lib/filter.svelte.js";
   import { api } from "../lib/api.js";
   import { app, selection } from "../lib/state.svelte.js";
   import { link } from "../lib/router.svelte.js";
   import { dayLabel, fullDayLabel, monthLabel, count } from "../lib/format.js";
   import { estimateHeight, naturalWidth, squareCols } from "../lib/layout.js";
-  import { mdiCheckCircle, mdiCheckboxBlankCircleOutline, mdiFilterVariant } from "../lib/icons.js";
+  import { mdiCheckCircle, mdiCheckboxBlankCircleOutline } from "../lib/icons.js";
   import { slide } from "svelte/transition";
 
   let { scope = {}, title = "", emptyText = "" } = $props();
@@ -176,25 +175,15 @@
     const all = items.every((a) => selection.has(a.id));
     for (const a of items) all ? selection.delete(a.id) : selection.add(a.id);
   }
-  // 篩選列預設收起；有篩選條件時保持打開
-  let showFilter = $state(filterActive());
+  // 篩選按鈕在頂欄搜尋框旁邊
+  onMount(() => useFilter(scope.type !== "video"));
 </script>
 
 <div class="timeline" bind:this={root}>
   <div class="content"><div class="inner" bind:clientWidth={width}>
     {#if !title && !filterActive()}<Memories />{/if}
-    {#if title || total || filterActive()}
-      <div class="tl-head" class:titled={!!title}>
-        {#if title}<div class="tl-title"><h1>{title}</h1><span class="muted small">{count(total)} 個項目</span></div>{/if}
-        <span class="spacer"></span>
-        {#if total || filterActive()}
-          <button class="icon-btn ctl" class:active={showFilter} onclick={() => (showFilter = !showFilter)} aria-expanded={showFilter} aria-label="篩選" title="篩選（星等、顏色、類型）">
-            <Icon path={mdiFilterVariant} />
-            {#if filterActive() && !showFilter}<span class="badge"></span>{/if}
-          </button>
-        {/if}
-      </div>
-      {#if showFilter}<div class="filter-panel" transition:slide={{ duration: 220 }}><FilterBar kinds={scope.type !== "video"} /></div>{/if}
+    {#if title}
+      <div class="tl-head titled"><div class="tl-title"><h1>{title}</h1><span class="muted small">{count(total)} 個項目</span></div></div>
     {/if}
 
     {#if ready && !buckets.length}
@@ -250,9 +239,6 @@
   .tl-title { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
   .tl-title h1 { font-size: 28px; line-height: 36px; font-weight: 400; margin: 0; }
   .spacer { flex: 1; }
-  .ctl { color: var(--on-surface-variant); position: relative; }
-  .badge { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); z-index: 3; }
-  .filter-panel { background: var(--surface-container-low); border-radius: var(--corner-large); padding: 8px 16px; margin-bottom: 8px; }
   .timeline { display: flex; min-height: 100%; }
   .content { flex: 1; min-width: 0; padding: 0 12px 100px 24px; }
   .month-title { font-size: 20px; font-weight: 600; margin: 22px 0 4px; }

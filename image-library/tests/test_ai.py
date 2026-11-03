@@ -317,13 +317,12 @@ class ScheduleTests(unittest.TestCase):
         self.assertTrue(schedule.analysis_allowed(cfg, datetime(2026, 1, 1, 6))[0])
         ok, reason = schedule.analysis_allowed(cfg, datetime(2026, 1, 1, 12))
         self.assertFalse(ok)
-        self.assertIn("夜間", reason)
+        self.assertIn("22:00–07:00", reason)  # 舊版「只在夜間」轉成新排程
         cfg.analyze_schedule = "ac"
-        schedule._power.update(at=float("inf"), ac=False)
-        try:
+        from unittest import mock
+
+        with mock.patch.object(schedule, "on_ac_power", return_value=False):
             self.assertFalse(schedule.analysis_allowed(cfg)[0])
-        finally:
-            schedule._power.update(at=0.0, ac=True)
 
 
 class DetailTests(unittest.TestCase):

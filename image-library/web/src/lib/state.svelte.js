@@ -31,16 +31,37 @@ let toastId = 0;
  * Snackbar 提示。action：{ label, run } 例如「復原」。錯誤訊息停留較久並可手動關閉。
  * 同時最多顯示 3 則，新的出現時最舊的先離開。
  */
+const toastTimers = new Map();
+
 export function toast(message, kind = "info", ms = 3500, action = null) {
   const id = ++toastId;
   if (kind === "error" && ms === 3500) ms = 6000;
-  app.toasts.push({ id, message, kind, action });
-  while (app.toasts.length > 3) app.toasts.shift();
-  setTimeout(() => dismissToast(id), ms);
+  if (action && ms < 8000) ms = 8000; // 有按鈕（例如「復原」）的通知留久一點
+  app.toasts.push({ id, message, kind, action, ms });
+  while (app.toasts.length > 3) {
+    const old = app.toasts.shift();
+    clearTimeout(toastTimers.get(old.id));
+    toastTimers.delete(old.id);
+  }
+  toastTimers.set(id, setTimeout(() => dismissToast(id), ms));
   return id;
 }
 
+/** 滑鼠停在通知上時暫停倒數，移開後再給幾秒 */
+export function holdToast(id) {
+  clearTimeout(toastTimers.get(id));
+  toastTimers.delete(id);
+}
+export function releaseToast(id) {
+  const t = app.toasts.find((x) => x.id === id);
+  if (!t) return;
+  holdToast(id);
+  toastTimers.set(id, setTimeout(() => dismissToast(id), t.action ? 6000 : 2500));
+}
+
 export function dismissToast(id) {
+  clearTimeout(toastTimers.get(id));
+  toastTimers.delete(id);
   const i = app.toasts.findIndex((t) => t.id === id);
   if (i !== -1) app.toasts.splice(i, 1);
 }

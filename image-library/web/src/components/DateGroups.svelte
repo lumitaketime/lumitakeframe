@@ -7,23 +7,22 @@
   import Grid from "./Grid.svelte";
   import Scrubber from "./Scrubber.svelte";
   import DatePill from "./DatePill.svelte";
-  import FilterBar from "./FilterBar.svelte";
   import Slideshow from "./Slideshow.svelte";
   import Icon from "./Icon.svelte";
   import Menu from "./Menu.svelte";
   import BackButton from "./BackButton.svelte";
   import { slide } from "svelte/transition";
   import { link } from "../lib/router.svelte.js";
-  import { mdiPlayBoxMultipleOutline, mdiFilterVariant, mdiSort, mdiChevronRight } from "../lib/icons.js";
+  import { mdiPlayBoxMultipleOutline, mdiSort, mdiChevronRight } from "../lib/icons.js";
   import { fullDayLabel, monthLabel, count } from "../lib/format.js";
-  import { matches, filterActive, clearFilter } from "../lib/filter.svelte.js";
+  import { matches, filterActive, clearFilter, useFilter } from "../lib/filter.svelte.js";
 
   /**
    * 頁首：返回鍵、上一層路徑、標題、副標（張數與日期範圍），右側是篩選、檢視、播放與「更多」選單。
    * above：放在頁首和照片之間的內容（例如子資料夾）。
    */
   let { assets = [], storeKey = "", defaultGroup = "month", title = "", subtitle = null, back = null, crumbs = [], menu = [], above = null, titleExtra = null } = $props();
-  let showFilter = $state(false);
+
 
   const GROUPS = [["day", "依日期"], ["month", "依月份"], ["year", "依年份"], ["none", "不分組"]];
   // svelte-ignore state_referenced_locally
@@ -134,6 +133,7 @@
   }
 
   onMount(() => {
+    const releaseFilter = useFilter(true);
     scroller = root.closest("main");
     const onScroll = () => {
       if (dragging || !root) return;
@@ -147,7 +147,10 @@
       active = idx;
     };
     scroller?.addEventListener("scroll", onScroll, { passive: true });
-    return () => scroller?.removeEventListener("scroll", onScroll);
+    return () => {
+      releaseFilter();
+      scroller?.removeEventListener("scroll", onScroll);
+    };
   });
 </script>
 
@@ -170,18 +173,11 @@
       {/if}
       <span class="spacer"></span>
       {#if assets.length}
-        <button class="icon-btn ctl" class:active={showFilter} onclick={() => (showFilter = !showFilter)} aria-expanded={showFilter} aria-label="篩選" title="篩選（星等、顏色、類型）">
-          <Icon path={mdiFilterVariant} />
-          {#if filterActive() && !showFilter}<span class="badge"></span>{/if}
-        </button>
         <Menu icon={mdiSort} label="分組與排序" items={viewItems} />
         <button class="icon-btn ctl" onclick={() => (showing = true)} disabled={!sorted.length} aria-label="播放幻燈片" title="播放幻燈片"><Icon path={mdiPlayBoxMultipleOutline} /></button>
       {/if}
       {#if menu.length}<Menu items={menu} />{/if}
     </div>
-    {#if showFilter}
-      <div class="filter-panel" transition:slide={{ duration: 220 }}><FilterBar /></div>
-    {/if}
     {@render above?.()}
     {#if !sorted.length && filterActive()}
       <div class="empty"><h2>沒有符合篩選條件的項目</h2><p><button class="btn ghost" onclick={clearFilter}>清除篩選</button></p></div>
@@ -214,8 +210,6 @@
   .sub { font-size: 14px; line-height: 20px; color: var(--on-surface-variant); }
   .spacer { flex: 1; }
   .ctl { color: var(--on-surface-variant); position: relative; }
-  .badge { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); z-index: 3; }
-  .filter-panel { background: var(--surface-container-low); border-radius: var(--corner-large); padding: 8px 16px; margin-bottom: 8px; }
   .title { font-size: 16px; line-height: 24px; font-weight: 500; margin: 20px 0 8px; display: flex; align-items: baseline; gap: 10px; }
   .title span { font-size: 12px; font-weight: 400; color: var(--on-surface-variant); }
   @media (max-width: 600px) { .title-row h1 { font-size: 22px; line-height: 28px; } }

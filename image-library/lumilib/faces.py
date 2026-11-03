@@ -484,6 +484,45 @@ def rename_person(conn: sqlite3.Connection, person_id: int, name: str) -> None:
     conn.commit()
 
 
+def merge_snapshot(conn: sqlite3.Connection, target: int, sources: list[int]) -> dict:
+    """合併前記下原本的樣子，按「復原」時用來還原。"""
+    t = conn.execute("SELECT * FROM persons WHERE id = ?", (target,)).fetchone()
+    out = {"target": {"id": target, "name": t["name"] if t else None}, "sources": []}
+    for sid in sources:
+        row = conn.execute("SELECT * FROM persons WHERE id = ?", (sid,)).fetchone()
+        if row is None:
+            continue
+        faces = [(r["id"], r["manual"]) for r in conn.execute("SELECT id, manual FROM faces WHERE person_id = ?", (sid,))]
+        out["sources"].append({"row": dict(row), "faces": faces})
+    return out
+
+
+def unmerge_persons(conn: sqlite3.Connection, snap: dict) -> list[int]:
+    """復原合併：把來源人物與他們的臉放回去。回傳還原後的人物 id。"""
+    restored = []
+    target = snap["target"]
+    conn.execute("UPDATE persons SET name = ? WHERE id = ?", (target["name"], target["id"]))
+    for src in snap["sources"]:
+        row = src["row"]
+        cols = [k for k in row if k != "id"]
+        taken = conn.execute("SELECT 1 FROM persons WHERE id = ?", (row["id"],)).fetchone()
+        if taken:
+            pid = conn.execute(f"INSERT INTO persons ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                               [row[k] for k in cols]).lastrowid
+        else:
+            conn.execute(f"INSERT INTO persons (id, {','.join(cols)}) VALUES (?, {','.join('?' * len(cols))})",
+                         [row["id"], *[row[k] for k in cols]])
+            pid = row["id"]
+        conn.executemany("UPDATE faces SET person_id = ?, manual = ? WHERE id = ? AND person_id = ?",
+                         [(pid, manual, fid, target["id"]) for fid, manual in src["faces"]])
+        restored.append(pid)
+        _refresh_person_images(conn, pid)
+    refresh_covers(conn)
+    _refresh_person_images(conn, target["id"])
+    conn.commit()
+    return restored
+
+
 def merge_persons(conn: sqlite3.Connection, target: int, sources: list[int]) -> None:
     sources = [int(s) for s in sources if int(s) != int(target)]
     if not sources:

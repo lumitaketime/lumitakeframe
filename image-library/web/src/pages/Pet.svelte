@@ -8,6 +8,7 @@
   import { navigate, link } from "../lib/router.svelte.js";
   import { app, selection, toast, refresh } from "../lib/state.svelte.js";
   import { confirm } from "../lib/actions.js";
+  import { undoable } from "../lib/undo.svelte.js";
   import { count } from "../lib/format.js";
   import { mdiEyeOffOutline, mdiEyeOutline, mdiImageRemoveOutline, mdiPencilOutline } from "../lib/icons.js";
 
@@ -45,7 +46,13 @@
         }
       }
       const res = await api(`/api/petid/${id}`, { body: { name } });
-      toast(res.merged ? `已合併到「${name}」` : name ? `已命名為「${name}」，可以直接搜尋名字` : "已清除名字");
+      if (res.merged) {
+        const back = pet.id;
+        undoable(`已合併到「${name}」`, async () => {
+          await api("/api/petid/unmerge", { body: { undo: res.undo } });
+          navigate(`/pets/id/${back}`, { replace: true });
+        });
+      } else toast(name ? `已命名為「${name}」，可以直接搜尋名字` : "已清除名字");
       refresh();
       input?.blur();
       if (res.merged) navigate(`/pets/id/${res.id}`, { replace: true });

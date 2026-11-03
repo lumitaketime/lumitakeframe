@@ -10,6 +10,8 @@
   import JobIndicator from "./components/JobIndicator.svelte";
   import Onboarding from "./components/Onboarding.svelte";
   import SearchBox from "./components/SearchBox.svelte";
+  import FilterButton from "./components/FilterButton.svelte";
+  import { filterUI } from "./lib/filter.svelte.js";
   import Timeline from "./pages/Timeline.svelte";
   import Explore from "./pages/Explore.svelte";
   import Search from "./pages/Search.svelte";
@@ -33,6 +35,7 @@
   import { route, navigate, link } from "./lib/router.svelte.js";
   import { TOOLS, pinnedKeys, toolByKey } from "./lib/toolkit.js";
   import { drag, unpin } from "./lib/pin.svelte.js";
+  import { undoLast } from "./lib/undo.svelte.js";
   import { fadeThrough } from "./lib/motion.js";
   import {
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
@@ -174,6 +177,15 @@
     seenJob = Math.max(seenJob, ...ids);
   }
 
+  async function answerConfirm(start) {
+    try {
+      app.server.jobs = await api("/api/analysis/confirm", { body: { start } });
+      toast(start ? "開始 AI 分析" : "好的，下次掃描到新照片時再問你；也可以在設定按「掃描並分析全部」");
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
   async function poll() {
     clearTimeout(timer);
     try {
@@ -222,7 +234,13 @@
   });
 </script>
 
-<svelte:window bind:innerWidth={winW} />
+<svelte:window bind:innerWidth={winW} onkeydown={(e) => {
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "z"
+    && !e.target.closest?.("input, textarea, select, [contenteditable]") && !viewer.open) {
+    e.preventDefault();
+    undoLast();
+  }
+}} />
 
 {#if !app.authChecked}
   <div class="boot"><span class="spinner"></span></div>
@@ -239,6 +257,7 @@
       </a>
       {#if narrow && !searchOpen}<span class="spacer"></span>{/if}
       <SearchBox narrow={winW <= 600} bind:expanded={searchOpen} />
+      {#if filterUI.pages && !(searchOpen && winW <= 600)}<FilterButton />{/if}
       <div class="right">
         <JobIndicator />
         <a class="icon-btn" class:active={page === "settings"} href="/settings" use:link aria-label="設定"><Icon path={mdiCogOutline} /></a>
@@ -362,6 +381,13 @@
   {#if viewer.open}<Viewer />{/if}
   <Dialogs />
 {/if}
+{#if app.server?.jobs?.confirm && !app.needLogin}
+  <div class="ask" role="alertdialog" aria-label="開始 AI 分析？">
+    <span class="msg">有 {app.server.jobs.confirm.pending.toLocaleString()} 張新照片還沒 AI 分析，要現在開始嗎？</span>
+    <button class="act" onclick={() => answerConfirm(false)}>稍後</button>
+    <button class="act strong" onclick={() => answerConfirm(true)}>開始分析</button>
+  </div>
+{/if}
 <Toasts />
 
 <style>
@@ -435,6 +461,18 @@
     animation: m3-enter var(--duration-medium2) var(--easing-emphasized-decelerate);
   }
   .drop-float.over { border-color: var(--primary); color: var(--primary); background: var(--primary-container); }
+
+  /* 「每次先問我」：掃描到新照片時的詢問列（和 Snackbar 同樣式，不會自己消失） */
+  .ask {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 290;
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap; width: min(600px, calc(100% - 32px)); min-height: 48px;
+    padding: 6px 8px 6px 16px; border-radius: var(--corner-extra-small); background: var(--inverse-surface); color: var(--inverse-on-surface);
+    font-size: 14px; line-height: 20px; animation: m3-enter var(--duration-medium2) var(--easing-emphasized-decelerate);
+  }
+  .ask .msg { flex: 1; min-width: 200px; padding: 8px 0; }
+  .ask .act { border: 0; background: none; color: var(--inverse-primary); font-weight: 500; padding: 10px 12px; border-radius: var(--corner-full); cursor: pointer; }
+  .ask .act:hover { background: color-mix(in srgb, var(--inverse-primary) 8%, transparent); }
+  @media (max-width: 840px) { .ask { bottom: calc(88px + env(safe-area-inset-bottom)); } }
 
   /* 平板：只有圖示的窄欄（像 Google 相簿）——圓形指示、分組之間一條短線 */
   .sidebar.rail { padding: 0 12px 24px; align-items: center; }
