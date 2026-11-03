@@ -39,7 +39,7 @@ def make_photo(path: Path, color, size=(64, 48), taken="2023:07:14 18:30:00", mo
 def make_video(path: Path, seconds=3):
     path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=blue:size=320x240:duration={seconds}:rate=10",
+        [which("ffmpeg"), "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=blue:size=320x240:duration={seconds}:rate=10",
          "-metadata", "creation_time=2022-01-02T03:04:05Z", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path)],
         check=True,
     )
