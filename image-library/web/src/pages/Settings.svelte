@@ -40,7 +40,7 @@
     { href: "/people", label: "人物", hint: "人臉辨識；關掉時也會停止在背景偵測人臉" },
     { href: "/gear", label: "器材", hint: "依相機、鏡頭、焦段篩選" },
     { href: "/keywords", label: "關鍵字", hint: "常拍內容的關鍵字雲" },
-    { href: "/duplicates", label: "重複照片", hint: "找出相同或幾乎一樣的照片" },
+    { href: "/tools", label: "整理工具", hint: "模糊與曝光檢查、截圖與文件、大檔案、重複照片" },
   ];
   const hiddenSet = $derived(new Set((settings?.nav_hidden || "").split(",").filter(Boolean)));
 

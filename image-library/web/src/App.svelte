@@ -16,6 +16,7 @@
   import MapPage from "./pages/MapPage.svelte";
   import People from "./pages/People.svelte";
   import Duplicates from "./pages/Duplicates.svelte";
+  import Tools from "./pages/Tools.svelte";
   import Gear from "./pages/Gear.svelte";
   import Keywords from "./pages/Keywords.svelte";
   import SmartAlbum from "./pages/SmartAlbum.svelte";
@@ -23,13 +24,13 @@
   import Settings from "./pages/Settings.svelte";
   import Login from "./pages/Login.svelte";
   import { api } from "./lib/api.js";
-  import { app, selection, viewer, refresh } from "./lib/state.svelte.js";
+  import { app, selection, viewer, refresh, toast } from "./lib/state.svelte.js";
   import { route, navigate, link } from "./lib/router.svelte.js";
   import { fadeThrough } from "./lib/motion.js";
   import {
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
     mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiContentDuplicate,
-    mdiChevronRight, mdiChevronDown,
+    mdiChevronRight, mdiChevronDown, mdiToolboxOutline,
   } from "./lib/icons.js";
 
   // 左側選單分組；fixed＝一定顯示，其他可在「設定 → 功能與選單」關掉
@@ -46,7 +47,7 @@
       { href: "/videos", label: "影片", icon: mdiVideoOutline },
     ] },
     { id: "tools", label: "工具", items: [
-      { href: "/duplicates", label: "重複照片", icon: mdiContentDuplicate },
+      { href: "/tools", label: "整理工具", icon: mdiToolboxOutline },
     ] },
   ];
   const NAV = NAV_GROUPS.flatMap((g) => g.items);
@@ -89,6 +90,7 @@
 
   function active(href) {
     if (href === "/") return page === "";
+    if (href === "/tools") return page === "tools" || page === "duplicates";
     if (href === "/explore") return EXPLORE_PAGES.some((p) => route.path === p || route.path.startsWith(p + "/"));
     return route.path === href || route.path.startsWith(href + "/");
   }
@@ -104,11 +106,32 @@
     app.context = null;
   });
 
+  // 完成通知：使用者自己啟動、會跑一陣子的工作，結束時跳出 Snackbar
+  const NOTIFY = new Set(["export", "pull", "face_model", "clip_model", "quality", "dups", "cluster"]);
+  let seenJob = null;
+  function notifyFinished(recent) {
+    const ids = recent.map((j) => j.id);
+    if (seenJob === null) {
+      seenJob = Math.max(0, ...ids);
+      return;
+    }
+    for (const j of [...recent].reverse()) {
+      if (j.id <= seenJob) continue;
+      if (j.error) toast(`${j.label}失敗：${j.error}`, "error");
+      else if (j.kind === "export" && j.result?.dest && app.server?.local) {
+        const dest = j.result.dest;
+        toast(j.message, "info", 10000, { label: "在 Finder 中顯示", run: () => api("/api/reveal-path", { body: { path: dest } }).catch((e) => toast(e.message, "error")) });
+      } else if (NOTIFY.has(j.kind)) toast(`${j.label}完成：${j.message}`, "info", 6000);
+    }
+    seenJob = Math.max(seenJob, ...ids);
+  }
+
   async function poll() {
     clearTimeout(timer);
     try {
       const s = await api("/api/server");
       app.server = s;
+      notifyFinished(s.jobs.recent || []);
       const running = !!s.jobs.running;
       const fin = s.jobs.last?.finished_at;
       const total = s.stats.images;
@@ -227,6 +250,8 @@
           <Gear />
         {:else if page === "keywords"}
           <Keywords />
+        {:else if page === "tools"}
+          <Tools sub={seg[1] || ""} />
         {:else if page === "duplicates"}
           <Duplicates />
         {:else if page === "albums" && seg[1]}

@@ -138,13 +138,14 @@ class AutoAnalyzeTests(unittest.TestCase):
         try:
             runner.submit("scan")
             self.assertTrue(runner.wait_idle(30))
-            return runner.last
+            return {j["kind"]: j for j in reversed(runner.recent)}  # 每種工作最後一次的結果
         finally:
             runner.close()
 
     def test_scan_then_analyze_when_ready(self):
-        last = self.run_scan(ReadyClient)
-        self.assertEqual(last["kind"], "analyze")
+        done = self.run_scan(ReadyClient)
+        self.assertIn("analyze", done)
+        self.assertIn("quality", done)  # 掃描後也會自動做品質檢查
         conn = db.connect(self.cfg.db_path)
         self.assertEqual(db.stats(conn)["analyzed"], 1)
         conn.close()
@@ -154,9 +155,9 @@ class AutoAnalyzeTests(unittest.TestCase):
             def list_models(self):
                 return ["other:1b"]
 
-        last = self.run_scan(Missing)
-        self.assertEqual(last["kind"], "scan")
-        self.assertIn("尚未開始 AI 分析", last["message"])
+        done = self.run_scan(Missing)
+        self.assertNotIn("analyze", done)
+        self.assertIn("尚未開始 AI 分析", done["scan"]["message"])
 
     def test_pull_of_selected_model_starts_analysis(self):
         from lumilib.scanner import scan_all
@@ -174,7 +175,7 @@ class AutoAnalyzeTests(unittest.TestCase):
 
     def test_auto_analyze_off(self):
         self.cfg.auto_analyze = 0
-        self.assertEqual(self.run_scan(ReadyClient)["kind"], "scan")
+        self.assertNotIn("analyze", self.run_scan(ReadyClient))
 
 
 class BrokenServerClient(ReadyClient):

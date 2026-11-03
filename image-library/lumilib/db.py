@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8  # v8：照片品質檢查欄位
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -145,6 +145,13 @@ V2_COLUMNS = [
     ("stack_id", "INTEGER"),
     ("stack_top", "INTEGER NOT NULL DEFAULT 1"),
     ("phash", "TEXT"),
+    # 照片品質檢查（模糊、曝光），本機計算、不用 AI
+    ("quality_at", "TEXT"),
+    ("sharpness", "REAL"),
+    ("luma", "REAL"),
+    ("dark_frac", "REAL"),
+    ("bright_frac", "REAL"),
+    ("highlight", "REAL"),
 ]
 
 INDEXES = """

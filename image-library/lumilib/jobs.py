@@ -24,6 +24,7 @@ LABELS = {
     "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放",
+    "quality": "品質檢查（模糊、曝光）", "export": "匯出照片",
 }
 LANES = {"analyze": "ai", "embed": "ai", "pull": "download", "face_model": "download", "clip_model": "download"}
 QUEUED_LANES = ("main", "ai")
@@ -188,7 +189,7 @@ class JobRunner:
         with self.lock:
             self.last = {
                 "id": job["id"], "kind": job["kind"], "label": job["label"], "lane": job["lane"],
-                "model": job.get("model"), "message": message, "error": error,
+                "model": job.get("model"), "message": message, "error": error, "result": job.get("result"),
                 "finished_at": datetime.now().isoformat(timespec="seconds"),
             }
             self.recent.appendleft(self.last)
@@ -225,6 +226,15 @@ class JobRunner:
                 self.submit("faces")
             if st["images"] > st["clip_done"] and self._clip_ready("auto"):
                 self.submit("clip")
+            conn = db.connect(self.cfg.db_path)
+            try:
+                need_quality = conn.execute(
+                    "SELECT 1 FROM images WHERE status = 'ok' AND media_type = 'photo' AND quality_at IS NULL LIMIT 1"
+                ).fetchone()
+            finally:
+                conn.close()
+            if need_quality:
+                self.submit("quality")  # 本機計算，很快
             if self.cfg.auto_analyze and st["pending"]:
                 status = ai_status(self.client_factory(), self.cfg)
                 if status["ready"]:
@@ -338,6 +348,24 @@ class JobRunner:
                 res = find_duplicates(conn, self.cfg, stop=stop,
                                       progress=lambda i, n, m: upd(done=i, total=n, message=f"{m} {i}/{n}"))
                 parts.append(f"完全相同 {len(res['exact'])} 組、幾乎一樣 {len(res['similar'])} 組")
+            if kind == "quality":
+                from .quality import check_images
+
+                n = check_images(conn, self.cfg, ids=opts.get("ids"), redo=bool(opts.get("redo")), stop=stop,
+                                 progress=lambda i, t, m: upd(done=i, total=t, message=f"品質檢查 {i}/{t}　{m}"))
+                parts.append(f"檢查 {n} 張照片的清晰度與曝光")
+            if kind == "export":
+                from .export import export_images
+
+                res = export_images(conn, self.cfg, opts.get("ids") or [], opts.get("export") or {}, stop=stop,
+                                    progress=lambda i, t, m: upd(done=i, total=t, message=f"匯出 {i}/{t}　{m}"))
+                job["result"] = res
+                msg = f"已匯出 {res['exported']} 張到「{res['dest']}」"
+                if res["skipped"]:
+                    msg += f"；略過 {len(res['skipped'])} 個（{'、'.join(res['skipped'][:3])}）"
+                if res["smaller"]:
+                    msg += f"；{res['smaller']} 張原圖比指定尺寸小，維持原尺寸"
+                parts.append(msg)
             if kind == "stacks":
                 from .organize import rebuild_stacks
 

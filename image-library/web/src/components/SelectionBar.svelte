@@ -1,15 +1,17 @@
 <script>
   import Icon from "./Icon.svelte";
+  import ExportDialog from "./ExportDialog.svelte";
   import { app, selection } from "../lib/state.svelte.js";
   import { addToAlbum, analyzeAssets, moveAssets, removeFromAlbum, setFavorite, trashAssets } from "../lib/actions.js";
   import { api } from "../lib/api.js";
   import { toast, refresh } from "../lib/state.svelte.js";
   import {
-    mdiClose, mdiHeartOutline, mdiImageAlbum, mdiFolderMoveOutline, mdiCreation, mdiDeleteOutline, mdiImageRemoveOutline, mdiImageOutline, mdiAccountRemoveOutline, mdiStarOutline, mdiStar, mdiFlagRemove, mdiLayers,
+    mdiFileExportOutline, mdiClose, mdiHeartOutline, mdiImageAlbum, mdiFolderMoveOutline, mdiCreation, mdiDeleteOutline, mdiImageRemoveOutline, mdiImageOutline, mdiAccountRemoveOutline, mdiStarOutline, mdiStar, mdiFlagRemove, mdiLayers,
   } from "../lib/icons.js";
   import { LABEL_COLORS, LABEL_KEYS, LABEL_NAMES } from "../lib/format.js";
 
   let rateMenu = $state(false);
+  let exporting = $state(false);
 
   async function bulk(action, value) {
     const res = await api("/api/assets/bulk", { body: { ids, action, value } });
@@ -88,6 +90,7 @@
   {#if personId}
     <button class="icon-btn" title="不是這個人" onclick={() => run(notThisPerson)}><Icon path={mdiAccountRemoveOutline} /></button>
   {/if}
+  <button class="btn soft small export" onclick={() => (exporting = true)} title="匯出交件（尺寸、浮水印、移除 GPS、重新命名）"><Icon path={mdiFileExportOutline} size={18} />匯出</button>
   <button class="icon-btn" title="搬移到資料夾" onclick={() => run(() => moveAssets(ids))}><Icon path={mdiFolderMoveOutline} /></button>
   {#if ids.length > 1}
     <button class="icon-btn" title="疊放在一起" onclick={() => run(stackSelected)}><Icon path={mdiLayers} /></button>
@@ -96,7 +99,13 @@
   <button class="icon-btn" title="移到垃圾桶" onclick={() => run(async () => ((await trashAssets(ids)).length ? null : "keep"))}><Icon path={mdiDeleteOutline} /></button>
 </div>
 
+{#if exporting}
+  <ExportDialog {ids} onclose={(done) => { exporting = false; if (done) selection.clear(); }} />
+{/if}
+
 <style>
+  .export { margin: 0 4px; }
+  @media (max-width: 760px) { .export { padding: 0 10px; } }
   .bar {
     position: fixed; top: 0; left: 0; right: 0; height: var(--topbar); z-index: 60;
     display: flex; align-items: center; gap: 4px; padding: 0 12px; padding-top: env(safe-area-inset-top);

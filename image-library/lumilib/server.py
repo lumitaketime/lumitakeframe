@@ -33,7 +33,7 @@ from .search import STACK_COUNT_SQL, search, summarize, tag_covers, top_tags
 
 WEB_DIR = Path(__file__).parent / "web"
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
-LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal"}
+LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces", "query_rewrite", "clip_enabled", "clip_model",
@@ -1201,6 +1201,97 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    # ---- 整理工具 ----
+    @app.get("/api/tools/summary")
+    def tools_summary():
+        from .quality import blurry, exposure_problems
+        from .tools import screens_and_documents
+
+        c = conn()
+        try:
+            q = c.execute(
+                "SELECT COUNT(*), SUM(quality_at IS NOT NULL) FROM images WHERE status = 'ok' AND media_type = 'photo'"
+            ).fetchone()
+            from .organize import load_duplicates
+
+            dups = load_duplicates(c, cfg)
+            return {
+                "photos": q[0] or 0, "quality_done": q[1] or 0,
+                "blurry": len(blurry(c, "standard")), "exposure": len(exposure_problems(c)),
+                "screens": len(screens_and_documents(c)),
+                "biggest": c.execute("SELECT COALESCE(SUM(size), 0) FROM images WHERE status = 'ok'").fetchone()[0],
+                "videos_bytes": c.execute("SELECT COALESCE(SUM(size), 0) FROM images WHERE status = 'ok' AND media_type = 'video'").fetchone()[0],
+                "dups": (len(dups["exact"]) + len(dups["similar"])) if dups else None,
+            }
+        finally:
+            c.close()
+
+    @app.get("/api/tools/blurry")
+    def tools_blurry(level: str = "standard"):
+        from .quality import blurry
+
+        c = conn()
+        try:
+            return [{**summarize(r), "sharpness": r["sharpness"]} for r in blurry(c, level)]
+        finally:
+            c.close()
+
+    @app.get("/api/tools/exposure")
+    def tools_exposure():
+        from .quality import EXPOSURE_LABELS, exposure_problems
+
+        c = conn()
+        try:
+            return [{**summarize(r), "flag": flag, "reason": EXPOSURE_LABELS[flag]} for r, flag in exposure_problems(c)]
+        finally:
+            c.close()
+
+    @app.get("/api/tools/screens")
+    def tools_screens():
+        from .tools import screens_and_documents
+
+        c = conn()
+        try:
+            return [{**summarize(r), "reason": reason} for r, reason in screens_and_documents(c)]
+        finally:
+            c.close()
+
+    @app.get("/api/tools/large")
+    def tools_large(kind: str = "all"):
+        from .tools import large_files
+
+        c = conn()
+        try:
+            return [{**summarize(r), "size": r["size"], "rel_path": r["rel_path"], "root_id": r["root_id"]}
+                    for r in large_files(c, kind)]
+        finally:
+            c.close()
+
+    @app.get("/api/tools/large-folders")
+    def tools_large_folders():
+        from .tools import large_folders
+
+        c = conn()
+        try:
+            return large_folders(c)
+        finally:
+            c.close()
+
+    @app.get("/api/export/defaults")
+    def export_defaults():
+        from .export import default_dest
+
+        return {"dest": str(default_dest().parent)}
+
+    @app.post("/api/reveal-path")
+    def reveal_path(body: dict = Body(...)):
+        """在 Finder 顯示匯出的資料夾（只限本機）。"""
+        target = Path(str(body.get("path", ""))).expanduser()
+        if not target.exists():
+            raise HTTPException(404, "找不到這個資料夾")
+        fileops.reveal(target, select=False)
+        return {"ok": True}
+
     # ---- 儲存空間與模型管理 ----
     @app.get("/api/storage")
     def storage_usage():
@@ -1275,6 +1366,13 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         opts = {k: body[k] for k in ("roots", "folder", "root_id", "album_id", "redo", "retry_failed") if body.get(k) is not None}
         if kind in ("pull", "face_model", "clip_model"):
             opts = {"model": str(body["model"])}
+        if kind == "export":
+            ids = [int(i) for i in body.get("ids") or []][:MAX_IDS]
+            if not ids:
+                raise HTTPException(400, "沒有選取照片")
+            opts = {"ids": ids, "export": dict(body.get("options") or {})}
+        if kind == "quality" and body.get("redo"):
+            opts = {"redo": True}
         return jobs().submit(kind, **opts)
 
     @app.post("/api/jobs/stop")
