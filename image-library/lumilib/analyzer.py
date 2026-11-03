@@ -243,16 +243,26 @@ class OllamaClient:
                 raise ValueError("模型輸出太長被截斷（可能不斷重複）。建議改用 Gemma 4 或其他模型。") from None
             raise
 
-    def chat_json(self, model: str, prompt: str, schema: dict, timeout: int | None = None) -> dict:
-        """純文字對話，輸出符合 schema 的 JSON（查詢改寫、翻譯用）。"""
+    def chat_json(self, model: str, prompt: str, schema: dict, timeout: int | None = None,
+                  num_predict: int = 800, salvage=None) -> dict:
+        """純文字對話，輸出符合 schema 的 JSON（查詢改寫、翻譯用）。
+        salvage(content)：JSON 不完整時（例如模型重複同樣的詞直到被截斷）盡量取回可用的部分。"""
         old = self.timeout
         if timeout:
             self.timeout = timeout
         try:
-            data = self.chat(model, [{"role": "user", "content": prompt}], schema, 0.1, num_predict=800)
+            data = self.chat(model, [{"role": "user", "content": prompt}], schema, 0.1, num_predict=num_predict)
         finally:
             self.timeout = old
-        return parse_model_json(self._content(data))
+        content = self._content(data)
+        try:
+            return parse_model_json(content)
+        except Exception:
+            if salvage is not None:
+                rescued = salvage(content)
+                if rescued:
+                    return rescued
+            raise
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
         data = self._post("/api/embed", {"model": model, "input": texts, "keep_alive": "15m"})
@@ -546,12 +556,27 @@ REWRITE_SCHEMA = {
 }
 
 REWRITE_PROMPT = """你是照片圖庫的搜尋助手。照片的描述與關鍵字以繁體中文和英文寫成。
-把使用者的每個搜尋詞翻譯並擴充成「最可能出現在照片描述或標籤中」的詞：
-- 每個搜尋詞一組，term 是原本的詞，synonyms 放 3 到 8 個：繁體中文同義詞、英文翻譯與英文同義詞。
+把使用者的每個搜尋詞換成「照片描述或標籤中最可能出現的說法」：
+- 每個搜尋詞一組，term 是原本的詞，synonyms 最多 5 個，每個都不一樣：繁體中文同義詞、常用的英文名稱。
+- 用大家實際使用的名稱，不要逐字直譯。例如「金龜車」是 Volkswagen Beetle、beetle car，不是 gold turtle car；「101」是 Taipei 101。
 - 只放意思相同或非常接近的詞，不要放上位或無關的概念（例如「貓」不要放「動物」）。
-- 簡體字要加上對應的繁體字。
+- 簡體字要加上對應的繁體字。人名、寵物名、店名不要翻譯，synonyms 留空。
 - english 是整個查詢的自然英文描述，用於圖像搜尋。
 搜尋詞：{terms}"""
+
+
+def salvage_rewrite(content: str) -> dict | None:
+    """模型輸出被截斷或格式不完整時，取回已經寫出來的 term 與 synonyms。"""
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.S)
+    content = content.replace("“", '"').replace("”", '"').replace("「", '"').replace("」", '"')
+    groups = []
+    for m in re.finditer(r'"term"\s*:\s*"([^"]{1,60})"\s*,\s*"synonyms"\s*:\s*\[([^\]]*)', content, flags=re.S):
+        syns = re.findall(r'"([^"]{1,40})"', m.group(2))
+        groups.append({"term": m.group(1), "synonyms": list(dict.fromkeys(syns))[:6]})
+    english = re.search(r'"english"\s*:\s*"([^"]{1,200})"', content)
+    if not groups and not english:
+        return None
+    return {"groups": groups, "english": english.group(1) if english else ""}
 
 _rewrite_cache: "OrderedDict[tuple, dict]" = None  # type: ignore[assignment]
 
@@ -567,17 +592,21 @@ def rewrite_query(client, model: str, terms: list[str], timeout: int = 12) -> di
     if key in _rewrite_cache:
         _rewrite_cache.move_to_end(key)
         return _rewrite_cache[key]
-    raw = client.chat_json(model, REWRITE_PROMPT.format(terms="、".join(terms)), REWRITE_SCHEMA, timeout=timeout)
+    try:
+        raw = client.chat_json(model, REWRITE_PROMPT.format(terms="、".join(terms)), REWRITE_SCHEMA, timeout=timeout,
+                               num_predict=320, salvage=salvage_rewrite)
+    except TypeError:  # 舊的 client 介面（測試用的假 client）
+        raw = client.chat_json(model, REWRITE_PROMPT.format(terms="、".join(terms)), REWRITE_SCHEMA, timeout=timeout)
     by_term = {}
     for g in raw.get("groups") or []:
         if isinstance(g, dict) and g.get("term"):
-            by_term[str(g["term"]).strip().lower()] = _str_list(g.get("synonyms"), 10)
+            by_term[str(g["term"]).strip().lower()] = _str_list(g.get("synonyms"), 6)
     groups = []
     for i, term in enumerate(terms):
         syn = by_term.get(term.lower())
         if syn is None and len(raw.get("groups") or []) == len(terms):  # 模型改寫了 term 本身時依順序對應
             g = raw["groups"][i]
-            syn = _str_list(g.get("synonyms"), 10) if isinstance(g, dict) else []
+            syn = _str_list(g.get("synonyms"), 6) if isinstance(g, dict) else []
         group = [term] + [x.lower() for x in (syn or []) if x.lower() != term and len(x) <= 40]
         groups.append(list(dict.fromkeys(group)))
     result = {"groups": groups, "english": str(raw.get("english") or "").strip()[:200]}

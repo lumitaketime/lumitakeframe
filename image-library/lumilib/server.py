@@ -959,8 +959,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 try:
                     rw = rewrite_query(client_factory(), cfg.search_model, terms)
                     groups, english = rw["groups"], rw["english"]
-                except Exception as exc:  # 改寫失敗不能讓搜尋失敗
-                    warnings.append(f"智慧搜尋暫時無法使用（{exc}），只用原始關鍵字")
+                except Exception as exc:  # noqa: BLE001  改寫失敗就只用原本的關鍵字，不打擾使用者
+                    print(f"查詢改寫失敗，改用原始關鍵字：{exc}", flush=True)
             clip_rank = None
             if smart and cfg.clip_enabled and terms:
                 from . import clip as clipmod
