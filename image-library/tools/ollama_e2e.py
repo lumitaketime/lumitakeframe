@@ -19,7 +19,7 @@ from lumilib.scanner import scan_all  # noqa: E402
 model, photos = sys.argv[1], Path(sys.argv[2])
 home = Path("/tmp/lumilib-e2e-" + model.replace(":", "_"))
 cfg = load_config(home, vision_model=model)
-client = OllamaClient(cfg.ollama_url, 900)
+client = OllamaClient(cfg.ollama_url, 600)
 
 tags = json.load(urllib.request.urlopen(cfg.ollama_url + "/api/tags"))
 for m in tags["models"]:

@@ -166,16 +166,18 @@ class OllamaClient:
     _no_think: set = set()
 
     def chat(self, model: str, messages: list[dict], schema: dict | None, temperature: float,
-             num_ctx: int | None = None) -> dict:
+             num_ctx: int | None = None, num_predict: int = 1500) -> dict:
         """呼叫 /api/chat，回傳整個回應。
 
         - think=False：Qwen3-VL、Gemma 4 這類會「先思考」的模型，關閉後每張快很多，
           也避免思考內容吃掉輸出長度而回傳空白。
         - num_ctx：圖片會佔上千個 token，Ollama 預設的上下文太小時會被截斷。
+        - num_predict：輸出長度上限。有些模型在 JSON 模式下會不停重複輸出，沒有上限時
+          一張照片可能跑上十幾分鐘直到逾時。
         """
         payload = {
             "model": model, "stream": False, "keep_alive": "15m", "messages": messages,
-            "options": {"temperature": temperature},
+            "options": {"temperature": temperature, "num_predict": num_predict, "repeat_penalty": 1.1},
         }
         if schema is not None:
             payload["format"] = schema
@@ -204,7 +206,13 @@ class OllamaClient:
         num_ctx = 8192 if len(images) <= 1 else 16384
         data = self.chat(model, [{"role": "user", "content": prompt, "images": images}],
                          RESULT_SCHEMA, 0.2, num_ctx)
-        return parse_model_json(self._content(data))
+        content = self._content(data)
+        try:
+            return parse_model_json(content)
+        except ValueError:
+            if data.get("done_reason") == "length":
+                raise ValueError("模型輸出太長被截斷（可能不斷重複）。建議改用 Gemma 4 或其他模型。") from None
+            raise
 
     def chat_json(self, model: str, prompt: str, schema: dict, timeout: int | None = None) -> dict:
         """純文字對話，輸出符合 schema 的 JSON（查詢改寫、翻譯用）。"""
@@ -212,7 +220,7 @@ class OllamaClient:
         if timeout:
             self.timeout = timeout
         try:
-            data = self.chat(model, [{"role": "user", "content": prompt}], schema, 0.1)
+            data = self.chat(model, [{"role": "user", "content": prompt}], schema, 0.1, num_predict=800)
         finally:
             self.timeout = old
         return parse_model_json(self._content(data))

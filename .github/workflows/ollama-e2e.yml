@@ -9,6 +9,10 @@ on:
       - "image-library/tools/ollama_e2e.py"
       - ".github/workflows/ollama-e2e.yml"
   workflow_dispatch:
+    inputs:
+      models:
+        description: "要測試的模型（JSON 陣列）"
+        default: '["qwen3-vl:4b", "gemma4:e2b", "gemma4:e4b"]'
 
 concurrency:
   group: ollama-e2e-${{ github.ref }}
@@ -17,11 +21,11 @@ concurrency:
 jobs:
   analyze:
     runs-on: ubuntu-latest
-    timeout-minutes: 100
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        model: ["qwen3-vl:4b", "gemma4:e2b", "gemma4:e4b"]
+        model: ${{ fromJSON(github.event.inputs.models || '["qwen3-vl:4b", "qwen3-vl:4b-instruct", "gemma4:e4b"]') }}
     steps:
       - uses: actions/checkout@v4
 
