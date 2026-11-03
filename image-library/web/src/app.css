@@ -247,3 +247,4 @@ input[type="range"] { accent-color: var(--primary); }
   .spinner { animation-duration: .8s !important; animation-iteration-count: infinite !important; }
   .m3-ripple { display: none; }
 }
+@keyframes m3-fade { from { opacity: 0; } }

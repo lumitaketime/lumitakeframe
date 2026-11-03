@@ -1,5 +1,6 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
+  import { findThumb, fly, heroDuration } from "../lib/hero.js";
   import Icon from "./Icon.svelte";
   import InfoPanel from "./InfoPanel.svelte";
   import { api, originalUrl, previewUrl, thumbUrl } from "../lib/api.js";
@@ -21,6 +22,9 @@
   let loaded = $state(false);
   let chrome = $state(true);
   let pushed = false;
+  // 開關動畫：opening＝照片從縮圖長出來；closing＝縮回縮圖
+  let phase = $state("opening");
+  let stageEl = $state();
 
   const item = $derived(viewer.list[viewer.index]);
   const isVideo = $derived((item?.type || detail?.media_type) === "video");
@@ -36,12 +40,60 @@
   }
 
   onMount(() => {
-    history.pushState({ viewer: true }, "");
+    history.pushState({ viewer: true, idx: history.state?.idx ?? 0 }, "");
     pushed = true;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    heroIn();
     return () => (document.body.style.overflow = prevOverflow);
   });
+
+  /** 照片在畫面上 100% 時的位置 */
+  function targetRect() {
+    const r = stageEl?.getBoundingClientRect();
+    if (!r || !item) return null;
+    // 和畫面上的圖片一樣：縮小到放得下，但不會放大超過原尺寸（預覽最大 2048px）
+    const w = item.w || 1;
+    const h = item.h || 1;
+    const natural = Math.min(1, 2048 / Math.max(w, h));
+    const f = Math.min(r.width / w, r.height / h, natural);
+    const W = w * f;
+    const H = h * f;
+    return { left: r.left + (r.width - W) / 2, top: r.top + (r.height - H) / 2, width: W, height: H };
+  }
+
+  async function heroIn() {
+    const it = item;
+    const thumb = it && it.type !== "video" ? findThumb(it.id) : null;
+    await tick();
+    const to = targetRect();
+    if (!thumb || !to) {
+      phase = "open";
+      return;
+    }
+    const overlay = await fly({ src: thumb.src, from: thumb.rect, to, fromRadius: thumb.radius, duration: heroDuration });
+    phase = "open";
+    // 等真正的圖片畫出來再拿掉覆蓋的那張，避免閃一下
+    requestAnimationFrame(() => requestAnimationFrame(() => overlay?.remove?.()));
+  }
+
+  /** 關閉：縮回網格裡的位置（找不到縮圖或放大中就直接淡出） */
+  async function heroOut() {
+    if (phase === "closing") return;
+    const it = item;
+    const media = stageEl?.querySelector(".media.show") || stageEl?.querySelector(".placeholder");
+    const from = media?.getBoundingClientRect();
+    phase = "closing";
+    const thumb = it && it.type !== "video" && zoom <= 1 && from?.width ? findThumb(it.id, { scroll: true }) : null;
+    if (thumb) {
+      thumb.el.style.visibility = "hidden";
+      const overlay = await fly({ src: media.currentSrc || media.src, from, to: thumb.rect, toRadius: thumb.radius, duration: heroDuration - 40 });
+      thumb.el.style.visibility = "";
+      overlay?.remove?.();
+    } else {
+      await new Promise((r) => setTimeout(r, 140));
+    }
+  }
 
   $effect(() => {
     const it = item;
@@ -65,7 +117,9 @@
     }
   });
 
-  function close() {
+  async function close() {
+    if (phase === "closing") return;
+    await heroOut();
     if (pushed) {
       pushed = false;
       history.back();
@@ -169,9 +223,10 @@
     else if (e.key === "Delete" || e.key === "Backspace") remove();
   }
 
-  function onpop() {
+  async function onpop() {
     if (pushed) {
       pushed = false;
+      await heroOut();
       viewer.open = false;
     }
   }
@@ -305,7 +360,7 @@
 
 <svelte:window onkeydown={onkey} onpopstate={onpop} />
 
-<div class="viewer" role="dialog" aria-modal="true" aria-label="檢視">
+<div class="viewer" class:opening={phase === "opening"} class:closing={phase === "closing"} role="dialog" aria-modal="true" aria-label="檢視">
   <div class="stage-wrap">
     <div class="top" class:hidden={!chrome}>
       <button class="icon-btn" onclick={close} aria-label="返回"><Icon path={mdiArrowLeft} /></button>
@@ -345,6 +400,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="stage"
+      bind:this={stageEl}
       bind:clientWidth={stageW}
       bind:clientHeight={stageH}
       onwheel={wheel}
@@ -458,9 +514,15 @@
 <style>
   .viewer {
     position: fixed; inset: 0; z-index: 100; background: #000; color: #fff; display: flex;
-    animation: fade .15s ease-out;
+    animation: bg-in .28s cubic-bezier(.2,0,0,1);
+    transition: background-color .26s cubic-bezier(.3,0,.8,.15);
   }
-  @keyframes fade { from { opacity: 0; } }
+  @keyframes bg-in { from { background-color: rgb(0 0 0 / 0); } }
+  /* 動畫進行中：真正的照片先藏起來，由覆蓋的那張負責移動 */
+  .viewer.opening .stage :global(img), .viewer.closing .stage :global(img), .viewer.closing video { opacity: 0 !important; transition: none !important; }
+  .viewer.closing { background-color: rgb(0 0 0 / 0); pointer-events: none; }
+  .viewer.opening .top, .viewer.closing .top, .viewer.closing .nav, .viewer.closing .side { opacity: 0; transition: opacity .15s; }
+  .viewer .top { transition: opacity .2s; }
   .stage-wrap { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .top {
     position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 2px;
@@ -542,7 +604,8 @@
     border-radius: 10px; cursor: pointer; text-align: left; color: inherit; text-decoration: none; font-size: 14px;
   }
   .menu button:hover, .menu a:hover { background: var(--bg-2); }
-  .side { height: 100%; }
+  .side { height: 100%; animation: side-in .32s cubic-bezier(.2,0,0,1); }
+  @keyframes side-in { from { transform: translateX(24px); opacity: 0; } }
   @media (max-width: 900px) {
     .rate-bar { bottom: calc(10px + env(safe-area-inset-bottom)); }
     .stack-strip { bottom: calc(62px + env(safe-area-inset-bottom)); }

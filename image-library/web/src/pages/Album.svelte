@@ -5,7 +5,7 @@
   import { navigate, link } from "../lib/router.svelte.js";
   import { app, showDialog, toast, refresh } from "../lib/state.svelte.js";
   import { confirm } from "../lib/actions.js";
-  import { mdiArrowLeft, mdiPencilOutline, mdiDeleteOutline, mdiCreation } from "../lib/icons.js";
+  import { mdiPencilOutline, mdiDeleteOutline, mdiCreation } from "../lib/icons.js";
 
   let { id } = $props();
   let album = $state(null);
@@ -45,17 +45,19 @@
   {#if error}
     <div class="empty"><h2>{error}</h2><a href="/albums" use:link>回到相簿</a></div>
   {:else if album}
-    <div class="page-head">
-      <a class="icon-btn" href="/albums" use:link aria-label="回到相簿"><Icon path={mdiArrowLeft} /></a>
-      <h1>{album.name}</h1>
-      <button class="icon-btn" onclick={rename} title="重新命名"><Icon path={mdiPencilOutline} /></button>
-      <button class="icon-btn" onclick={analyze} title="AI 分析"><Icon path={mdiCreation} /></button>
-      <button class="icon-btn" onclick={remove} title="刪除相簿"><Icon path={mdiDeleteOutline} /></button>
-    </div>
-    <p class="muted small sub">{album.count} 個項目</p>
-    {#if album.assets.length}
-      <DateGroups assets={album.assets} storeKey={`album:${id}`} />
-    {:else}
+    <DateGroups
+      assets={album.assets}
+      storeKey={`album:${id}`}
+      title={album.name}
+      back="/albums"
+      crumbs={[{ label: "相簿", href: "/albums" }]}
+      menu={[
+        { label: "重新命名", icon: mdiPencilOutline, run: rename },
+        { label: "AI 分析相簿", icon: mdiCreation, run: analyze },
+        { label: "刪除相簿", icon: mdiDeleteOutline, run: remove, danger: true },
+      ]}
+    />
+    {#if !album.assets.length}
       <div class="empty"><p>相簿是空的。到「照片」或「資料夾」選取項目，按上方的「加到相簿」。</p></div>
     {/if}
   {:else}

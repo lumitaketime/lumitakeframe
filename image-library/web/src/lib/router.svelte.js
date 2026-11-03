@@ -7,10 +7,24 @@ function sync() {
 }
 
 window.addEventListener("popstate", sync);
+// 記錄在這個 App 裡走了幾步，返回鍵才知道能不能「回上一頁」
+if (typeof history.state?.idx !== "number") history.replaceState({ ...(history.state || {}), idx: 0 }, "");
+
+/** 可以回到 App 裡的上一頁（不是從外部連結直接打開） */
+export function canGoBack() {
+  return (history.state?.idx ?? 0) > 0;
+}
+
+/** 返回：有上一頁就回上一頁，否則到上一層 */
+export function goBack(fallback = "/") {
+  if (canGoBack()) history.back();
+  else navigate(fallback, { replace: true });
+}
 
 export function navigate(to, { replace = false } = {}) {
   if (to === location.pathname + location.search) return;
-  history[replace ? "replaceState" : "pushState"]({}, "", to);
+  const idx = history.state?.idx ?? 0;
+  history[replace ? "replaceState" : "pushState"]({ idx: replace ? idx : idx + 1 }, "", to);
   sync();
   document.querySelector("main")?.scrollTo?.({ top: 0 });
 }

@@ -1,4 +1,5 @@
 <script>
+  import BackButton from "../components/BackButton.svelte";
   import { onMount } from "svelte";
   import Icon from "../components/Icon.svelte";
   import JobList from "../components/JobList.svelte";
@@ -12,7 +13,7 @@
   import {
     mdiHarddisk, mdiRefresh, mdiPencilOutline, mdiDeleteOutline, mdiPlus, mdiCreation, mdiCheck, mdiDownload,
     mdiCellphone, mdiStop, mdiThemeLightDark, mdiServerNetwork, mdiAlertCircleOutline, mdiFaceRecognition,
-    mdiImageSearchOutline, mdiStar, mdiTuneVariant, mdiArrowLeft, mdiViewDashboardOutline, mdiDatabaseOutline, mdiToolboxOutline,
+    mdiImageSearchOutline, mdiStar, mdiTuneVariant, mdiArrowLeft, mdiPaw, mdiViewDashboardOutline, mdiDatabaseOutline, mdiToolboxOutline,
   } from "../lib/icons.js";
 
 
@@ -22,6 +23,7 @@
     { id: "library", label: "圖庫資料夾", icon: mdiHarddisk },
     { id: "ai", label: "AI 分析", icon: mdiCreation },
     { id: "faces", label: "人臉辨識", icon: mdiFaceRecognition },
+    { id: "pets", label: "寵物辨識", icon: mdiPaw },
     { id: "search", label: "智慧搜尋", icon: mdiImageSearchOutline },
     { id: "lightroom", label: "Lightroom 與檢視", icon: mdiStar },
     { id: "tools", label: "整理工具", icon: mdiToolboxOutline },
@@ -65,6 +67,8 @@
 
   let roots = $state([]);
   let faceModels = $state([]);
+  let petModels = $state([]);
+  let petInfo = $state(null);
   let ollamaUrl = $state("");
   let ollamaTest = $state("");
   let prompt = $state("");
@@ -139,6 +143,8 @@
 
   function loadExtra() {
     api("/api/faces/models").then((m) => (faceModels = m));
+    api("/api/pets/models").then((m) => (petModels = m));
+    api("/api/pets").then((d) => (petInfo = d)).catch(() => {});
     api("/api/clip/models").then((m) => (clipModels = m));
   }
 
@@ -160,6 +166,25 @@
       if (!ok) return;
     }
     settings = await api("/api/settings", { body: { face_model: name } });
+    loadExtra();
+    refresh();
+  }
+
+  async function usePetModel(name) {
+    if (settings.pet_model !== name && petInfo?.pets?.length) {
+      const ok = await confirm("切換寵物模型？", "不同模型的特徵不相容，會清除目前認出的寵物（包含名字），之後重新辨識。", { ok: "切換", danger: true });
+      if (!ok) return;
+    }
+    settings = await api("/api/settings", { body: { pet_model: name } });
+    loadExtra();
+    refresh();
+  }
+
+  async function clearPets() {
+    const ok = await confirm("刪除所有寵物資料？", "會刪除認出的貓狗、特徵與名字。照片本身不受影響，之後可以重新辨識。", { ok: "全部刪除", danger: true });
+    if (!ok) return;
+    await api("/api/pets/clear", { body: {} });
+    toast("寵物資料已刪除");
     loadExtra();
     refresh();
   }
@@ -341,7 +366,7 @@
 
 <div class="page settings" class:has-section={!!section}>
   <aside class="cats" aria-label="設定分類">
-    <h1>設定</h1>
+    <div class="cats-head"><BackButton to="/" label="離開設定" /><h1>設定</h1></div>
     {#each SECTIONS as c (c.id)}
       <a href={`/settings/${c.id}`} use:link class:on={current === c.id}><Icon path={c.icon} size={20} /><span>{c.label}</span></a>
     {/each}
@@ -672,6 +697,73 @@
       {/if}
     </section>
     {/if}
+    {#if current === "pets"}
+    <!-- 寵物辨識 -->
+    <section class="card" id="pets">
+      <h2><Icon path={mdiPaw} />寵物辨識</h2>
+      <p class="muted small">找出照片裡的貓和狗，依長相認出是哪一隻，像人物一樣命名、搜尋。全部在這台電腦上運算，特徵只存在本機。花色很像的同品種毛孩可能被分在一起，可以在寵物頁合併或移出照片。</p>
+      {#if settings}
+        <label class="toggle">
+          <input type="checkbox" checked={!!settings.pet_enabled}
+            onchange={async (e) => { settings = await api("/api/settings", { body: { pet_enabled: e.currentTarget.checked ? 1 : 0 } }); }} />
+          掃描新照片時自動辨識寵物
+        </label>
+        <div class="models">
+          {#each petModels as m (m.name)}
+            {@const active = settings.pet_model === m.name}
+            <div class="model" class:active>
+              <div class="mhead"><b>{m.label}</b></div>
+              <div class="tiny muted">下載約 {m.download_mb} MB</div>
+              <p class="small">{m.note}</p>
+              <div class="row">
+                {#if !m.installed}
+                  <button class="btn small soft" disabled={!!downloads[m.name]} onclick={() => job("pet_model", { model: m.name })}>
+                    <Icon path={mdiDownload} size={16} />{dlText(m.name) || "下載"}
+                  </button>
+                {/if}
+                {#if active}
+                  <span class="using"><Icon path={mdiCheck} size={18} />使用中</span>
+                {:else if m.installed}
+                  <button class="btn small" onclick={() => usePetModel(m.name)}>使用</button>
+                {:else}
+                  <button class="btn small ghost" onclick={() => usePetModel(m.name)}>選用</button>
+                {/if}
+                {#if m.installed && !active}
+                  <button class="icon-btn" title="刪除模型" onclick={() => deleteExtraModel("pets", m.name)}><Icon path={mdiDeleteOutline} size={20} /></button>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+        <div class="row wrap">
+          <label class="field">辨識嚴格度
+            <select class="input" value={String(settings.pet_similarity)}
+              onchange={(e) => saveSetting("pet_similarity", Number(e.currentTarget.value))}>
+              <option value="55">寬鬆（容易合在一起）</option>
+              <option value="62">標準（建議）</option>
+              <option value="70">嚴格（同一隻可能分成好幾組）</option>
+            </select>
+          </label>
+          <label class="field">出現幾次才建立寵物
+            <select class="input" value={String(settings.pet_min_photos)}
+              onchange={(e) => saveSetting("pet_min_photos", Number(e.currentTarget.value))}>
+              {#each [1, 2, 3, 5] as n (n)}<option value={String(n)}>{n} 次</option>{/each}
+            </select>
+          </label>
+        </div>
+        <JobList kinds={["pets", "pet_cluster", "pet_model"]} compact />
+        {#if petInfo}
+          <p class="small">已認出 {count(petInfo.pets.length)} 隻寵物；尚未辨識 {count(petInfo.pending)} 張照片。</p>
+        {/if}
+        <div class="row wrap">
+          <button class="btn" disabled={!petModels.find((m) => m.active)?.installed} onclick={() => job("pets")}>辨識寵物</button>
+          <button class="btn ghost" onclick={() => job("pet_cluster")}>重新分群</button>
+          <button class="btn ghost danger-text" onclick={clearPets}>刪除所有寵物資料</button>
+        </div>
+        <p class="muted tiny">換了「辨識嚴格度」後按「重新分群」套用；已命名的寵物與你手動更正的結果會保留。模型：YOLOX（Apache-2.0）、DINOv2（Apache-2.0）。</p>
+      {/if}
+    </section>
+    {/if}
     {#if current === "search"}
     <!-- 智慧搜尋 -->
     <section class="card" id="search">
@@ -950,7 +1042,8 @@
 <style>
   .settings { max-width: 1120px; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; align-items: start; }
   .cats { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 2px; }
-  .cats h1 { font-size: 24px; margin: 4px 12px 14px; }
+  .cats-head { display: flex; align-items: center; gap: 4px; margin: 0 12px 14px 8px; }
+  .cats h1 { font-size: 24px; margin: 0; font-weight: 400; }
   .cats a {
     display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-radius: 999px; text-decoration: none;
     color: var(--text); font-size: 15px;

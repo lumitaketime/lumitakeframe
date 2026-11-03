@@ -1,4 +1,5 @@
 <script>
+  import BackButton from "../components/BackButton.svelte";
   import Grid from "../components/Grid.svelte";
   import Icon from "../components/Icon.svelte";
   import { api } from "../lib/api.js";
@@ -38,7 +39,7 @@
     <div class="empty"><h2>{error}</h2><a href="/albums" use:link>回到相簿</a></div>
   {:else if album}
     <div class="page-head">
-      <a class="icon-btn" href="/albums" use:link aria-label="回到相簿"><Icon path={mdiArrowLeft} /></a>
+      <BackButton to="/albums" label="回到相簿" />
       <h1><Icon path={mdiAutoFix} size={22} />{album.name}</h1>
       <button class="icon-btn" onclick={edit} title="編輯"><Icon path={mdiPencilOutline} /></button>
       <button class="icon-btn" onclick={remove} title="刪除"><Icon path={mdiDeleteOutline} /></button>

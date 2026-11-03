@@ -38,18 +38,19 @@
 </div>
 
 <style>
-  .fbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 6px 0 4px; }
+  .fbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 6px 0 4px; }
   .grp { display: flex; align-items: center; gap: 2px; }
-  .star { border: 0; background: none; color: var(--line); padding: 3px; cursor: pointer; display: flex; border-radius: 6px; }
-  .star:hover { color: var(--muted); }
+  .star { border: 0; background: none; color: var(--outline-variant); padding: 4px; cursor: pointer; display: flex; border-radius: 50%; }
+  .star:hover { color: var(--on-surface-variant); background: color-mix(in srgb, var(--on-surface) 8%, transparent); }
   .star.on { color: #e3a008; }
-  .star.rej.on { color: var(--danger); }
-  .dot { width: 16px; height: 16px; border-radius: 50%; border: 0; background: var(--c); opacity: .35; margin: 0 3px; cursor: pointer; padding: 0; }
+  .star.rej.on { color: var(--error); }
+  .dot { width: 18px; height: 18px; border-radius: 50%; border: 0; background: var(--c); opacity: .35; margin: 0 4px; cursor: pointer; padding: 0; transition: opacity .15s, box-shadow .15s; }
   .dot:hover { opacity: .7; }
-  .dot.on { opacity: 1; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--c); }
-  .seg { border: 1px solid var(--line); border-radius: 999px; overflow: hidden; gap: 0; }
-  .seg button { border: 0; background: none; color: var(--muted); padding: 3px 12px; font-size: 13px; cursor: pointer; }
-  .seg button + button { border-left: 1px solid var(--line); }
-  .seg button.on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
-  .clear { display: flex; align-items: center; gap: 4px; border: 0; background: var(--primary-soft); color: var(--primary); border-radius: 999px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
+  .dot.on { opacity: 1; box-shadow: 0 0 0 2px var(--surface-container-low), 0 0 0 4px var(--c); }
+  .seg { border: 1px solid var(--outline); border-radius: var(--corner-full); overflow: hidden; gap: 0; }
+  .seg button { border: 0; background: none; color: var(--on-surface); padding: 0 14px; height: 32px; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--outline); }
+  .seg button.on { background: var(--secondary-container); color: var(--on-secondary-container); }
+  .clear { display: flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--primary); border-radius: var(--corner-full); padding: 0 12px; height: 32px; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .clear:hover { background: color-mix(in srgb, var(--primary) 8%, transparent); }
 </style>

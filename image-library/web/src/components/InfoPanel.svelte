@@ -2,7 +2,7 @@
   import Icon from "./Icon.svelte";
   import MiniMap from "./MiniMap.svelte";
   import { api } from "../lib/api.js";
-  import { navigate } from "../lib/router.svelte.js";
+  import { navigate, link } from "../lib/router.svelte.js";
   import { app, viewer, toast, showDialog, refresh } from "../lib/state.svelte.js";
   import { analyzeAssets, copyText, reveal } from "../lib/actions.js";
   import { bytes, dateTime, duration, shutter } from "../lib/format.js";
@@ -183,6 +183,17 @@
           {/each}
         </div>
         {#if editFaces}<p class="muted tiny edit-tip">點臉可以改成正確的人，按 × 表示不是這個人。</p>{/if}
+      {/if}
+      {#if detail.pets?.length}
+        <div class="people-head"><h4>寵物</h4></div>
+        <div class="faces">
+          {#each detail.pets as p (p.detection)}
+            <a class="face pet-link" href={`/pets/id/${p.pet_id}`} use:link title={p.name || `這隻${p.kind_label}還沒命名`}>
+              <span class="face-img"><img src={`/api/pet-thumbs/${p.detection}`} alt={p.name || p.kind_label} /></span>
+              <span class="face-name" class:unnamed={!p.name}>{p.name || `${p.kind_label}・新增名字`}</span>
+            </a>
+          {/each}
+        </div>
       {/if}
       {#if translated}
         <p class="desc">{translated.description}</p>
@@ -378,6 +389,9 @@
     background: var(--text); color: var(--bg); font-size: 14px; line-height: 1; box-shadow: var(--shadow);
   }
   .edit-tip { margin: -4px 0 12px; }
+  .pet-link { text-decoration: none; color: inherit; }
+  .pet-link .face-img { display: block; }
+  .pet-link .face-img img { border-radius: 50%; }
   .warn { color: var(--danger); display: flex; gap: 6px; align-items: flex-start; }
   .icon-btn.sm { width: 32px; height: 32px; }
   dl { margin: 0; display: flex; flex-direction: column; gap: 14px; }

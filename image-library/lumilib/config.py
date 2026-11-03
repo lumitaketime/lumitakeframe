@@ -48,6 +48,7 @@ DEFAULTS = {
     "viewer_rating_bar": 1,
     # 左側選單隱藏的功能（逗號分隔的路徑，例如 /map,/duplicates）
     "nav_hidden": "",
+    "pinned_tools": "",
     # 照片格呈現方式：aspect＝依照片比例（等高列）、square＝正方形裁切
     "grid_style": "aspect",
     # 第一次開啟的設定引導是否已完成
@@ -62,6 +63,10 @@ DEFAULTS = {
     "stack_enabled": 1,
     "burst_seconds": 2,
     # 人臉辨識
+    "pet_enabled": 0,
+    "pet_model": "standard",
+    "pet_similarity": 62,  # 寵物相似度門檻（百分比）
+    "pet_min_photos": 2,  # 出現幾次以上才建立寵物
     "face_enabled": 0,
     "face_model": "buffalo_l",
     "face_similarity": 50,  # 相似度門檻（百分比），越高越嚴格
@@ -107,6 +112,7 @@ class Config:
     night_end: int = DEFAULTS["night_end"]
     viewer_rating_bar: int = DEFAULTS["viewer_rating_bar"]
     nav_hidden: str = DEFAULTS["nav_hidden"]
+    pinned_tools: str = DEFAULTS["pinned_tools"]
     grid_style: str = DEFAULTS["grid_style"]
     onboarded: int = DEFAULTS["onboarded"]
     keep_awake: int = DEFAULTS["keep_awake"]
@@ -114,6 +120,10 @@ class Config:
     xmp_embed: int = DEFAULTS["xmp_embed"]
     stack_enabled: int = DEFAULTS["stack_enabled"]
     burst_seconds: int = DEFAULTS["burst_seconds"]
+    pet_enabled: int = DEFAULTS["pet_enabled"]
+    pet_model: str = DEFAULTS["pet_model"]
+    pet_similarity: int = DEFAULTS["pet_similarity"]
+    pet_min_photos: int = DEFAULTS["pet_min_photos"]
     face_enabled: int = DEFAULTS["face_enabled"]
     face_model: str = DEFAULTS["face_model"]
     face_similarity: int = DEFAULTS["face_similarity"]

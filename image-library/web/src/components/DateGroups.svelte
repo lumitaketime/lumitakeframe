@@ -10,13 +10,22 @@
   import FilterBar from "./FilterBar.svelte";
   import Slideshow from "./Slideshow.svelte";
   import Icon from "./Icon.svelte";
-  import { mdiPlayBoxMultipleOutline } from "../lib/icons.js";
+  import Menu from "./Menu.svelte";
+  import BackButton from "./BackButton.svelte";
+  import { slide } from "svelte/transition";
+  import { link } from "../lib/router.svelte.js";
+  import { mdiPlayBoxMultipleOutline, mdiFilterVariant, mdiSort, mdiChevronRight } from "../lib/icons.js";
   import { fullDayLabel, monthLabel, count } from "../lib/format.js";
   import { matches, filterActive, clearFilter } from "../lib/filter.svelte.js";
 
-  let { assets = [], storeKey = "", defaultGroup = "month" } = $props();
+  /**
+   * 頁首：返回鍵、上一層路徑、標題、副標（張數與日期範圍），右側是篩選、檢視、播放與「更多」選單。
+   * above：放在頁首和照片之間的內容（例如子資料夾）。
+   */
+  let { assets = [], storeKey = "", defaultGroup = "month", title = "", subtitle = null, back = null, crumbs = [], menu = [], above = null, titleExtra = null } = $props();
+  let showFilter = $state(false);
 
-  const GROUPS = [["day", "日"], ["month", "月"], ["year", "年"], ["none", "不分組"]];
+  const GROUPS = [["day", "依日期"], ["month", "依月份"], ["year", "依年份"], ["none", "不分組"]];
   // svelte-ignore state_referenced_locally
   let group = $state(read("group") || defaultGroup);
   let order = $state(read("order") || "desc");
@@ -95,6 +104,29 @@
   });
   const showScrubber = $derived(group !== "none" && groups.length > 3 && sorted.length > 60);
 
+  const viewItems = $derived([
+    { section: "分組" },
+    ...GROUPS.map(([v, label]) => ({ label, checked: group === v, run: () => setGroup(v) })),
+    { section: "排序" },
+    { label: "新的在前", checked: order === "desc", run: () => setOrder("desc") },
+    { label: "舊的在前", checked: order === "asc", run: () => setOrder("asc") },
+  ]);
+
+  // 副標：張數與拍攝日期範圍
+  const autoSubtitle = $derived.by(() => {
+    if (!assets.length) return "";
+    const dates = assets.map((a) => a.at).filter(Boolean).sort();
+    const fmt = (iso) => monthLabel(iso.slice(0, 7));
+    let range = "";
+    if (dates.length) {
+      const a = fmt(dates[0]);
+      const b = fmt(dates[dates.length - 1]);
+      range = a === b ? a : `${a} – ${b}`;
+    }
+    const n = filterActive() ? `${count(sorted.length)} / ${count(assets.length)} 個項目` : `${count(assets.length)} 個項目`;
+    return range ? `${n} · ${range}` : n;
+  });
+
   function jump(i) {
     active = i;
     const el = root?.querySelectorAll("[data-group]")[i];
@@ -121,19 +153,36 @@
 
 <div class="dg" bind:this={root}>
   <div class="body">
-    <FilterBar />
-    <div class="tools">
-      <div class="seg" role="group" aria-label="分組方式">
-        {#each GROUPS as [v, label] (v)}
-          <button class:on={group === v} onclick={() => setGroup(v)}>{label}</button>
-        {/each}
-      </div>
-      <div class="seg" role="group" aria-label="排序">
-        <button class:on={order === "desc"} onclick={() => setOrder("desc")}>新 → 舊</button>
-        <button class:on={order === "asc"} onclick={() => setOrder("asc")}>舊 → 新</button>
-      </div>
-      <button class="play" onclick={() => (showing = true)} disabled={!sorted.length}><Icon path={mdiPlayBoxMultipleOutline} size={18} />播放</button>
+    <div class="dg-head" class:bare={!title && !crumbs.length}>
+      {#if back}<BackButton to={back} />{/if}
+      {#if title || titleExtra || crumbs.length}
+        <div class="titles">
+          {#if crumbs.length}
+            <nav class="crumbs" aria-label="位置">
+              {#each crumbs as c, i (i)}
+                {#if i}<Icon path={mdiChevronRight} size={14} />{/if}<a href={c.href} use:link>{c.label}</a>
+              {/each}
+            </nav>
+          {/if}
+          <div class="title-row">{#if title}<h1>{title}</h1>{/if}{@render titleExtra?.()}</div>
+          {#if subtitle ?? autoSubtitle}<span class="sub">{subtitle ?? autoSubtitle}</span>{/if}
+        </div>
+      {/if}
+      <span class="spacer"></span>
+      {#if assets.length}
+        <button class="icon-btn ctl" class:active={showFilter} onclick={() => (showFilter = !showFilter)} aria-expanded={showFilter} aria-label="篩選" title="篩選（星等、顏色、類型）">
+          <Icon path={mdiFilterVariant} />
+          {#if filterActive() && !showFilter}<span class="badge"></span>{/if}
+        </button>
+        <Menu icon={mdiSort} label="分組與排序" items={viewItems} />
+        <button class="icon-btn ctl" onclick={() => (showing = true)} disabled={!sorted.length} aria-label="播放幻燈片" title="播放幻燈片"><Icon path={mdiPlayBoxMultipleOutline} /></button>
+      {/if}
+      {#if menu.length}<Menu items={menu} />{/if}
     </div>
+    {#if showFilter}
+      <div class="filter-panel" transition:slide={{ duration: 220 }}><FilterBar /></div>
+    {/if}
+    {@render above?.()}
     {#if !sorted.length && filterActive()}
       <div class="empty"><h2>沒有符合篩選條件的項目</h2><p><button class="btn ghost" onclick={clearFilter}>清除篩選</button></p></div>
     {/if}
@@ -154,13 +203,20 @@
 <style>
   .dg { display: flex; gap: 8px; }
   .body { flex: 1; min-width: 0; }
-  .tools { display: flex; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
-  .seg button { border: 0; background: none; color: var(--muted); padding: 5px 14px; font-size: 13px; cursor: pointer; }
-  .seg button + button { border-left: 1px solid var(--line); }
-  .seg button.on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
-  .play { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: none; color: var(--text); border-radius: 999px; padding: 4px 14px; font-size: 13px; cursor: pointer; }
-  .play:hover { border-color: var(--primary); color: var(--primary); }
-  .title { font-size: 17px; font-weight: 600; margin: 18px 0 8px; display: flex; align-items: baseline; gap: 10px; }
-  .title span { font-size: 12px; font-weight: 400; color: var(--muted); }
+  .dg-head { display: flex; align-items: center; gap: 4px; min-height: 64px; padding: 8px 0; }
+  .dg-head.bare { min-height: 0; padding: 0 0 4px; }
+  .titles { display: flex; flex-direction: column; min-width: 0; margin-left: 4px; }
+  .crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; font-size: 13px; line-height: 18px; color: var(--on-surface-variant); }
+  .crumbs a { color: inherit; text-decoration: none; border-radius: 4px; padding: 0 2px; }
+  .crumbs a:hover { color: var(--primary); text-decoration: underline; }
+  .title-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  .title-row h1 { font-size: 28px; line-height: 36px; font-weight: 400; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .sub { font-size: 14px; line-height: 20px; color: var(--on-surface-variant); }
+  .spacer { flex: 1; }
+  .ctl { color: var(--on-surface-variant); position: relative; }
+  .badge { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); z-index: 3; }
+  .filter-panel { background: var(--surface-container-low); border-radius: var(--corner-large); padding: 8px 16px; margin-bottom: 8px; }
+  .title { font-size: 16px; line-height: 24px; font-weight: 500; margin: 20px 0 8px; display: flex; align-items: baseline; gap: 10px; }
+  .title span { font-size: 12px; font-weight: 400; color: var(--on-surface-variant); }
+  @media (max-width: 600px) { .title-row h1 { font-size: 22px; line-height: 28px; } }
 </style>

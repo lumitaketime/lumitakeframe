@@ -1,5 +1,7 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
+  import { fade, fly } from "svelte/transition";
+  import { cubicOut } from "svelte/easing";
   import Icon from "./components/Icon.svelte";
   import Viewer from "./components/Viewer.svelte";
   import SelectionBar from "./components/SelectionBar.svelte";
@@ -18,6 +20,7 @@
   import Duplicates from "./pages/Duplicates.svelte";
   import Tools from "./pages/Tools.svelte";
   import Pets from "./pages/Pets.svelte";
+  import Pet from "./pages/Pet.svelte";
   import Gear from "./pages/Gear.svelte";
   import Keywords from "./pages/Keywords.svelte";
   import SmartAlbum from "./pages/SmartAlbum.svelte";
@@ -27,11 +30,13 @@
   import { api } from "./lib/api.js";
   import { app, selection, viewer, refresh, toast } from "./lib/state.svelte.js";
   import { route, navigate, link } from "./lib/router.svelte.js";
+  import { TOOLS, pinnedKeys, toolByKey } from "./lib/toolkit.js";
+  import { drag, unpin } from "./lib/pin.svelte.js";
   import { fadeThrough } from "./lib/motion.js";
   import {
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
     mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiContentDuplicate,
-    mdiChevronRight, mdiChevronDown, mdiToolboxOutline,
+    mdiChevronRight, mdiChevronDown, mdiToolboxOutline, mdiMenu, mdiPinOutline, mdiArrowLeft,
   } from "./lib/icons.js";
 
   // 左側選單分組；fixed＝一定顯示，其他可在「設定 → 功能與選單」關掉
@@ -57,6 +62,51 @@
 
   const hidden = $derived(new Set((app.server?.ui?.nav_hidden || "").split(",").filter(Boolean)));
   const visible = (n) => n.fixed || !hidden.has(n.href);
+  const pinned = $derived(pinnedKeys(app.server).map(toolByKey));
+  // 「工具」群組：整理工具＋使用者拖進來的常用工具
+  function groupItems(g) {
+    const items = g.items.filter(visible);
+    return g.id === "tools" ? [...items, ...pinned.map((t) => ({ ...t, pinned: true }))] : items;
+  }
+
+  // 左側選單隨視窗寬度變化（像 Google 相簿）：
+  // 寬（≥1200）完整選單，可手動收合成圖示列；中等寬度自動變成圖示列；窄（≤760）整個收起。
+  // 非完整選單時，按左上角「≡」從左邊滑出完整的抽屜。
+  let rail = $state(readRail());
+  let drawer = $state(false);
+  let winW = $state(typeof window === "undefined" ? 1400 : window.innerWidth);
+  const wide = $derived(winW >= 1200);
+  const narrow = $derived(winW <= 760);
+  const showRail = $derived(!narrow && (!wide || rail));
+  let searchOpen = $state(false);
+  function readRail() {
+    try {
+      return localStorage.getItem("navRail") === "1";
+    } catch {
+      return false;
+    }
+  }
+  function toggleNav() {
+    if (!wide) {
+      drawer = !drawer;
+      return;
+    }
+    rail = !rail;
+    try {
+      localStorage.setItem("navRail", rail ? "1" : "0");
+    } catch {
+      /* 只影響這次 */
+    }
+  }
+  $effect(() => {
+    if (wide) drawer = false;
+    if (!narrow) searchOpen = false;
+  });
+  // 換頁後收起抽屜
+  $effect(() => {
+    route.path;
+    drawer = false;
+  });
   let collapsed = $state(readCollapsed());
 
   function readCollapsed() {
@@ -91,7 +141,7 @@
 
   function active(href) {
     if (href === "/") return page === "";
-    if (href === "/tools") return page === "tools" || page === "duplicates";
+    if (href === "/tools") return (page === "tools" || page === "duplicates") && !pinned.some((t) => t.href === route.path);
     if (href === "/explore") return EXPLORE_PAGES.some((p) => route.path === p || route.path.startsWith(p + "/"));
     return route.path === href || route.path.startsWith(href + "/");
   }
@@ -182,6 +232,8 @@
   }
 </script>
 
+<svelte:window bind:innerWidth={winW} />
+
 {#if !app.authChecked}
   <div class="boot"><span class="spinner"></span></div>
 {:else if app.needLogin}
@@ -189,12 +241,18 @@
 {:else}
   <div class="shell">
     <header class="topbar">
+      <button class="icon-btn menu-btn" onclick={toggleNav} aria-label={!wide ? "打開選單" : rail ? "展開選單" : "收合選單"}
+        aria-expanded={!wide ? drawer : !rail} title={!wide ? "選單" : rail ? "展開選單" : "收合選單"}><Icon path={mdiMenu} /></button>
       <a class="brand" href="/" use:link aria-label="Lumitake Library">
         <img src="/icon.svg" alt="" width="32" height="32" />
         <span>Lumitake <b>Library</b></span>
       </a>
-      <form class="search" onsubmit={submit} role="search">
-        <Icon path={mdiMagnify} />
+      {#if narrow && !searchOpen}<span class="spacer"></span>{/if}
+      <form class="search" class:collapsed={narrow && !searchOpen} class:expanded={narrow && searchOpen} onsubmit={submit} role="search">
+        {#if narrow && searchOpen}<button type="button" class="icon-btn" onclick={() => (searchOpen = false)} aria-label="關閉搜尋"><Icon path={mdiArrowLeft} /></button>{/if}
+        {#if narrow && !searchOpen}
+          <button type="button" class="icon-btn" onclick={async () => { searchOpen = true; await tick(); document.querySelector(".search input")?.focus(); }} aria-label="搜尋"><Icon path={mdiMagnify} /></button>
+        {:else if !narrow}<Icon path={mdiMagnify} />{/if}
         <input bind:value={q} type="search" placeholder="搜尋照片、地點、物品、文字…" aria-label="搜尋" enterkeyhint="search" />
         {#if q}<button type="button" class="icon-btn clear" onclick={() => (q = "")} aria-label="清除"><Icon path={mdiClose} size={20} /></button>{/if}
       </form>
@@ -204,31 +262,66 @@
       </div>
     </header>
 
-    <nav class="sidebar" aria-label="主選單">
+    {#snippet navContent(isRail)}
       {#each NAV_GROUPS as g (g.id)}
-        {@const items = g.items.filter(visible)}
-        {#if items.length}
-          <button class="group" onclick={() => toggleGroup(g.id)} aria-expanded={!collapsed.has(g.id)}>
-            <span>{g.label}</span><Icon path={collapsed.has(g.id) ? mdiChevronRight : mdiChevronDown} size={16} />
-          </button>
-          {#each items.filter((n) => !collapsed.has(g.id) || active(n.href)) as n (n.href)}
-            <a href={n.href} use:link class:active={active(n.href)}><Icon path={n.icon} /><span>{n.label}</span></a>
-          {/each}
+        {@const items = groupItems(g)}
+        {@const isTools = g.id === "tools"}
+        {@const shut = collapsed.has(g.id) && !(isTools && drag.key)}
+        {#if items.length || (isTools && drag.key)}
+          <div class="nav-group" class:drop={isTools && drag.key} class:over={isTools && drag.over} data-pin-drop={isTools ? "" : undefined}>
+            <button class="group" onclick={() => toggleGroup(g.id)} aria-expanded={!shut}>
+              <span>{g.label}</span><Icon path={shut ? mdiChevronRight : mdiChevronDown} size={16} />
+            </button>
+            {#each items.filter((n) => !shut || active(n.href)) as n (n.href)}
+              <a href={n.href} use:link class:active={active(n.href)} class:pinned={n.pinned} title={isRail ? n.label : undefined}>
+                <span class="ind"><Icon path={n.icon} /></span><span class="lbl">{n.label}</span>
+                {#if n.pinned}
+                  <button class="unpin" onclick={(e) => { e.preventDefault(); e.stopPropagation(); unpin(n.key); }} aria-label="從側邊欄移除{n.label}" title="從側邊欄移除"><Icon path={mdiClose} size={16} /></button>
+                {/if}
+              </a>
+            {/each}
+            {#if isTools && drag.key}
+              <div class="drop-hint"><Icon path={mdiPinOutline} size={18} /><span>放開以加入「{toolByKey(drag.key)?.label}」</span></div>
+            {/if}
+          </div>
         {/if}
       {/each}
-      <button class="group" onclick={() => toggleGroup("roots")} aria-expanded={!collapsed.has("roots")}>
-        <span>資料夾來源</span><Icon path={collapsed.has("roots") ? mdiChevronRight : mdiChevronDown} size={16} />
-      </button>
-      {#each collapsed.has("roots") ? [] : app.server?.roots || [] as r (r.id)}
-        <a href={`/folders/${r.id}`} use:link class:active={route.path === `/folders/${r.id}`} class="root" title={r.path}>
-          <Icon path={mdiHarddisk} /><span>{r.name}</span>{#if !r.online}<em>未連接</em>{/if}
-        </a>
-      {/each}
-      {#if !collapsed.has("roots")}<a href="/settings/library" use:link class="add-root">+ 加入資料夾</a>{/if}
-      {#if app.server}
-        <p class="stats">{app.server.stats.photos.toLocaleString()} 張照片 · {app.server.stats.videos.toLocaleString()} 部影片</p>
-      {/if}
+      <div class="roots-group">
+        <button class="group" onclick={() => toggleGroup("roots")} aria-expanded={!collapsed.has("roots")}>
+          <span>資料夾來源</span><Icon path={collapsed.has("roots") ? mdiChevronRight : mdiChevronDown} size={16} />
+        </button>
+        {#each collapsed.has("roots") ? [] : app.server?.roots || [] as r (r.id)}
+          <a href={`/folders/${r.id}`} use:link class:active={route.path === `/folders/${r.id}`} class="root" title={r.path}>
+            <span class="ind"><Icon path={mdiHarddisk} /></span><span class="lbl">{r.name}</span>{#if !r.online}<em>未連接</em>{/if}
+          </a>
+        {/each}
+        {#if !collapsed.has("roots")}<a href="/settings/library" use:link class="add-root">+ 加入資料夾</a>{/if}
+        {#if app.server}
+          <p class="stats">{app.server.stats.photos.toLocaleString()} 張照片 · {app.server.stats.videos.toLocaleString()} 部影片</p>
+        {/if}
+      </div>
+    {/snippet}
+    <nav class="sidebar" class:rail={showRail} aria-label="主選單" aria-hidden={narrow}>
+      {@render navContent(showRail)}
     </nav>
+    {#if drawer}
+      <button class="scrim" onclick={() => (drawer = false)} aria-label="關閉選單" transition:fade={{ duration: 200 }}></button>
+      <nav class="sidebar drawer" aria-label="主選單" transition:fly={{ x: -320, duration: 280, opacity: 1, easing: cubicOut }}>
+        <div class="drawer-head">
+          <button class="icon-btn menu-btn" onclick={() => (drawer = false)} aria-label="關閉選單"><Icon path={mdiMenu} /></button>
+          <img src="/icon.svg" alt="" width="28" height="28" /><span>Lumitake <b>Library</b></span>
+        </div>
+        {@render navContent(false)}
+      </nav>
+    {/if}
+
+    {#if drag.key}
+      {@const t = toolByKey(drag.key)}
+      <div class="drag-ghost" class:over={drag.over} style:left="{drag.x}px" style:top="{drag.y}px"><Icon path={t.icon} size={20} />{t.label}</div>
+      {#if narrow && !drawer}
+        <div class="drop-float" class:over={drag.over} data-pin-drop><Icon path={mdiPinOutline} />放到這裡，加入側邊欄</div>
+      {/if}
+    {/if}
 
     <main class="scroll-area">
       {#key route.path}
@@ -251,6 +344,8 @@
           <Gear />
         {:else if page === "keywords"}
           <Keywords />
+        {:else if page === "pets" && seg[1] === "id" && seg[2]}
+          <Pet id={Number(seg[2])} />
         {:else if page === "pets"}
           <Pets kind={seg[1] || ""} />
         {:else if page === "tools"}
@@ -292,16 +387,21 @@
 
 <style>
   .boot { height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  /* 外框（頂欄＋選單）是一層淡色，內容區是另一層、圓角浮在上面，深淺色都看得出分層 */
   .shell {
-    display: grid; height: 100vh; height: 100dvh;
-    grid-template-columns: var(--sidebar) 1fr; grid-template-rows: var(--topbar) 1fr;
+    --nav-w: var(--sidebar);
+    display: grid; height: 100vh; height: 100dvh; background: var(--surface-container);
+    grid-template-columns: var(--nav-w) minmax(0, 1fr); grid-template-rows: var(--topbar) minmax(0, 1fr);
     grid-template-areas: "top top" "side main";
+    transition: grid-template-columns var(--spring-standard-default-spatial-duration) var(--spring-standard-default-spatial);
   }
+  .shell:has(.sidebar.rail) { --nav-w: 96px; }
   .topbar {
-    grid-area: top; display: flex; align-items: center; gap: 16px; padding: 0 16px;
-    padding-top: env(safe-area-inset-top); background: var(--surface); z-index: 20;
+    grid-area: top; display: flex; align-items: center; gap: 8px; padding: 0 16px 0 12px;
+    padding-top: env(safe-area-inset-top); z-index: 20;
   }
-  .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--on-surface); width: calc(var(--sidebar) - 32px); flex-shrink: 0; }
+  .menu-btn { color: var(--on-surface-variant); flex-shrink: 0; }
+  .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--on-surface); min-width: calc(var(--sidebar) - 64px); padding-right: 16px; flex-shrink: 0; }
   .brand span { font-size: 22px; line-height: 28px; white-space: nowrap; }
   .brand b { font-weight: 500; color: var(--primary); }
   .search {
@@ -310,8 +410,9 @@
     transition: background-color var(--spring-effects-default-duration) var(--spring-effects-default),
       box-shadow var(--spring-effects-default-duration) var(--spring-effects-default);
   }
-  .search:hover { background: color-mix(in srgb, var(--on-surface) 8%, var(--surface-container-high)); }
-  .search:focus-within { background: var(--surface-container-highest); box-shadow: var(--elevation-level2); }
+  .search:hover { background: var(--surface-container-highest); }
+  .search:focus-within { background: var(--surface); box-shadow: var(--elevation-level2); }
+  .search.collapsed:focus-within { box-shadow: none; background: none; }
   .search input { flex: 1; border: 0; outline: none; background: none; color: var(--on-surface); min-width: 0; font-size: 16px; line-height: 24px; letter-spacing: 0.5px; }
   .search input::placeholder { color: var(--on-surface-variant); }
   .search input::-webkit-search-cancel-button { display: none; }
@@ -320,19 +421,24 @@
   .right .icon-btn { color: var(--on-surface-variant); }
 
   /* 導覽抽屜：膠囊形指示器從中心展開 */
-  .sidebar { grid-area: side; padding: 8px 12px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 0; }
+  .sidebar { grid-area: side; padding: 0 12px 24px; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
+  .nav-group, .roots-group { display: flex; flex-direction: column; border-radius: var(--corner-large); }
   .sidebar a {
-    display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px 0 16px; border-radius: var(--corner-full);
+    position: relative; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px; border-radius: var(--corner-full);
     text-decoration: none; color: var(--on-surface-variant); font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0.1px;
-    flex-shrink: 0;
+    flex-shrink: 0; isolation: isolate;
   }
+  .sidebar .ind { display: flex; }
+  .sidebar .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sidebar a.active { color: var(--on-secondary-container); }
   .sidebar a.active::after {
     content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--secondary-container); z-index: -1;
     animation: nav-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
   }
   @keyframes nav-pill { from { transform: scaleX(0.3); opacity: 0.4; } }
-  .sidebar .root span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .unpin { border: 0; background: none; color: inherit; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; margin-right: -6px; }
+  .sidebar a:hover .unpin, .unpin:focus-visible { opacity: .8; }
+  .unpin:hover { background: color-mix(in srgb, currentColor 12%, transparent); opacity: 1; }
   .sidebar .root em { font-style: normal; font-size: 11px; color: var(--error); }
   .add-root { color: var(--on-surface-variant) !important; font-weight: 400 !important; height: 44px !important; }
   .group {
@@ -341,24 +447,80 @@
     border-radius: var(--corner-full);
     transition: background-color var(--spring-effects-fast-duration) var(--spring-effects-fast);
   }
-  .group:first-child { margin-top: 0; }
+  .nav-group:first-child .group { margin-top: 4px; }
   .group:hover { background: color-mix(in srgb, var(--on-surface) 8%, transparent); }
-  .group :global(svg) { transition: transform var(--spring-standard-fast-spatial-duration) var(--spring-standard-fast-spatial); }
   .stats { margin: 12px 16px 0; font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
 
-  main { grid-area: main; position: relative; background: var(--surface); }
+  /* 拖曳工具卡片時：「工具」區變成放置區 */
+  .nav-group.drop { outline: 2px dashed var(--outline); outline-offset: -2px; background: color-mix(in srgb, var(--primary) 6%, transparent); padding-bottom: 6px;
+    transition: background-color var(--spring-effects-fast-duration) var(--spring-effects-fast), outline-color var(--spring-effects-fast-duration) var(--spring-effects-fast); }
+  .nav-group.over { outline-color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent); }
+  .drop-hint { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 13px; color: var(--primary); }
+  .drag-ghost {
+    position: fixed; z-index: 400; pointer-events: none; transform: translate(-50%, -130%); display: flex; align-items: center; gap: 8px;
+    padding: 10px 16px; border-radius: var(--corner-full); background: var(--inverse-surface); color: var(--inverse-on-surface);
+    font-size: 14px; font-weight: 500; box-shadow: var(--elevation-level3); white-space: nowrap;
+    animation: m3-pop var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
+  }
+  .drag-ghost.over { background: var(--primary); color: var(--on-primary); }
+  .drop-float {
+    position: fixed; z-index: 390; left: 12px; top: 50%; transform: translateY(-50%); width: 132px; padding: 24px 12px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 8px; border-radius: var(--corner-extra-large);
+    border: 2px dashed var(--outline); background: var(--surface-container-high); color: var(--on-surface-variant); font-size: 13px;
+    box-shadow: var(--elevation-level2); animation: m3-enter var(--duration-medium2) var(--easing-emphasized-decelerate);
+  }
+  .drop-float.over { border-color: var(--primary); color: var(--primary); background: var(--primary-container); }
+
+  /* 收合：只有圖示的導覽列 */
+  .sidebar.rail { padding: 0 8px 24px; }
+  .sidebar.rail .group, .sidebar.rail .roots-group, .sidebar.rail .unpin, .sidebar.rail .drop-hint { display: none; }
+  .sidebar.rail .nav-group + .nav-group { border-top: 1px solid var(--outline-variant); margin-top: 6px; padding-top: 6px; }
+  .sidebar.rail .nav-group:first-child { margin-top: 4px; }
+  .sidebar.rail a { flex-direction: column; justify-content: center; gap: 4px; height: 64px; padding: 0; border-radius: 0; font-size: 12px; line-height: 16px; }
+  .sidebar.rail a .lbl { flex: none; max-width: 80px; text-align: center; }
+  .sidebar.rail .ind { width: 56px; height: 32px; align-items: center; justify-content: center; border-radius: var(--corner-full); position: relative; isolation: isolate; }
+  .sidebar.rail a.active::after { display: none; }
+  .sidebar.rail a.active .ind { background: var(--secondary-container); animation: nav-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial); }
+  .sidebar.rail a:hover .ind { background: color-mix(in srgb, var(--on-surface) 8%, transparent); }
+  .sidebar.rail a.active:hover .ind { background: var(--secondary-container); }
+
+  main {
+    grid-area: main; position: relative; background: var(--surface); border-radius: var(--corner-extra-large) var(--corner-extra-large) 0 0;
+    margin-right: 12px;
+  }
   .route { min-height: 100%; }
   .bottom { display: none; }
+  .spacer { flex: 1; }
 
-  @media (max-width: 900px) {
-    .shell { grid-template-columns: 1fr; grid-template-areas: "top" "main"; }
-    .sidebar { display: none; }
-    .brand { width: auto; }
-    .brand span { display: none; }
+  /* 從左邊滑出的完整抽屜（中等與窄視窗） */
+  .scrim { position: fixed; inset: 0; z-index: 250; border: 0; padding: 0; background: rgb(0 0 0 / .32); cursor: default; }
+  .sidebar.drawer {
+    position: fixed; z-index: 260; left: 0; top: 0; bottom: 0; width: min(320px, 86vw); background: var(--surface-container-low);
+    border-radius: 0 var(--corner-large) var(--corner-large) 0; padding: calc(8px + env(safe-area-inset-top)) 12px 24px;
+    box-shadow: var(--elevation-level1);
+  }
+  .drawer-head { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 4px; margin-bottom: 4px; flex-shrink: 0; }
+  .drawer-head span { font-size: 20px; white-space: nowrap; color: var(--on-surface); }
+  .drawer-head b { font-weight: 500; color: var(--primary); }
+  .topbar { position: relative; }
+
+  @media (max-width: 1199px) {
+    .brand span { font-size: 20px; }
   }
   @media (max-width: 760px) {
-    .topbar { gap: 8px; padding: 0 8px; padding-top: env(safe-area-inset-top); }
-    .search { height: 42px; }
+    .shell { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "main"; }
+    .sidebar:not(.drawer) { display: none; }
+    .topbar { gap: 4px; padding: 0 4px 0 4px; padding-top: env(safe-area-inset-top); }
+    .brand { min-width: 0; padding-right: 0; }
+    .brand span { font-size: 18px; }
+    .search.collapsed { flex: 0 0 auto; background: none; padding: 0; height: 48px; width: auto; }
+    .search.collapsed input, .search.collapsed .clear { display: none; }
+    .search.expanded {
+      position: absolute; z-index: 30; left: 4px; right: 4px; top: calc(8px + env(safe-area-inset-top)); height: 48px; max-width: none;
+      padding-left: 0; background: var(--surface-container-highest); animation: search-open .22s cubic-bezier(.2,0,0,1);
+    }
+    @keyframes search-open { from { clip-path: inset(0 0 0 85% round 24px); } to { clip-path: inset(0 0 0 0 round 24px); } }
+    main { margin: 0; border-radius: var(--corner-large) var(--corner-large) 0 0; }
     .bottom {
       display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface-container);
       padding-bottom: env(safe-area-inset-bottom); height: calc(80px + env(safe-area-inset-bottom));
@@ -372,4 +534,5 @@
     .bottom a.active .ind { color: var(--on-secondary-container); background: var(--secondary-container);
       animation: nav-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial); }
   }
+  @media (max-width: 420px) { .brand span { display: none; } }
 </style>

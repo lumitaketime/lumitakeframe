@@ -1,4 +1,5 @@
 <script>
+  import BackButton from "../components/BackButton.svelte";
   /**
    * 人物頁（參考 Google 相簿）：上方直接輸入名字按「完成」，下方是分類與依日期分組的照片。
    * 輸入的名字和現有人物相同時，詢問是否為同一個人並合併。
@@ -109,7 +110,7 @@
     <div class="empty"><h2>{error}</h2><a href="/people" use:link>回到人物</a></div>
   {:else if person}
     <div class="name-row">
-      <a class="icon-btn back" href="/people" use:link aria-label="回到人物"><Icon path={mdiArrowLeft} /></a>
+      <BackButton to="/people" label="回到人物" />
       <img class="avatar" src={`/api/faces/${person.cover_face_id}/thumb`} alt="" />
       <input
         class="name-input"

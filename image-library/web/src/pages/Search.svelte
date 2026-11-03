@@ -1,4 +1,5 @@
 <script>
+  import BackButton from "../components/BackButton.svelte";
   import Grid from "../components/Grid.svelte";
   import { api } from "../lib/api.js";
   import { route, navigate } from "../lib/router.svelte.js";
@@ -69,6 +70,7 @@
 
 <div class="page">
   <div class="page-head">
+    <BackButton to="/" />
     <h1>{q ? `「${q}」` : "搜尋"}</h1>
     {#if result}<span class="muted small">{result.total.toLocaleString()} 個結果{result.mode === "hybrid" ? "（含語意相近）" : ""}</span>{/if}
     {#if q}<button class="btn small ghost" onclick={saveSmart}>存成智慧相簿</button>{/if}

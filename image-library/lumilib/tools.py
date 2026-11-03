@@ -36,17 +36,79 @@ def screens_and_documents(conn: sqlite3.Connection, limit: int = 3000) -> list[t
     return out
 
 
-def large_files(conn: sqlite3.Connection, kind: str = "all", limit: int = 200) -> list[sqlite3.Row]:
+def large_files(conn: sqlite3.Connection, kind: str = "all", limit: int = 200, sort: str = "size") -> list[sqlite3.Row]:
+    """最大的檔案（前 limit 個），可再依拍攝時間排列。"""
     where = ["status = 'ok'"]
     if kind == "video":
         where.append("media_type = 'video'")
     elif kind == "photo":
-        where.append("media_type = 'photo'")
+        where.append("media_type = 'photo' AND is_raw = 0")
     elif kind == "raw":
         where.append("is_raw = 1")
-    return conn.execute(
+    rows = conn.execute(
         f"SELECT * FROM images WHERE {' AND '.join(where)} ORDER BY size DESC LIMIT ?", (limit,)
     ).fetchall()
+    if sort == "newest":
+        rows.sort(key=lambda r: r["sort_at"] or 0, reverse=True)
+    elif sort == "oldest":
+        rows.sort(key=lambda r: r["sort_at"] or 0)
+    return rows
+
+
+def size_by_kind(conn: sqlite3.Connection) -> list[dict]:
+    """圖庫依類型佔用的空間：影片、RAW、其他照片。"""
+    row = conn.execute(
+        """SELECT
+             COALESCE(SUM(CASE WHEN media_type = 'video' THEN size END), 0),
+             COALESCE(SUM(CASE WHEN media_type = 'video' THEN 1 END), 0),
+             COALESCE(SUM(CASE WHEN media_type != 'video' AND is_raw = 1 THEN size END), 0),
+             COALESCE(SUM(CASE WHEN media_type != 'video' AND is_raw = 1 THEN 1 END), 0),
+             COALESCE(SUM(CASE WHEN media_type != 'video' AND is_raw = 0 THEN size END), 0),
+             COALESCE(SUM(CASE WHEN media_type != 'video' AND is_raw = 0 THEN 1 END), 0)
+           FROM images WHERE status = 'ok'"""
+    ).fetchone()
+    return [
+        {"key": "video", "label": "影片", "bytes": row[0], "files": row[1]},
+        {"key": "raw", "label": "RAW", "bytes": row[2], "files": row[3]},
+        {"key": "photo", "label": "JPEG 與其他照片", "bytes": row[4], "files": row[5]},
+    ]
+
+
+def folder_children(conn: sqlite3.Connection, root_id: int | None = None, path: str = "") -> dict:
+    """矩形樹狀圖用：某個資料夾底下每個子資料夾（含更深層）佔多少空間。
+
+    沒有指定 root_id 時回傳各個圖庫資料夾。直接放在這層的檔案合併成一格。
+    """
+    if root_id is None:
+        roots = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM roots")}
+        items = [
+            {"name": roots.get(r[0], ""), "root_id": r[0], "path": "", "bytes": r[1] or 0, "files": r[2], "folder": True}
+            for r in conn.execute("SELECT root_id, SUM(size), COUNT(*) FROM images WHERE status = 'ok' GROUP BY root_id")
+        ]
+        items.sort(key=lambda x: x["bytes"], reverse=True)
+        return {"root_id": None, "path": "", "items": items, "bytes": sum(i["bytes"] for i in items)}
+    prefix = f"{path}/" if path else ""
+    totals: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    here = [0, 0]
+    rows = conn.execute(
+        "SELECT folder, size FROM images WHERE status = 'ok' AND root_id = ? AND (folder = ? OR folder LIKE ? ESCAPE '\\')",
+        (root_id, path, prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"),
+    ).fetchall()
+    for r in rows:
+        folder = r["folder"] or ""
+        if folder == path:
+            here[0] += r["size"] or 0
+            here[1] += 1
+            continue
+        child = folder[len(prefix):].split("/", 1)[0]
+        t = totals[child]
+        t[0] += r["size"] or 0
+        t[1] += 1
+    items = [{"name": n, "root_id": root_id, "path": prefix + n, "bytes": v[0], "files": v[1], "folder": True} for n, v in totals.items()]
+    if here[1]:
+        items.append({"name": "這層的檔案", "root_id": root_id, "path": path, "bytes": here[0], "files": here[1], "folder": False})
+    items.sort(key=lambda x: x["bytes"], reverse=True)
+    return {"root_id": root_id, "path": path, "items": items, "bytes": sum(i["bytes"] for i in items)}
 
 
 def large_folders(conn: sqlite3.Connection, limit: int = 60) -> list[dict]:

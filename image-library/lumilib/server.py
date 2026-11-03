@@ -36,9 +36,10 @@ PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
 LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
-    "face_enabled", "face_model", "face_similarity", "face_min_faces", "query_rewrite", "clip_enabled", "clip_model",
+    "face_enabled", "face_model", "face_similarity", "face_min_faces",
+    "pet_enabled", "pet_model", "pet_similarity", "pet_min_photos", "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "xmp_sync", "xmp_embed", "stack_enabled", "burst_seconds",
-    "auto_analyze", "blur_threshold", "under_luma", "over_percent", "analysis_detail", "analyze_schedule", "night_start", "night_end", "viewer_rating_bar", "nav_hidden", "grid_style", "onboarded",
+    "auto_analyze", "blur_threshold", "under_luma", "over_percent", "analysis_detail", "analyze_schedule", "night_start", "night_end", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -187,7 +188,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "tools": tool_status(),
                 "ssl_ca": bool(ca_file()),
                 "ai": cached_ai_status(),
-                "ui": {"viewer_rating_bar": cfg.viewer_rating_bar, "nav_hidden": cfg.nav_hidden,
+                "ui": {"viewer_rating_bar": cfg.viewer_rating_bar, "nav_hidden": cfg.nav_hidden, "pinned_tools": cfg.pinned_tools,
                        "grid_style": cfg.grid_style, "onboarded": cfg.onboarded},
                 "local": request.state.local,
                 "platform": sys.platform,
@@ -304,7 +305,10 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         from .organize import stack_members
         from .places import country_names
 
+        from .petid import image_pets
+
         data["stack"] = [summarize(m) for m in stack_members(c, image["stack_id"])] if image["stack_id"] else []
+        data["pets"] = [p for p in image_pets(c, image["id"]) if p["pet_id"]]
         data["country_name"] = country_names(image["country"])[0] if image["country"] else ""
         data.update(
             faces=[{"id": f["id"], "person_id": f["person_id"], "name": f["name"],
@@ -1286,13 +1290,37 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             c.close()
 
     @app.get("/api/tools/large")
-    def tools_large(kind: str = "all"):
+    def tools_large(kind: str = "all", sort: str = "size"):
         from .tools import large_files
 
         c = conn()
         try:
             return [{**summarize(r), "size": r["size"], "rel_path": r["rel_path"], "root_id": r["root_id"]}
-                    for r in large_files(c, kind)]
+                    for r in large_files(c, kind, sort=sort)]
+        finally:
+            c.close()
+
+    @app.get("/api/tools/size-by-kind")
+    def tools_size_by_kind():
+        from .tools import size_by_kind
+
+        c = conn()
+        try:
+            return size_by_kind(c)
+        finally:
+            c.close()
+
+    @app.get("/api/tools/folder-tree")
+    def tools_folder_tree(root_id: int | None = None, path: str = ""):
+        from .tools import folder_children
+
+        c = conn()
+        try:
+            out = folder_children(c, root_id, path)
+            if root_id is not None:
+                root = db.get_root(c, root_id)
+                out["root_name"] = root["name"] if root else ""
+            return out
         finally:
             c.close()
 
@@ -1308,11 +1336,128 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     @app.get("/api/pets")
     def pets_list():
+        from .petid import list_pets, model_installed
         from .tools import pets
 
         c = conn()
         try:
-            return pets(c)
+            pending = c.execute(
+                "SELECT COUNT(*) FROM images WHERE status = 'ok' AND media_type = 'photo' AND (pets_at IS NULL OR pets_model IS NOT ?)",
+                (cfg.pet_model,),
+            ).fetchone()[0]
+            return {
+                "kinds": pets(c),
+                "pets": list_pets(c),
+                "hidden": sum(1 for p in list_pets(c, include_hidden=True) if p["hidden"]),
+                "enabled": bool(cfg.pet_enabled),
+                "installed": model_installed(cfg, cfg.pet_model),
+                "model": cfg.pet_model,
+                "pending": pending,
+            }
+        finally:
+            c.close()
+
+    @app.get("/api/pets/models")
+    def pet_models():
+        from .petid import models_status
+
+        return models_status(cfg)
+
+    @app.post("/api/pets/models/delete")
+    def delete_pet_model(body: dict = Body(...)):
+        from .petid import PET_MODELS, delete_model
+
+        if body.get("name") not in PET_MODELS:
+            raise HTTPException(400, "未知的寵物模型")
+        delete_model(cfg, body["name"])
+        return {"ok": True}
+
+    @app.post("/api/pets/clear")
+    def clear_pets_data():
+        from .petid import clear_all
+
+        c = conn()
+        try:
+            return {"cleared": clear_all(c, cfg)}
+        finally:
+            c.close()
+
+    @app.get("/api/pet-thumbs/{det_id:int}")
+    def pet_thumb(det_id: int):
+        from .petid import thumb_path
+
+        target = thumb_path(cfg, det_id)
+        if not target.exists():
+            raise HTTPException(404, "找不到寵物縮圖")
+        return FileResponse(target, media_type="image/webp", headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
+    @app.get("/api/petid/all")
+    def pets_all():
+        from .petid import list_pets
+
+        c = conn()
+        try:
+            return list_pets(c, include_hidden=True)
+        finally:
+            c.close()
+
+    @app.get("/api/petid/{pet_id:int}")
+    def pet_detail(pet_id: int):
+        from .petid import KIND_LABELS, pet_image_ids
+
+        c = conn()
+        try:
+            pet = c.execute("SELECT * FROM pets WHERE id = ?", (pet_id,)).fetchone()
+            if pet is None:
+                raise HTTPException(404, "找不到這隻寵物")
+            ids = pet_image_ids(c, pet_id)
+            rows = []
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                rows += c.execute(
+                    f"SELECT * FROM images WHERE id IN ({','.join('?' * len(chunk))}) AND status = 'ok'", chunk
+                ).fetchall()
+            rows.sort(key=lambda r: r["sort_at"] or "", reverse=True)
+            return {"id": pet["id"], "name": pet["name"] or "", "kind": pet["kind"], "kind_label": KIND_LABELS.get(pet["kind"], ""),
+                    "cover": pet["cover_id"], "hidden": bool(pet["hidden"]), "assets": [summarize(r) for r in rows]}
+        finally:
+            c.close()
+
+    @app.post("/api/petid/{pet_id:int}")
+    def edit_pet(pet_id: int, body: dict = Body(...)):
+        """改名（同名的另一隻會合併）、隱藏、把照片移出。"""
+        from .petid import merge_pets, remove_images, rename_pet, set_hidden
+
+        c = conn()
+        try:
+            pet = c.execute("SELECT * FROM pets WHERE id = ?", (pet_id,)).fetchone()
+            if pet is None:
+                raise HTTPException(404, "找不到這隻寵物")
+            out: dict = {"id": pet_id}
+            if "name" in body:
+                name = str(body["name"] or "").strip()[:60]
+                same = c.execute("SELECT id FROM pets WHERE name = ? AND id != ? AND kind = ?", (name, pet_id, pet["kind"])).fetchone() if name else None
+                if same:
+                    merge_pets(c, same["id"], [pet_id])
+                    out = {"id": same["id"], "merged": True}
+                else:
+                    rename_pet(c, pet_id, name)
+            if "hidden" in body:
+                set_hidden(c, pet_id, bool(body["hidden"]))
+            if body.get("remove"):
+                out["removed"] = remove_images(c, pet_id, [int(i) for i in body["remove"]][:MAX_IDS])
+            return out
+        finally:
+            c.close()
+
+    @app.post("/api/petid/merge")
+    def merge_pet_ids(body: dict = Body(...)):
+        from .petid import merge_pets
+
+        c = conn()
+        try:
+            merge_pets(c, int(body["target"]), [int(i) for i in body.get("sources") or []])
+            return {"ok": True}
         finally:
             c.close()
 
@@ -1334,6 +1479,28 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         from .export import default_dest
 
         return {"dest": str(default_dest().parent)}
+
+    @app.post("/api/export/inspect")
+    def export_inspect(body: dict = Body(...)):
+        """匯出前先看選了什麼：幾張 RAW、幾張一般照片、幾部影片（影片不匯出）。"""
+        ids = [int(i) for i in body.get("ids", [])][:20000]
+        out = {"total": len(ids), "raw": 0, "photo": 0, "video": 0, "raw_xmp": 0}
+        c = conn()
+        try:
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                marks = ",".join("?" * len(chunk))
+                for r in c.execute(f"SELECT media_type, is_raw, xmp_mtime FROM images WHERE id IN ({marks})", chunk):
+                    if r["media_type"] == "video":
+                        out["video"] += 1
+                    elif r["is_raw"]:
+                        out["raw"] += 1
+                        out["raw_xmp"] += 1 if r["xmp_mtime"] else 0
+                    else:
+                        out["photo"] += 1
+            return out
+        finally:
+            c.close()
 
     @app.post("/api/reveal-path")
     def reveal_path(body: dict = Body(...)):
@@ -1390,7 +1557,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         if kind == "ollama":
             client_factory().delete(name)
             return {"ok": True}
-        if kind in ("face", "clip"):
+        if kind in ("face", "clip", "pet"):
             try:
                 return {"ok": True, "freed": delete_model_files(cfg, kind, name)}
             except ValueError as exc:
@@ -1416,7 +1583,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     def start_job(body: dict = Body(...)):
         kind = body.get("kind")
         opts = {k: body[k] for k in ("roots", "folder", "root_id", "album_id", "redo", "retry_failed") if body.get(k) is not None}
-        if kind in ("pull", "face_model", "clip_model"):
+        if kind in ("pull", "face_model", "clip_model", "pet_model"):
             opts = {"model": str(body["model"])}
         if kind == "export":
             ids = [int(i) for i in body.get("ids") or []][:MAX_IDS]
@@ -1468,6 +1635,17 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     @app.post("/api/settings")
     def save_settings(body: dict = Body(...)):
+        if "pet_model" in body and body["pet_model"] != cfg.pet_model:
+            from .petid import PET_MODELS
+            from .petid import clear_all as clear_pets
+
+            if body["pet_model"] not in PET_MODELS:
+                raise HTTPException(400, "未知的寵物模型")
+            c = conn()
+            try:
+                clear_pets(c, cfg)  # 不同模型的特徵無法比較，換模型就重新辨識
+            finally:
+                c.close()
         if "face_model" in body and body["face_model"] != cfg.face_model:
             from .faces import FACE_MODELS, clear_all
 

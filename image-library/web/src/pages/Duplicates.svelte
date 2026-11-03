@@ -1,4 +1,5 @@
 <script>
+  import BackButton from "../components/BackButton.svelte";
   import Icon from "../components/Icon.svelte";
   import { api, thumbUrl } from "../lib/api.js";
   import { app, openViewer, refresh, toast } from "../lib/state.svelte.js";
@@ -56,6 +57,7 @@
 
 <div class="page">
   <div class="page-head">
+    <BackButton to="/tools" label="回到整理工具" />
     <h1>重複與相似照片</h1>
     <button class="btn" disabled={running} onclick={start}>{running ? "比對中…" : data?.computed_at ? "重新比對" : "開始比對"}</button>
   </div>

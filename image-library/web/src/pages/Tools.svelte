@@ -1,4 +1,5 @@
 <script>
+  import BackButton from "../components/BackButton.svelte";
   /**
    * 整理工具：模糊照片、曝光問題、截圖與文件、大檔案、重複照片、批次匯出。
    * 偵測結果都是「建議」，由使用者勾選後再決定拒絕、搬移或刪除。
@@ -7,33 +8,58 @@
   import Icon from "../components/Icon.svelte";
   import JobList from "../components/JobList.svelte";
   import QualitySettings from "../components/QualitySettings.svelte";
+  import Treemap from "../components/Treemap.svelte";
+  import KindBar from "../components/KindBar.svelte";
+  import { fadeThrough } from "../lib/motion.js";
   import { api, thumbUrl } from "../lib/api.js";
   import { app, selection, refresh, toast, openViewer } from "../lib/state.svelte.js";
   import { navigate, link } from "../lib/router.svelte.js";
   import { confirm, moveAssets, trashAssets, reveal } from "../lib/actions.js";
   import { bytes, count } from "../lib/format.js";
+  import { TOOLS, pinnedKeys } from "../lib/toolkit.js";
+  import { pinnable, pin, unpin } from "../lib/pin.svelte.js";
   import {
-    mdiArrowLeft, mdiBlur, mdiBrightness6, mdiCellphoneScreenshot, mdiChartBoxOutline, mdiContentDuplicate,
+   
     mdiFileExportOutline, mdiFlagRemove, mdiCheckAll, mdiFolderMoveOutline, mdiDeleteOutline, mdiFolderOpenOutline,
-    mdiChevronRight, mdiVideoOutline,
+    mdiChevronRight, mdiVideoOutline, mdiPinOutline, mdiPinOffOutline, mdiSortDescending,
   } from "../lib/icons.js";
 
   let { sub = "" } = $props();
 
   let summary = $state(null);
   let items = $state(null);
-  let folders = $state(null);
   let showStd = $state(false);
   let largeKind = $state("all");
   let largeTab = $state("files");
+  let largeSort = $state("size");
+  let kinds = $state([]);
+  let tree = $state(null);
+  let treeAt = $state({ root_id: null, path: "" });
   let busy = $state(false);
+
+  const DESC = {
+    blurry: "失焦或手震的照片，連拍挑片時特別省時間。",
+    exposure: "嚴重過曝、欠曝，或誤按快門拍到的全黑、全白照片。",
+    screens: "螢幕截圖、文件、收據，一次移出作品集。",
+    large: "最佔空間的影片、照片與資料夾。",
+    duplicates: "完全相同或幾乎一樣的照片。",
+  };
+  function countText(key) {
+    const s = summary;
+    if (key === "blurry") return s.quality_done ? `${count(s.blurry)} 張建議檢查` : "尚未檢查";
+    if (key === "exposure") return s.quality_done ? `${count(s.exposure)} 張` : "尚未檢查";
+    if (key === "screens") return `${count(s.screens)} 張`;
+    if (key === "large") return `影片共 ${bytes(s.videos_bytes) || "0 KB"}`;
+    return s.dups === null ? "尚未尋找" : `${count(s.dups)} 組`;
+  }
+  const pinnedSet = $derived(new Set(pinnedKeys(app.server)));
 
   const TITLES = { blurry: "模糊照片", exposure: "曝光問題", screens: "截圖與文件", large: "大檔案" };
   const qualityRunning = $derived((app.server?.jobs?.active || []).some((j) => j.kind === "quality"));
 
   $effect(() => {
     app.refreshKey;
-    sub; largeKind;
+    sub; largeKind; largeSort;
     load();
   });
 
@@ -44,12 +70,42 @@
       else if (sub === "exposure") items = await api("/api/tools/exposure");
       else if (sub === "screens") items = await api("/api/tools/screens");
       else if (sub === "large") {
-        items = await api("/api/tools/large", { params: { kind: largeKind } });
-        folders = await api("/api/tools/large-folders");
+        items = await api("/api/tools/large", { params: { kind: largeKind, sort: largeSort } });
+        kinds = await api("/api/tools/size-by-kind");
+        await loadTree();
       }
     } catch (e) {
       toast(e.message, "error");
     }
+  }
+
+  async function loadTree() {
+    const params = treeAt.root_id === null ? {} : { root_id: treeAt.root_id, path: treeAt.path };
+    tree = await api("/api/tools/folder-tree", { params });
+  }
+
+  function openTree(it) {
+    if (!it.folder) {
+      navigate(`/folders/${it.root_id}${it.path ? `?path=${encodeURIComponent(it.path)}` : ""}`);
+      return;
+    }
+    treeAt = { root_id: it.root_id, path: it.path };
+    loadTree().catch((e) => toast(e.message, "error"));
+  }
+
+  function treeUp(level) {
+    if (level < 0) treeAt = { root_id: null, path: "" };
+    else treeAt = { root_id: treeAt.root_id, path: treeAt.path.split("/").slice(0, level).join("/") };
+    loadTree().catch((e) => toast(e.message, "error"));
+  }
+
+  const crumbs = $derived(treeAt.path ? treeAt.path.split("/") : []);
+
+  function shortDate(at) {
+    if (!at) return "";
+    const [d] = at.split("T");
+    const [y, m, day] = d.split("-");
+    return `${y}/${Number(m)}/${Number(day)}`;
   }
 
   async function runQuality(redo = false) {
@@ -110,7 +166,6 @@
     return [...map.entries()].map(([reason, list]) => ({ reason, list }));
   });
 
-  const maxFolder = $derived(Math.max(1, ...(folders || []).map((f) => f.bytes)));
 
   function toggleRow(a) {
     selection.has(a.id) ? selection.delete(a.id) : selection.add(a.id);
@@ -119,7 +174,7 @@
 
 <div class="page tools">
   {#if !sub}
-    <div class="page-head"><h1>整理工具</h1></div>
+    <div class="page-head"><h1>整理工具</h1><span class="muted small hint">長按卡片拖到左側「工具」，或按圖釘，就能加入側邊欄</span></div>
 
     {#if summary}
       <section class="status">
@@ -139,36 +194,19 @@
       <JobList kinds={["quality", "export", "dups"]} compact />
 
       <div class="cards m3-stagger">
-        <a class="tool m3-state" href="/tools/blurry" use:link>
-          <span class="ic"><Icon path={mdiBlur} /></span>
-          <b>模糊照片</b>
-          <span class="muted small">失焦或手震的照片，連拍挑片時特別省時間。</span>
-          <span class="count">{summary.quality_done ? `${count(summary.blurry)} 張建議檢查` : "尚未檢查"}</span>
-        </a>
-        <a class="tool m3-state" href="/tools/exposure" use:link>
-          <span class="ic"><Icon path={mdiBrightness6} /></span>
-          <b>曝光問題</b>
-          <span class="muted small">嚴重過曝、欠曝，或誤按快門拍到的全黑、全白照片。</span>
-          <span class="count">{summary.quality_done ? `${count(summary.exposure)} 張` : "尚未檢查"}</span>
-        </a>
-        <a class="tool m3-state" href="/tools/screens" use:link>
-          <span class="ic"><Icon path={mdiCellphoneScreenshot} /></span>
-          <b>截圖與文件</b>
-          <span class="muted small">螢幕截圖、文件、收據，一次移出作品集。</span>
-          <span class="count">{count(summary.screens)} 張</span>
-        </a>
-        <a class="tool m3-state" href="/tools/large" use:link>
-          <span class="ic"><Icon path={mdiChartBoxOutline} /></span>
-          <b>大檔案</b>
-          <span class="muted small">最佔空間的影片、照片與資料夾。</span>
-          <span class="count">影片共 {bytes(summary.videos_bytes) || "0 KB"}</span>
-        </a>
-        <a class="tool m3-state" href="/duplicates" use:link>
-          <span class="ic"><Icon path={mdiContentDuplicate} /></span>
-          <b>重複照片</b>
-          <span class="muted small">完全相同或幾乎一樣的照片。</span>
-          <span class="count">{summary.dups === null ? "尚未尋找" : `${count(summary.dups)} 組`}</span>
-        </a>
+        {#each TOOLS as t (t.key)}
+          {@const pinned = pinnedSet.has(t.key)}
+          <a class="tool m3-state" href={t.href} use:link use:pinnable={t.key} title="長按可拖到左側「工具」">
+            <span class="ic"><Icon path={t.icon} /></span>
+            <button class="icon-btn pin-btn" class:on={pinned} onclick={(e) => { e.preventDefault(); e.stopPropagation(); pinned ? unpin(t.key) : pin(t.key); }}
+              aria-label={pinned ? `從側邊欄移除${t.label}` : `把${t.label}加到側邊欄`} title={pinned ? "從側邊欄移除" : "加到側邊欄"}>
+              <Icon path={pinned ? mdiPinOffOutline : mdiPinOutline} size={20} />
+            </button>
+            <b>{t.label}</b>
+            <span class="muted small">{DESC[t.key]}</span>
+            <span class="count">{countText(t.key)}</span>
+          </a>
+        {/each}
         <div class="tool">
           <span class="ic"><Icon path={mdiFileExportOutline} /></span>
           <b>批次匯出交件</b>
@@ -181,7 +219,7 @@
     {/if}
   {:else}
     <div class="page-head">
-      <a class="icon-btn back" href="/tools" use:link aria-label="回到整理工具"><Icon path={mdiArrowLeft} /></a>
+      <BackButton to="/tools" label="回到整理工具" />
       <h1>{TITLES[sub] || "整理工具"}</h1>
       {#if items}<span class="muted small">{count(items.length)} 個</span>{/if}
     </div>
@@ -243,18 +281,23 @@
     {:else if sub === "large"}
       <div class="bar">
         <div class="seg" role="tablist" aria-label="檢視">
-          <button class:on={largeTab === "files"} onclick={() => (largeTab = "files")}>檔案</button>
-          <button class:on={largeTab === "folders"} onclick={() => (largeTab = "folders")}>資料夾</button>
+          <button role="tab" aria-selected={largeTab === "files"} class:on={largeTab === "files"} onclick={() => (largeTab = "files")}>檔案</button>
+          <button role="tab" aria-selected={largeTab === "folders"} class:on={largeTab === "folders"} onclick={() => (largeTab = "folders")}>資料夾</button>
         </div>
         {#if largeTab === "files"}
-          <div class="seg" role="group" aria-label="類型">
-            {#each [["all", "全部"], ["video", "影片"], ["photo", "照片"], ["raw", "RAW"]] as [v, label] (v)}
-              <button class:on={largeKind === v} onclick={() => (largeKind = v)}>{label}</button>
-            {/each}
-          </div>
+          <span class="spacer"></span>
+          <label class="sort"><Icon path={mdiSortDescending} size={18} />
+            <select bind:value={largeSort} aria-label="排序">
+              <option value="size">依大小</option>
+              <option value="newest">依拍攝時間（新到舊）</option>
+              <option value="oldest">依拍攝時間（舊到新）</option>
+            </select>
+          </label>
         {/if}
       </div>
       {#if largeTab === "files"}
+        <KindBar {kinds} selected={largeKind} onpick={(k) => (largeKind = k)} />
+        <p class="muted tiny list-note">最大的 {count(items.length)} 個{largeKind === "all" ? "檔案" : kinds.find((k) => k.key === largeKind)?.label || ""}{largeSort === "size" ? "" : "，依拍攝時間排列"}</p>
         <ul class="rows m3-stagger">
           {#each items as a, i (a.id)}
             <li class:sel={selection.has(a.id)}>
@@ -268,29 +311,50 @@
                 <b>{a.name}</b>
                 <span class="muted tiny path">{a.rel_path}</span>
               </div>
+              <span class="date muted small">{shortDate(a.at)}</span>
               <span class="size">{bytes(a.size)}</span>
               <button class="icon-btn" title="在 Finder 中顯示" aria-label="在 Finder 中顯示" onclick={() => reveal(a.id)}><Icon path={mdiFolderOpenOutline} size={20} /></button>
             </li>
           {/each}
         </ul>
         <p class="muted tiny">勾選後可以在上方移到垃圾桶或搬到外接硬碟。</p>
-      {:else if folders}
-        <ul class="rows m3-stagger">
-          {#each folders as f (f.root_id + f.path)}
-            <li>
-              <button class="frow m3-state" onclick={() => navigate(`/folders/${f.root_id}${f.path ? `?path=${encodeURIComponent(f.path)}` : ""}`)}>
-                <div class="grow">
-                  <b>{f.name}</b>
-                  <span class="muted tiny path">{f.root}{f.path ? ` / ${f.path}` : ""}</span>
-                  <span class="meter"><span style:width="{(f.bytes / maxFolder) * 100}%"></span></span>
-                  <span class="muted tiny">{count(f.files)} 個檔案{f.videos ? `，其中 ${count(f.videos)} 部影片` : ""}</span>
-                </div>
-                <span class="size">{bytes(f.bytes)}</span>
-                <Icon path={mdiChevronRight} />
-              </button>
-            </li>
-          {/each}
-        </ul>
+      {:else if tree}
+        <nav class="tcrumbs" aria-label="位置">
+          <button class="btn text small" onclick={() => treeUp(-1)} disabled={treeAt.root_id === null}>全部資料夾</button>
+          {#if treeAt.root_id !== null}
+            <Icon path={mdiChevronRight} size={16} />
+            <button class="btn text small" onclick={() => treeUp(0)} disabled={!crumbs.length}>{tree.root_name}</button>
+            {#each crumbs as c, i (i)}
+              <Icon path={mdiChevronRight} size={16} />
+              <button class="btn text small" onclick={() => treeUp(i + 1)} disabled={i === crumbs.length - 1}>{c}</button>
+            {/each}
+          {/if}
+          <span class="spacer"></span>
+          <span class="muted small">共 {bytes(tree.bytes) || "0 KB"}</span>
+        </nav>
+        {#if tree.items.length}
+          {#key treeAt.root_id + "/" + treeAt.path}
+            <div class="tm" in:fadeThrough><Treemap items={tree.items} total={tree.bytes} onopen={openTree} /></div>
+          {/key}
+          <p class="muted tiny">格子越大越佔空間；點資料夾往下一層，斜線格是直接放在這層的檔案。</p>
+          <ul class="rows m3-stagger">
+            {#each tree.items as f (f.path + f.name)}
+              <li>
+                <button class="frow m3-state" onclick={() => openTree(f)}>
+                  <div class="grow">
+                    <b>{f.name}</b>
+                    <span class="meter"><span style:width="{(f.bytes / (tree.items[0]?.bytes || 1)) * 100}%"></span></span>
+                    <span class="muted tiny">{count(f.files)} 個檔案</span>
+                  </div>
+                  <span class="size">{bytes(f.bytes)}</span>
+                  <Icon path={mdiChevronRight} />
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <div class="empty"><h2>這裡沒有檔案</h2></div>
+        {/if}
       {/if}
     {/if}
   {/if}
@@ -311,6 +375,13 @@
       background-color var(--spring-effects-default-duration) var(--spring-effects-default);
   }
   a.tool:hover { border-radius: var(--corner-extra-large); background: var(--surface-container); }
+  .tool { position: relative; touch-action: manipulation; -webkit-touch-callout: none; user-select: none; }
+  .tool .pin-btn { position: absolute; top: 12px; right: 12px; width: 40px; height: 40px; color: var(--on-surface-variant); opacity: 0; transition: opacity var(--spring-effects-fast-duration) var(--spring-effects-fast); }
+  .tool:hover .pin-btn, .tool .pin-btn.on, .tool .pin-btn:focus-visible { opacity: 1; }
+  .tool .pin-btn.on { color: var(--primary); }
+  @media (hover: none) { .tool .pin-btn { opacity: 1; } }
+  :global(.tool.pin-lifting) { transform: scale(.96); opacity: .6; transition: transform .2s, opacity .2s; }
+  .hint { flex-basis: 100%; margin-top: -10px; }
   .tool b { font-size: 16px; line-height: 24px; font-weight: 500; }
   .tool .ic {
     width: 48px; height: 48px; border-radius: var(--corner-large); display: flex; align-items: center; justify-content: center;
@@ -343,6 +414,14 @@
   .size { min-width: 84px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
   .frow { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: none; color: inherit; text-align: left; padding: 6px 0; cursor: pointer; border-radius: var(--corner-small); }
   .rows li:has(.frow) { padding: 4px 10px; }
+  .sort { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 6px 0 12px; border: 1px solid var(--outline); border-radius: var(--corner-full); color: var(--on-surface-variant); }
+  .sort select { border: 0; background: none; color: var(--on-surface); font-size: 14px; font-weight: 500; height: 34px; cursor: pointer; outline: none; }
+  .list-note { margin: 0 0 8px; }
+  .date { min-width: 84px; text-align: right; font-variant-numeric: tabular-nums; }
+  .tcrumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 0; margin: 0 0 8px; color: var(--on-surface-variant); }
+  .tcrumbs .btn:disabled { color: var(--on-surface); background: none; opacity: 1; }
+  .tm { margin-bottom: 6px; }
+  @media (max-width: 600px) { .date { display: none; } }
   .meter { display: block; height: 6px; border-radius: 3px; background: var(--surface-container-highest); overflow: hidden; margin: 4px 0; max-width: 420px; }
   .meter span { display: block; height: 100%; background: var(--primary); border-radius: 3px; }
   .skeleton { height: 220px; border-radius: var(--corner-large); background: var(--surface-container-low); animation: pulse 1.2s ease-in-out infinite; }

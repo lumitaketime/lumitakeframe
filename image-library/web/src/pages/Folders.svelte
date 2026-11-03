@@ -5,7 +5,8 @@
   import { route, navigate, link } from "../lib/router.svelte.js";
   import { app, showDialog, toast, refresh } from "../lib/state.svelte.js";
   import { analyzeAssets } from "../lib/actions.js";
-  import { mdiFolderOutline, mdiFolderOpenOutline, mdiFolderPlusOutline, mdiCreation, mdiHarddisk, mdiChevronRight } from "../lib/icons.js";
+  import { mdiFolderOutline, mdiFolderOpenOutline, mdiFolderPlusOutline, mdiCreation, mdiHarddisk, mdiContentCopy } from "../lib/icons.js";
+  import { count } from "../lib/format.js";
 
   let { rootId = null } = $props();
   let data = $state(null);
@@ -50,6 +51,15 @@
     }
   }
 
+  async function copyPath() {
+    try {
+      await navigator.clipboard.writeText(data.abs_path);
+      toast("已複製路徑");
+    } catch {
+      toast(data.abs_path);
+    }
+  }
+
   async function analyzeFolder() {
     await api("/api/jobs", { body: { kind: "analyze", root_id: rootId, folder: path } });
     toast("已排入 AI 分析（這個資料夾與子資料夾中尚未分析的項目）");
@@ -80,58 +90,51 @@
       {/each}
     </div>
   {:else}
-    <div class="page-head">
-      <h1>
-        <nav class="crumbs">
-          <a href="/folders" use:link>資料夾</a><Icon path={mdiChevronRight} size={18} />
-          <a href={`/folders/${rootId}`} use:link class:current={!path}>{data.root.name}</a>
-          {#each data.crumbs as c (c.path)}
-            <Icon path={mdiChevronRight} size={18} />
-            <a href={`/folders/${rootId}?path=${encodeURIComponent(c.path)}`} use:link class:current={c.path === path}>{c.name}</a>
+    {#snippet subfolders()}
+      {#if !data.root.online}<p class="offline-note muted small">硬碟未連接，顯示的是上次掃描的內容。</p>{/if}
+      {#if data.folders.length}
+        <div class="card-grid folders m3-stagger">
+          {#each data.folders as f (f.path)}
+            <button class="cover-card" onclick={() => open(f.path)}>
+              <div class="cover">
+                {#if f.cover}<img src={thumbUrl({ id: f.cover })} alt="" loading="lazy" />{:else}<Icon path={mdiFolderOutline} size={48} />{/if}
+              </div>
+              <div class="name">{f.name}</div>
+              <div class="sub">{f.count.toLocaleString()} 個項目</div>
+            </button>
           {/each}
-        </nav>
-      </h1>
-      <div class="actions">
-        <button class="btn ghost small" onclick={newFolder} disabled={!data.root.online}><Icon path={mdiFolderPlusOutline} size={18} />新增資料夾</button>
-        <button class="btn ghost small" onclick={analyzeFolder}><Icon path={mdiCreation} size={18} />AI 分析</button>
-        <button class="btn ghost small" onclick={revealFolder} disabled={!data.root.online}>
-          <Icon path={mdiFolderOpenOutline} size={18} />{app.server?.local ? "在 Finder 中打開" : "在 Mac 上打開"}
-        </button>
-      </div>
-    </div>
-    <p class="abs muted tiny">{data.abs_path}{data.root.online ? "" : "（硬碟未連接，顯示的是上次掃描的內容）"}</p>
-
-    {#if data.folders.length}
-      <div class="card-grid folders">
-        {#each data.folders as f (f.path)}
-          <button class="cover-card" onclick={() => open(f.path)}>
-            <div class="cover">
-              {#if f.cover}<img src={thumbUrl({ id: f.cover })} alt="" loading="lazy" />{:else}<Icon path={mdiFolderOutline} size={48} />{/if}
-            </div>
-            <div class="name">{f.name}</div>
-            <div class="sub">{f.count.toLocaleString()} 個項目</div>
-          </button>
-        {/each}
-      </div>
-    {/if}
-    {#if data.assets.length}
-      {#if data.folders.length}<h2 class="section-title">這個資料夾中的檔案（{data.assets.length}）</h2>{/if}
-      {#key `${rootId}:${path}`}<DateGroups assets={data.assets} storeKey={`folder:${rootId}:${path}`} />{/key}
-    {:else if !data.folders.length}
-      <div class="empty"><p>這個資料夾裡沒有照片或影片。</p></div>
-    {/if}
+        </div>
+        {#if data.assets.length}<h2 class="section-title">這層的檔案</h2>{/if}
+      {/if}
+      {#if !data.assets.length && !data.folders.length}
+        <div class="empty"><p>這個資料夾裡沒有照片或影片。</p></div>
+      {/if}
+    {/snippet}
+    {#key `${rootId}:${path}`}
+      <DateGroups
+        assets={data.assets}
+        storeKey={`folder:${rootId}:${path}`}
+        title={data.crumbs.length ? data.crumbs[data.crumbs.length - 1].name : data.root.name}
+        subtitle={data.assets.length ? null : `${count(data.folders.length)} 個資料夾`}
+        back={path ? `/folders/${rootId}${path.includes("/") ? `?path=${encodeURIComponent(path.slice(0, path.lastIndexOf("/")))}` : ""}` : "/folders"}
+        crumbs={[{ label: "資料夾", href: "/folders" },
+          ...(path ? [{ label: data.root.name, href: `/folders/${rootId}` }] : []),
+          ...data.crumbs.slice(0, -1).map((c) => ({ label: c.name, href: `/folders/${rootId}?path=${encodeURIComponent(c.path)}` }))]}
+        menu={[
+          { label: "新增資料夾", icon: mdiFolderPlusOutline, run: newFolder, disabled: !data.root.online },
+          { label: "AI 分析這個資料夾", icon: mdiCreation, run: analyzeFolder },
+          { label: app.server?.local ? "在 Finder 中打開" : "在 Mac 上打開", icon: mdiFolderOpenOutline, run: revealFolder, disabled: !data.root.online },
+          { label: "複製路徑", icon: mdiContentCopy, run: copyPath },
+        ]}
+        above={subfolders}
+      />
+    {/key}
   {/if}
 </div>
 
 <style>
-  .crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; font-size: 20px; }
-  .crumbs a { text-decoration: none; color: var(--muted); }
-  .crumbs a.current, .crumbs a:last-child { color: var(--text); }
-  .crumbs :global(svg) { color: var(--muted); }
-  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
-  .abs { margin: -6px 0 16px; font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
+  .offline-note { margin: 0 0 12px; }
   .folders { margin-bottom: 28px; }
   .offline { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 2px 8px; border-radius: 999px; }
   a.cover-card { text-decoration: none; }
-  @media (max-width: 760px) { .crumbs { font-size: 16px; } }
 </style>

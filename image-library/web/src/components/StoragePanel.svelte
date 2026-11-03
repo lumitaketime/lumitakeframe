@@ -14,7 +14,7 @@
   let loading = $state(false);
   let busy = $state("");
 
-  const KIND = { ollama: "AI 模型（Ollama）", face: "人臉辨識模型", clip: "圖像搜尋模型" };
+  const KIND = { ollama: "AI 模型（Ollama）", face: "人臉辨識模型", clip: "圖像搜尋模型", pet: "寵物辨識模型" };
 
   async function load() {
     loading = true;
@@ -88,6 +88,9 @@
       toast(`已清除 ${count(res.cleared)} 張照片的分析結果`);
     });
   }
+
+  const EMPTY = { bytes: 0, files: 0, thumbs: { files: 0, bytes: 0 }, face_thumbs: { files: 0, bytes: 0 }, database: { bytes: 0 } };
+  const o = $derived(data?.orphans ?? EMPTY);
 
   async function clean() {
     await run("clean", async () => {
@@ -192,21 +195,33 @@
 
   <section class="card">
     <h2><Icon path={mdiBroom} />清理快取</h2>
-    <p class="muted small">
-      {#if data.orphans.files}
-        有 {count(data.orphans.files)} 個縮圖已經沒有任何照片使用（例如照片被刪除或搬走），約 {bytes(data.orphans.bytes)}。
-      {:else}
-        目前沒有多餘的縮圖。清理時也會壓縮資料庫。
-      {/if}
-    </p>
-    <button class="btn" onclick={clean} disabled={busy === "clean"}>
-      {#if busy === "clean"}<span class="spinner"></span>清理中…{:else}清理並壓縮資料庫{/if}
+    {#if o.bytes >= 1024 * 1024}
+      <div class="reclaim">
+        <span class="muted small">可以釋放</span>
+        <b>{bytes(o.bytes)}</b>
+      </div>
+      <ul class="reclaim-list">
+        {#if o.thumbs.files}<li><span>沒有照片使用的縮圖（照片已刪除或搬走）</span><span>{count(o.thumbs.files)} 個 · {bytes(o.thumbs.bytes)}</span></li>{/if}
+        {#if o.face_thumbs.files}<li><span>不再使用的人臉與寵物縮圖（重新辨識後留下的）</span><span>{count(o.face_thumbs.files)} 個 · {bytes(o.face_thumbs.bytes)}</span></li>{/if}
+        {#if o.database.bytes >= 1024 * 1024}<li><span>資料庫裡刪除資料後的空白</span><span>{bytes(o.database.bytes)}</span></li>{/if}
+      </ul>
+      <p class="muted small">只刪除本程式產生的快取，照片、分析結果與人物都不受影響。</p>
+    {:else}
+      <p class="muted small">目前沒有需要清理的快取{o.bytes ? `（只有約 ${bytes(o.bytes)}）` : ""}，不用清理。</p>
+    {/if}
+    <button class="btn" class:soft={o.bytes < 1024 * 1024} onclick={clean} disabled={busy === "clean"}>
+      {#if busy === "clean"}<span class="spinner"></span>清理中…{:else if o.bytes >= 1024 * 1024}清理，釋放 {bytes(o.bytes)}{:else}仍要壓縮資料庫{/if}
     </button>
   </section>
 {/if}
 
 <style>
   h2 { display: flex; align-items: center; gap: 10px; }
+  .reclaim { display: flex; align-items: baseline; gap: 8px; margin: 4px 0 6px; }
+  .reclaim b { font-size: 28px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .reclaim-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+  .reclaim-list li { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--outline-variant); }
+  .reclaim-list li span:last-child { color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
   .small-btn { margin-left: auto; width: 36px; height: 36px; }
   .skeleton { height: 90px; border-radius: 12px; background: var(--bg); animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .5; } }

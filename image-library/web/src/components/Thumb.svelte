@@ -34,6 +34,7 @@
 
 <div
   class="thumb"
+  data-asset={asset.id}
   class:selected
   class:selecting
   class:missing={asset.missing}

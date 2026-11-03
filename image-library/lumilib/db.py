@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 8  # v8：照片品質檢查欄位
+SCHEMA_VERSION = 9  # v9：寵物辨識
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -85,6 +85,30 @@ CREATE TABLE IF NOT EXISTS faces (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS pets (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    kind TEXT NOT NULL,
+    cover_id INTEGER,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pet_detections (
+    id INTEGER PRIMARY KEY,
+    image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+    pet_id INTEGER REFERENCES pets(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    x1 REAL, y1 REAL, x2 REAL, y2 REAL,
+    score REAL,
+    embedding BLOB NOT NULL,
+    model TEXT NOT NULL,
+    manual INTEGER NOT NULL DEFAULT 0,
+    excluded INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings_kv (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -134,6 +158,8 @@ V2_COLUMNS = [
     ("thumb_ok", "INTEGER NOT NULL DEFAULT 0"),
     ("faces_at", "TEXT"),
     ("faces_model", "TEXT"),
+    ("pets_at", "TEXT"),
+    ("pets_model", "TEXT"),
     ("clip", "BLOB"),
     ("clip_model", "TEXT"),
     ("place", "TEXT"),
@@ -163,6 +189,8 @@ CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite);
 CREATE INDEX IF NOT EXISTS idx_album_items_image ON album_items(image_id);
 CREATE INDEX IF NOT EXISTS idx_faces_image ON faces(image_id);
 CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id);
+CREATE INDEX IF NOT EXISTS idx_pet_det_image ON pet_detections(image_id);
+CREATE INDEX IF NOT EXISTS idx_pet_det_pet ON pet_detections(pet_id);
 CREATE INDEX IF NOT EXISTS idx_images_stack ON images(stack_id);
 """
 
@@ -274,6 +302,14 @@ def refresh_search_text(conn: sqlite3.Connection, image_id: int) -> None:
             (image_id,),
         ).fetchall()
         data["people"] = [p["name"] for p in people if p["name"]] + [g for p in people for g in json_list(p["groups"])]
+        try:
+            pets = conn.execute(
+                "SELECT DISTINCT p.name FROM pet_detections d JOIN pets p ON p.id = d.pet_id WHERE d.image_id = ? AND p.name IS NOT NULL",
+                (image_id,),
+            ).fetchall()
+            data["people"] += [p["name"] for p in pets]
+        except sqlite3.OperationalError:
+            pass  # 舊資料庫尚未建立寵物表
         if data.get("country"):
             from .places import country_names
 
