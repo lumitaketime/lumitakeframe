@@ -92,6 +92,9 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     async def lifespan(app: FastAPI):
         conn = db.connect(cfg.db_path)
         has_roots = bool(db.list_roots(conn))
+        from .analyzer import reset_server_errors
+
+        reset_server_errors(conn)  # 修正後重新開啟，之前因模型設定失敗的照片會重新分析
         conn.close()
         state["jobs"] = JobRunner(cfg, client_factory)
         if start_jobs_on_boot and cfg.scan_on_start and has_roots:

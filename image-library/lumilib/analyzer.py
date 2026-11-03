@@ -164,6 +164,8 @@ class OllamaClient:
 
     # 不支援「關閉思考」的舊版 Ollama 或模型：記住後改用一般請求
     _no_think: set = set()
+    # 不支援結構化輸出（format）的模型或引擎，例如 Mac 上部分 Gemma 4：改用提示詞要求 JSON
+    _no_format: set = set()
 
     def chat(self, model: str, messages: list[dict], schema: dict | None, temperature: float,
              num_ctx: int | None = None, num_predict: int = 1500) -> dict:
@@ -179,8 +181,11 @@ class OllamaClient:
             "model": model, "stream": False, "keep_alive": "15m", "messages": messages,
             "options": {"temperature": temperature, "num_predict": num_predict, "repeat_penalty": 1.1},
         }
-        if schema is not None:
+        if schema is not None and model not in self._no_format:
             payload["format"] = schema
+        elif schema is not None:
+            messages = [*messages[:-1], {**messages[-1], "content": messages[-1]["content"] + json_instruction(schema)}]
+            payload["messages"] = messages
         if num_ctx:
             payload["options"]["num_ctx"] = num_ctx
         if model not in self._no_think:
@@ -188,10 +193,13 @@ class OllamaClient:
         try:
             return self._post("/api/chat", payload)
         except RuntimeError as exc:
-            if "think" in str(exc).lower() and "think" in payload:
+            text = str(exc).lower()
+            if "format" in payload and ("structured output" in text or "format" in text and " 501" in text):
+                self._no_format.add(model)
+                return self.chat(model, messages, schema, temperature, num_ctx, num_predict)
+            if "think" in text and "think" in payload:
                 self._no_think.add(model)
-                payload.pop("think")
-                return self._post("/api/chat", payload)
+                return self.chat(model, messages, schema, temperature, num_ctx, num_predict)
             raise
 
     @staticmethod
@@ -228,6 +236,20 @@ class OllamaClient:
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
         data = self._post("/api/embed", {"model": model, "input": texts, "keep_alive": "15m"})
         return data.get("embeddings", [])
+
+
+def json_instruction(schema: dict) -> str:
+    """不能用結構化輸出時，在提示詞最後說明要輸出的 JSON 格式。"""
+    def example(node):
+        t = node.get("type")
+        if t == "object":
+            return {k: example(v) for k, v in (node.get("properties") or {}).items()}
+        if t == "array":
+            return [example(node.get("items") or {"type": "string"})]
+        return "..."
+
+    sample = json.dumps(example(schema), ensure_ascii=False)
+    return f"\n\n只輸出一個 JSON 物件，不要加說明文字或 ``` 標記。格式：{sample}"
 
 
 def parse_model_json(content: str) -> dict:
@@ -365,6 +387,7 @@ def analyze_images(
     if limit:
         rows = rows[:limit]
     total = len(rows)
+    streak: list[tuple[int, str]] = []  # 連續發生的伺服器錯誤：同一個問題就停下來，不要把整批都標成失敗
     for index, image in enumerate(rows, 1):
         if stop is not None and stop.is_set():
             break
@@ -384,7 +407,21 @@ def analyze_images(
         except OllamaUnavailable:
             raise
         except (MediaError, OSError, ValueError, RuntimeError) as exc:
-            conn.execute("UPDATE images SET error = ? WHERE id = ?", (str(exc)[:500], image["id"]))
+            message = str(exc)
+            if message.startswith(("Ollama 回應", "模型回應逾時")):
+                streak.append((image["id"], message))
+                if len(streak) >= 3:
+                    ids = [i for i, _ in streak[:-1]]
+                    conn.execute(f"UPDATE images SET error = NULL WHERE id IN ({','.join('?' * len(ids))})", ids)
+                    conn.commit()
+                    result.failed -= len(ids)
+                    raise OllamaUnavailable(
+                        f"AI 分析已暫停：連續 3 張都發生同樣的錯誤（{message[:200]}）。"
+                        "請到設定 → AI 分析按「用一張照片測試」，或換一個模型。"
+                    ) from exc
+            else:
+                streak.clear()
+            conn.execute("UPDATE images SET error = ? WHERE id = ?", (message[:500], image["id"]))
             conn.commit()
             result.failed += 1
             result.errors.append(f"{image['rel_path']}: {exc}")
@@ -392,6 +429,7 @@ def analyze_images(
                 progress(index, total, f"失敗 {image['rel_path']}")
             continue
 
+        streak.clear()
         conn.execute(
             """UPDATE images SET analyzed_at = ?, model = ?, description = ?, tags = ?, objects = ?,
                    scene = ?, ocr_text = ?, error = NULL, embedding = NULL, embed_model = NULL
@@ -571,3 +609,13 @@ def ai_status(client, cfg: Config) -> dict:
         return out
     out["ready"] = True
     return out
+
+
+def reset_server_errors(conn: sqlite3.Connection) -> int:
+    """之前因為 Ollama 設定或版本問題而失敗的照片，改回「待分析」（不是檔案本身的問題）。"""
+    cur = conn.execute(
+        "UPDATE images SET error = NULL WHERE analyzed_at IS NULL AND "
+        "(error LIKE 'Ollama 回應%' OR error LIKE '模型回應逾時%' OR error LIKE '模型輸出太長%' OR error LIKE '模型沒有回傳有效 JSON%')"
+    )
+    conn.commit()
+    return cur.rowcount

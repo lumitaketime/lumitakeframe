@@ -22,6 +22,7 @@ class FakeOllama(BaseHTTPRequestHandler):
     """模擬 Ollama：可設定成不支援 think 參數，或把答案放在 thinking。"""
 
     reject_think = False
+    reject_format = False
     answer_in_thinking = False
     requests: list = []
 
@@ -37,6 +38,11 @@ class FakeOllama(BaseHTTPRequestHandler):
     def do_POST(self):
         payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         type(self).requests.append(payload)
+        if "format" in payload and self.reject_format:
+            self.send_response(501)
+            self.end_headers()
+            self.wfile.write(b'{"error":"structured output is unavailable"}')
+            return
         if "think" in payload and self.reject_think:
             self.send_response(400)
             self.end_headers()
@@ -55,8 +61,10 @@ class OllamaClientTests(unittest.TestCase):
     def setUp(self):
         FakeOllama.requests = []
         FakeOllama.reject_think = False
+        FakeOllama.reject_format = False
         FakeOllama.answer_in_thinking = False
         OllamaClient._no_think = set()
+        OllamaClient._no_format = set()
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeOllama)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.client = OllamaClient(f"http://127.0.0.1:{self.server.server_address[1]}", 10)
@@ -81,6 +89,15 @@ class OllamaClientTests(unittest.TestCase):
         # 之後同一個模型不再送 think
         self.client.describe("old-model", "describe", ["aGk="])
         self.assertEqual(len(FakeOllama.requests), 3)
+
+    def test_falls_back_when_structured_output_unavailable(self):
+        FakeOllama.reject_format = True
+        out = self.client.describe("gemma4:e4b", "describe", ["aGk="])
+        self.assertEqual(out["scene"], "海邊")
+        last = FakeOllama.requests[-1]
+        self.assertNotIn("format", last)
+        self.assertIn("JSON", last["messages"][-1]["content"])
+        self.assertIn("gemma4:e4b", OllamaClient._no_format)
 
     def test_answer_in_thinking_field(self):
         FakeOllama.answer_in_thinking = True
@@ -158,6 +175,37 @@ class AutoAnalyzeTests(unittest.TestCase):
     def test_auto_analyze_off(self):
         self.cfg.auto_analyze = 0
         self.assertEqual(self.run_scan(ReadyClient)["kind"], "scan")
+
+
+class BrokenServerClient(ReadyClient):
+    def describe(self, model, prompt, images):
+        raise RuntimeError('Ollama 回應 500：{"error":"boom"}')
+
+
+class StopOnRepeatedErrorsTests(unittest.TestCase):
+    def test_stops_and_keeps_photos_pending(self):
+        from lumilib.analyzer import OllamaUnavailable, analyze_images, reset_server_errors
+        from lumilib.scanner import scan_all
+
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            for i in range(5):
+                make_photo(tmp / "p" / f"{i}.jpg", (20 * i, 30, 30))
+            cfg = load_config(tmp / "home")
+            conn = db.connect(cfg.db_path)
+            db.add_root(conn, tmp / "p")
+            scan_all(conn, cfg)
+            with self.assertRaises(OllamaUnavailable):
+                analyze_images(conn, cfg, BrokenServerClient())
+            st = db.stats(conn)
+            self.assertEqual(st["failed"], 0)  # 伺服器的問題不算照片失敗
+            self.assertEqual(st["pending"], 5)
+            conn.execute("UPDATE images SET error = 'Ollama 回應 501：x' WHERE id = 1")
+            self.assertEqual(reset_server_errors(conn), 1)
+            self.assertEqual(db.stats(conn)["pending"], 5)
+            conn.close()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 class RecommendTests(unittest.TestCase):
