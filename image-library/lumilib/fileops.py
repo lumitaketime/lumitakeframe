@@ -37,15 +37,24 @@ def _has_sibling_raw(path: Path) -> bool:
 
 
 def sidecars(path: Path) -> list[Path]:
-    found = []
-    shared_ok = not _has_sibling_raw(path)
-    for ext in SIDECAR_EXTENSIONS:
-        candidates = [path.with_name(path.name + ext)]
-        if shared_ok or ext.lower() == ".aae":
-            candidates.append(path.with_suffix(ext))
-        for candidate in candidates:
-            if candidate.exists() and candidate not in found and candidate != path:
-                found.append(candidate)
+    """同名附屬檔。直接比對資料夾中實際存在的檔名（不分大小寫），
+    避免 macOS 不分大小寫的磁碟把 IMG_1.xmp 與 IMG_1.XMP 算成兩個檔案。"""
+    wanted = {(path.name + ext).lower() for ext in SIDECAR_EXTENSIONS}
+    if not _has_sibling_raw(path):
+        wanted |= {(path.stem + ext).lower() for ext in SIDECAR_EXTENSIONS}
+    else:
+        wanted |= {(path.stem + ".aae").lower()}
+    try:
+        entries = list(path.parent.iterdir())
+    except OSError:
+        return []
+    found, seen = [], set()
+    for entry in sorted(entries):
+        if entry.name.lower() in wanted and entry.name.lower() != path.name.lower() and entry.is_file():
+            key = entry.name.lower()
+            if key not in seen:
+                seen.add(key)
+                found.append(entry)
     return found
 
 
