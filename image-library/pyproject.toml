@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lumilib"
-version = "0.2.0"
+version = "0.3.0"
 description = "Lumitake Library：用地端 AI 分析並管理硬碟／SSD 上的照片與影片"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,10 +17,12 @@ dependencies = [
     "send2trash>=1.8",
     "qrcode>=7.4",
     "numpy>=1.24",
+    "onnxruntime>=1.17",
+    "tokenizers>=0.15",
 ]
 
 [project.optional-dependencies]
-test = ["httpx>=0.27"]
+test = ["httpx>=0.27", "onnx>=1.15"]
 
 [project.scripts]
 lumilib = "lumilib.cli:main"

@@ -60,6 +60,12 @@
     {/each}
   </div>
   {#if result?.warning}<p class="danger-text small">{result.warning}</p>{/if}
+  {#if result?.expanded?.length || result?.modes?.includes("image")}
+    <p class="muted small smart">
+      {#if result.expanded?.length}也搜尋了：{result.expanded.slice(0, 12).join("、")}{/if}
+      {#if result.modes?.includes("image")}{result.expanded?.length ? "　·　" : ""}含畫面內容比對{/if}
+    </p>
+  {/if}
 
   {#if !q}
     <div class="help">
@@ -74,12 +80,13 @@
           <tr><td><code>camera:x-t5</code>　<code>lens:56mm</code></td><td>相機、鏡頭</td></tr>
           <tr><td><code>year:2024</code>　<code>after:2024-05-01</code>　<code>before:2024-06-01</code></td><td>拍攝日期</td></tr>
           <tr><td><code>type:video</code>　<code>type:raw</code>　<code>ext:heic</code></td><td>檔案類型</td></tr>
+          <tr><td><code>person:媽媽</code></td><td>人物（人臉辨識後命名）</td></tr>
           <tr><td><code>is:favorite</code>　<code>is:pending</code>　<code>is:missing</code></td><td>狀態</td></tr>
         </tbody>
       </table>
     </div>
   {:else if result && !result.results.length && !loading}
-    <div class="empty"><h2>找不到符合的項目</h2><p>試試其他關鍵字，或在設定開啟語意搜尋。</p></div>
+    <div class="empty"><h2>找不到符合的項目</h2><p>試試其他關鍵字，或在設定開啟「圖像搜尋」，用畫面內容找照片。</p></div>
   {:else if result}
     <Grid assets={result.results} />
     {#if more}<p class="center"><button class="btn ghost" disabled={loading} onclick={() => run(true)}>載入更多</button></p>{/if}
@@ -89,6 +96,7 @@
 
 <style>
   .quick { margin-bottom: 14px; }
+  .smart { margin: -6px 0 12px; }
   .sem { display: flex; align-items: center; gap: 6px; font-size: 14px; }
   .help table { border-collapse: collapse; width: 100%; max-width: 760px; font-size: 14px; }
   .help td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }

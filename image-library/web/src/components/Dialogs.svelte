@@ -18,7 +18,17 @@
   let newFolder = $state("");
   let loadingDirs = $state(false);
 
+  let people = $state([]);
+  let personQuery = $state("");
+  const filteredPeople = $derived(
+    people.filter((p) => p.id !== d?.props?.exclude && (!personQuery || (p.name || "").toLowerCase().includes(personQuery.toLowerCase()))),
+  );
+
   $effect(() => {
+    if (d?.kind === "person") {
+      personQuery = "";
+      api("/api/people").then((p) => (people = p));
+    }
     if (d?.kind === "album") {
       newName = "";
       api("/api/albums").then((a) => (albums = a));
@@ -77,6 +87,25 @@
       <button class="btn ghost" onclick={() => closeDialog(null)}>取消</button>
       <button class="btn" onclick={() => closeDialog(d.props.value)}>{d.props.ok || "確定"}</button>
     {/snippet}
+  </Modal>
+{:else if d?.kind === "person"}
+  <Modal title={d.props.title || "選擇人物"} onclose={() => closeDialog(null)}>
+    <input class="input" bind:value={personQuery} placeholder="輸入名字篩選" />
+    {#if d.props.allowNew && personQuery.trim()}
+      <button class="item" onclick={() => closeDialog({ name: personQuery.trim() })}>
+        <span class="thumb"><Icon path={mdiPlus} /></span><span class="label"><b>新增「{personQuery.trim()}」</b></span>
+      </button>
+    {/if}
+    <div class="list">
+      {#each filteredPeople as p (p.id)}
+        <button class="item" onclick={() => closeDialog(p)}>
+          <span class="thumb round"><img src={`/api/faces/${p.cover_face_id}/thumb`} alt="" /></span>
+          <span class="label"><b>{p.name || "未命名"}</b><span class="muted small">{p.count} 張</span></span>
+        </button>
+      {:else}
+        <p class="muted small">沒有符合的人物。</p>
+      {/each}
+    </div>
   </Modal>
 {:else if d?.kind === "album"}
   <Modal title="加到相簿（{d.props.count} 個項目）" onclose={() => closeDialog(null)}>
@@ -167,6 +196,7 @@
     display: flex; align-items: center; justify-content: center; color: var(--muted); flex-shrink: 0;
   }
   .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .thumb.round { border-radius: 50%; }
   .label { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   .label b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

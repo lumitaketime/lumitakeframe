@@ -7,10 +7,13 @@
   import { bytes, count } from "../lib/format.js";
   import {
     mdiHarddisk, mdiRefresh, mdiPencilOutline, mdiDeleteOutline, mdiPlus, mdiCreation, mdiCheck, mdiDownload,
-    mdiCellphone, mdiStop, mdiThemeLightDark, mdiServerNetwork, mdiAlertCircleOutline,
+    mdiCellphone, mdiStop, mdiThemeLightDark, mdiServerNetwork, mdiAlertCircleOutline, mdiFaceRecognition,
+    mdiImageSearchOutline,
   } from "../lib/icons.js";
 
   let roots = $state([]);
+  let faceModels = $state([]);
+  let clipModels = $state([]);
   let models = $state(null);
   let settings = $state(null);
   let lan = $state(null);
@@ -58,18 +61,51 @@
   async function loadAll() {
     [roots, settings, lan] = await Promise.all([api("/api/roots"), api("/api/settings"), api("/api/lan")]);
     models = await api("/api/models");
+    loadExtra();
+  }
+
+  function loadExtra() {
+    api("/api/faces/models").then((m) => (faceModels = m));
+    api("/api/clip/models").then((m) => (clipModels = m));
   }
 
   onMount(() => {
     loadAll();
-    if (location.hash === "#jobs") setTimeout(() => document.getElementById("jobs")?.scrollIntoView(), 300);
+    if (location.hash) setTimeout(() => document.getElementById(location.hash.slice(1))?.scrollIntoView(), 400);
   });
 
   $effect(() => {
     app.refreshKey;
     api("/api/roots").then((r) => (roots = r));
     api("/api/models").then((m) => (models = m)).catch(() => {});
+    loadExtra();
   });
+
+  const busyModel = $derived(["face_model", "clip_model"].includes(jobs?.current?.kind) ? jobs.current.model : null);
+
+  async function useFaceModel(name) {
+    if (settings.face_model !== name && s?.stats.faces) {
+      const ok = await confirm("切換人臉模型？", "不同模型的臉部特徵不相容，會清除目前的人臉與人物資料（包含名稱），之後重新偵測。", { ok: "切換", danger: true });
+      if (!ok) return;
+    }
+    settings = await api("/api/settings", { body: { face_model: name } });
+    loadExtra();
+    refresh();
+  }
+
+  async function clearFaces() {
+    const ok = await confirm("刪除所有人臉資料？", "會刪除所有偵測到的臉、臉部特徵與人物名稱。照片本身不受影響，之後可以重新偵測。", { ok: "全部刪除", danger: true });
+    if (!ok) return;
+    await api("/api/faces/clear", { body: {} });
+    toast("人臉資料已刪除");
+    refresh();
+  }
+
+  async function deleteExtraModel(kind, name) {
+    if (!(await confirm(`刪除 ${name}？`, "只刪除模型檔案以釋放空間，已建立的資料保留。", { ok: "刪除", danger: true }))) return;
+    await api(`/api/${kind}/models/delete`, { body: { name } });
+    loadExtra();
+  }
 
   // ---- 資料夾 ----
   async function pick() {
@@ -375,6 +411,122 @@
           </label>
         </div>
       {/if}
+    {/if}
+  </section>
+
+  <!-- 人臉辨識 -->
+  <section class="card" id="faces">
+    <h2><Icon path={mdiFaceRecognition} />人臉辨識</h2>
+    <p class="muted small">自動找出照片中的人臉，把同一個人整理在一起，命名後可直接搜尋名字。全部在這台 Mac 上運算，臉部特徵只存在本機。</p>
+    {#if settings}
+      <label class="toggle">
+        <input type="checkbox" checked={!!settings.face_enabled}
+          onchange={async (e) => { settings = await api("/api/settings", { body: { face_enabled: e.currentTarget.checked ? 1 : 0 } }); }} />
+        掃描新照片時自動偵測人臉
+      </label>
+      <div class="models">
+        {#each faceModels as m (m.name)}
+          {@const active = settings.face_model === m.name}
+          <div class="model" class:active>
+            <div class="mhead"><b>{m.label}</b></div>
+            <div class="tiny muted">下載約 {m.download_mb} MB · 安裝後 {m.disk_mb} MB</div>
+            <p class="small">{m.note}</p>
+            <div class="row">
+              {#if !m.installed}
+                <button class="btn small soft" disabled={!!busyModel} onclick={() => job("face_model", { model: m.name })}>
+                  <Icon path={mdiDownload} size={16} />{busyModel === m.name ? "下載中…" : "下載"}
+                </button>
+              {/if}
+              {#if active}
+                <span class="using"><Icon path={mdiCheck} size={18} />使用中</span>
+              {:else if m.installed}
+                <button class="btn small" onclick={() => useFaceModel(m.name)}>使用</button>
+              {/if}
+              {#if m.installed && !active}
+                <button class="icon-btn" title="刪除模型" onclick={() => deleteExtraModel("faces", m.name)}><Icon path={mdiDeleteOutline} size={20} /></button>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+      <div class="row wrap">
+        <label class="field">辨識嚴格度
+          <select class="input" value={String(settings.face_similarity)}
+            onchange={(e) => saveSetting("face_similarity", Number(e.currentTarget.value))}>
+            <option value="42">寬鬆（容易合在一起）</option>
+            <option value="50">標準（建議）</option>
+            <option value="58">嚴格（容易分成多人）</option>
+          </select>
+        </label>
+        <label class="field">出現幾次才建立人物
+          <select class="input" value={String(settings.face_min_faces)}
+            onchange={(e) => saveSetting("face_min_faces", Number(e.currentTarget.value))}>
+            {#each [2, 3, 5, 10] as n (n)}<option value={String(n)}>{n} 次</option>{/each}
+          </select>
+        </label>
+      </div>
+      {#if s}
+        <p class="small">已找到 {count(s.stats.faces)} 張臉、{count(s.stats.people)} 位人物；尚未偵測 {count(s.stats.faces_pending)} 張照片。</p>
+      {/if}
+      <div class="row wrap">
+        <button class="btn" disabled={!faceModels.find((m) => m.active)?.installed} onclick={() => job("faces")}>偵測人臉</button>
+        <button class="btn ghost" onclick={() => job("cluster")}>重新分群</button>
+        <button class="btn ghost danger-text" onclick={clearFaces}>刪除所有人臉資料</button>
+      </div>
+      <p class="muted tiny">「重新分群」會保留已命名的人物與你手動更正的結果。InsightFace 預訓練模型授權僅限非商業用途。</p>
+    {/if}
+  </section>
+
+  <!-- 智慧搜尋 -->
+  <section class="card" id="search">
+    <h2><Icon path={mdiImageSearchOutline} />智慧搜尋（跨語言）</h2>
+    {#if settings}
+      <label class="toggle">
+        <input type="checkbox" checked={!!settings.query_rewrite}
+          onchange={async (e) => { settings = await api("/api/settings", { body: { query_rewrite: e.currentTarget.checked ? 1 : 0 } }); }} />
+        用 AI 翻譯並擴充搜尋詞
+      </label>
+      <p class="muted small">輸入「貓」也會找 cat、kitten、貓咪；輸入 beach 也會找海邊、沙灘。使用目前的視覺模型（{settings.vision_model}），每個新查詢約 1–3 秒，重複查詢會立即回應。</p>
+
+      <h3>圖像搜尋（多語言 CLIP）</h3>
+      <p class="muted small">直接用文字比對畫面內容，不需要等 AI 描述跑完；建立索引很快（十萬張約半小時）。</p>
+      <label class="toggle">
+        <input type="checkbox" checked={!!settings.clip_enabled}
+          onchange={async (e) => {
+            settings = await api("/api/settings", { body: { clip_enabled: e.currentTarget.checked ? 1 : 0 } });
+            if (settings.clip_enabled && clipModels.find((m) => m.active)?.installed) job("clip");
+          }} />
+        搜尋時比對畫面內容，掃描新照片時自動建立索引
+      </label>
+      <div class="models">
+        {#each clipModels as m (m.name)}
+          {@const active = settings.clip_model === m.name}
+          <div class="model" class:active>
+            <div class="mhead"><b>{m.label}</b></div>
+            <p class="small">{m.note}</p>
+            <div class="row">
+              {#if !m.installed}
+                <button class="btn small soft" disabled={!!busyModel} onclick={() => job("clip_model", { model: m.name })}>
+                  <Icon path={mdiDownload} size={16} />{busyModel === m.name ? "下載中…" : "下載"}
+                </button>
+              {/if}
+              {#if active}
+                <span class="using"><Icon path={mdiCheck} size={18} />使用中</span>
+              {:else if m.installed}
+                <button class="btn small" onclick={async () => { settings = await api("/api/settings", { body: { clip_model: m.name } }); loadExtra(); job("clip"); }}>使用</button>
+              {/if}
+              {#if m.installed && !active}
+                <button class="icon-btn" title="刪除模型" onclick={() => deleteExtraModel("clip", m.name)}><Icon path={mdiDeleteOutline} size={20} /></button>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+      {#if s}<p class="small">已建立圖像索引：{count(s.stats.clip_done)} / {count(s.stats.images)}</p>{/if}
+      <div class="row wrap">
+        <button class="btn ghost" disabled={!clipModels.find((m) => m.active)?.installed} onclick={() => job("clip")}>建立圖像索引</button>
+      </div>
+      <p class="muted tiny">模型從 Hugging Face 下載（Immich 專案提供的 ONNX 版本），檔案約數百 MB 到 1 GB 以上。</p>
     {/if}
   </section>
 

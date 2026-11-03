@@ -3,24 +3,58 @@
   import MiniMap from "./MiniMap.svelte";
   import { api } from "../lib/api.js";
   import { navigate } from "../lib/router.svelte.js";
-  import { app, viewer, toast } from "../lib/state.svelte.js";
+  import { app, viewer, toast, showDialog, refresh } from "../lib/state.svelte.js";
   import { analyzeAssets, copyText, reveal } from "../lib/actions.js";
   import { bytes, dateTime, duration, shutter } from "../lib/format.js";
   import {
     mdiCalendarOutline, mdiCameraIris, mdiCamera, mdiClose, mdiContentCopy, mdiCreation, mdiFileOutline,
     mdiFolderOpenOutline, mdiImageAlbum, mdiMapMarkerOutline, mdiPencilOutline, mdiTagOutline, mdiAlertCircleOutline,
+    mdiTranslate,
   } from "../lib/icons.js";
 
   let { detail, onclose, onchange } = $props();
   let editing = $state(false);
   let tagsText = $state("");
   let note = $state("");
+  let translated = $state(null);
+  let translating = $state(false);
 
   $effect(() => {
     tagsText = (detail?.user_tags || []).join(", ");
     note = detail?.note || "";
     editing = false;
+    translated = null;
   });
+
+  // 描述不是中文（例如換過語言或模型）時提供翻譯
+  const needsTranslate = $derived(
+    app.server?.models?.language === "zh-TW" && detail?.description && !/[\u4e00-\u9fff]/.test(detail.description),
+  );
+
+  async function translate() {
+    translating = true;
+    try {
+      translated = await api(`/api/assets/${detail.id}/translate`, { body: {} });
+    } catch (e) {
+      toast(e.message, "error");
+    } finally {
+      translating = false;
+    }
+  }
+
+  async function fixFace(face) {
+    const choice = await showDialog("person", { title: face.name ? `這不是 ${face.name}？選擇正確的人` : "這是誰？", allowNew: true });
+    if (!choice) return;
+    await api(`/api/faces/${face.id}`, { body: choice.id ? { person_id: choice.id } : { name: choice.name } });
+    onchange?.(await api(`/api/assets/${detail.id}`));
+    refresh();
+  }
+
+  async function removeFace(face) {
+    await api(`/api/faces/${face.id}`, { body: { person_id: null } });
+    onchange?.(await api(`/api/assets/${detail.id}`));
+    refresh();
+  }
 
   const exposure = $derived(
     [
@@ -59,8 +93,32 @@
     <p class="muted pad"><span class="spinner"></span></p>
   {:else}
     <div class="pad">
-      {#if detail.description}
+      {#if detail.faces?.length}
+        <div class="faces">
+          {#each detail.faces as f (f.id)}
+            <div class="face">
+              <button class="face-img" title={f.name || "未命名"} onclick={() => {
+                if (f.person_id) { viewer.open = false; navigate(`/people/${f.person_id}`); } else fixFace(f);
+              }}>
+                <img src={`/api/faces/${f.id}/thumb`} alt="" />
+              </button>
+              <button class="face-name" onclick={() => fixFace(f)} title="更正">{f.name || (f.person_id ? "未命名" : "這是誰？")}</button>
+              {#if f.person_id}<button class="face-x" onclick={() => removeFace(f)} title="不是這個人">×</button>{/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+      {#if translated}
+        <p class="desc">{translated.description}</p>
+        <div class="chips">{#each translated.tags as t (t)}<button class="chip" onclick={() => searchTag(t)}>{t}</button>{/each}</div>
+        <p class="muted tiny">AI 翻譯（原文：{detail.description}）</p>
+      {:else if detail.description}
         <p class="desc">{detail.description}</p>
+        {#if needsTranslate}
+          <button class="btn small ghost tr" onclick={translate} disabled={translating}>
+            <Icon path={mdiTranslate} size={16} />{translating ? "翻譯中…" : "翻譯成中文"}
+          </button>
+        {/if}
       {:else if detail.error && !detail.analyzed_at}
         <p class="warn"><Icon path={mdiAlertCircleOutline} size={18} />{detail.error}</p>
       {:else}
@@ -195,6 +253,18 @@
   h4 { margin: 22px 0 10px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .03em; }
   .pad { padding: 0 18px 28px; }
   .desc { margin: 0 0 12px; line-height: 1.65; }
+  .tr { margin: -4px 0 12px; }
+  .faces { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+  .face { position: relative; display: flex; flex-direction: column; align-items: center; width: 64px; }
+  .face-img { border: 0; padding: 0; background: none; cursor: pointer; }
+  .face-img img { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: var(--bg-2); display: block; }
+  .face-name { border: 0; background: none; color: var(--text); font-size: 12px; cursor: pointer; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 0; }
+  .face-x {
+    position: absolute; top: -4px; right: 0; width: 20px; height: 20px; border-radius: 50%; border: 0; cursor: pointer;
+    background: var(--bg-3); color: var(--text); font-size: 13px; line-height: 1; opacity: 0; transition: opacity .15s;
+  }
+  .face:hover .face-x { opacity: 1; }
+  @media (hover: none) { .face-x { opacity: .8; } }
   .warn { color: var(--danger); display: flex; gap: 6px; align-items: flex-start; }
   .block { margin-top: 16px; background: var(--bg-2); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
   .row-title { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }

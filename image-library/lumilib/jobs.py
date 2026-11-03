@@ -10,9 +10,14 @@ from datetime import datetime
 from . import db
 from .analyzer import OllamaClient, OllamaUnavailable, analyze_images, embed_images
 from .config import Config
+from .media import MediaError
 from .scanner import scan_all
 
-LABELS = {"scan": "掃描", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型"}
+LABELS = {
+    "scan": "掃描", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
+    "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
+    "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
+}
 
 
 def _fmt_bytes(n: int) -> str:
@@ -109,7 +114,7 @@ class JobRunner:
             try:
                 message = self._run(job["kind"], job["options"])
                 error = None
-            except OllamaUnavailable as exc:
+            except (OllamaUnavailable, MediaError) as exc:
                 message, error = str(exc), str(exc)
             except Exception as exc:  # 背景工作不能讓服務停掉
                 traceback.print_exc()
@@ -122,6 +127,20 @@ class JobRunner:
                     "finished_at": datetime.now().isoformat(timespec="seconds"),
                 }
                 self.current = None
+
+    def _faces_ready(self, kind: str) -> bool:
+        from .faces import model_installed
+
+        if kind == "faces":
+            return True  # 明確要求時，未下載模型會回報錯誤
+        return bool(self.cfg.face_enabled) and model_installed(self.cfg, self.cfg.face_model)
+
+    def _clip_ready(self, kind: str) -> bool:
+        from .clip import model_installed
+
+        if kind == "clip":
+            return True
+        return bool(self.cfg.clip_enabled) and model_installed(self.cfg, self.cfg.clip_model)
 
     def _run(self, kind: str, opts: dict) -> str:
         conn = db.connect(self.cfg.db_path)
@@ -137,7 +156,39 @@ class JobRunner:
                         parts.append(f"{r.root}：新增 {r.added}、更新 {r.updated}、搬移 {r.moved}、遺失 {r.missing}")
                 if not results:
                     parts.append("尚未加入任何資料夾")
-            if kind in ("analyze", "index") and not stop.is_set():
+            if kind in ("faces", "index") and not stop.is_set() and self._faces_ready(kind):
+                from .faces import cluster_faces, detect_faces
+
+                res = detect_faces(conn, self.cfg, ids=opts.get("ids"), stop=stop,
+                                   progress=lambda i, n, m: self._update(done=i, total=n, message=f"人臉 {i}/{n}　{m}"))
+                c = cluster_faces(conn, self.cfg, stop=stop)
+                parts.append(f"人臉：處理 {res.scanned} 張、找到 {res.faces} 張臉、新人物 {c.people_new} 位")
+            if kind == "cluster":
+                from .faces import recluster
+
+                c = recluster(conn, self.cfg, stop=stop)
+                parts.append(f"重新分群：新人物 {c.people_new} 位、歸入 {c.assigned} 張臉")
+            if kind == "face_model":
+                from .faces import download_model
+
+                name = opts["model"]
+                download_model(self.cfg, name, lambda st, d, t: self._update(
+                    message=f"{name}：{_fmt_bytes(d)} / {_fmt_bytes(t)}" if t else st, done=d, total=t), stop)
+                parts.append(f"人臉模型 {name} 下載完成")
+            if kind in ("clip", "index") and not stop.is_set() and self._clip_ready(kind):
+                from .clip import index_images
+
+                n = index_images(conn, self.cfg, stop=stop,
+                                 progress=lambda i, t, m: self._update(done=i, total=t, message=f"圖像索引 {i}/{t}　{m}"))
+                parts.append(f"圖像搜尋索引 {n} 張")
+            if kind == "clip_model":
+                from .clip import download_model as download_clip
+
+                name = opts["model"]
+                download_clip(self.cfg, name, lambda st, d, t: self._update(
+                    message=f"{st}：{_fmt_bytes(d)} / {_fmt_bytes(t)}" if t else st, done=d, total=t), stop)
+                parts.append(f"圖像搜尋模型 {name} 下載完成")
+            if kind in ("analyze", "index") and not stop.is_set() and (kind == "analyze" or not opts.get("skip_ai")):
                 res = analyze_images(
                     conn, self.cfg, self.client_factory(),
                     redo=bool(opts.get("redo")), retry_failed=bool(opts.get("retry_failed")),

@@ -33,7 +33,10 @@ from .search import search, summarize, tag_covers, top_tags
 WEB_DIR = Path(__file__).parent / "web"
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
 LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan"}
-SETTING_KEYS = {"vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url"}
+SETTING_KEYS = {
+    "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
+    "face_enabled", "face_model", "face_similarity", "face_min_faces", "query_rewrite", "clip_enabled", "clip_model",
+}
 MAX_IDS = 5000
 
 
@@ -258,7 +261,14 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             "SELECT a.id, a.name FROM albums a JOIN album_items ai ON ai.album_id = a.id WHERE ai.image_id = ? ORDER BY a.name",
             (image["id"],),
         ).fetchall()
+        faces = c.execute(
+            "SELECT f.id, f.person_id, f.x1, f.y1, f.x2, f.y2, p.name FROM faces f LEFT JOIN persons p ON p.id = f.person_id "
+            "WHERE f.image_id = ? AND f.excluded = 0 ORDER BY f.x1",
+            (image["id"],),
+        ).fetchall()
         data.update(
+            faces=[{"id": f["id"], "person_id": f["person_id"], "name": f["name"],
+                    "box": [f["x1"], f["y1"], f["x2"], f["y2"]]} for f in faces],
             summary=summarize(image),
             root=root["name"], root_path=root["path"], path=str(path), exists=path.exists(),
             filename=image["rel_path"].rsplit("/", 1)[-1],
@@ -396,22 +406,202 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
-    # ---- 搜尋與探索 ----
-    @app.get("/api/search")
-    def do_search(q: str = "", limit: int = 200, offset: int = 0, semantic: int = 0):
-        limit = max(1, min(limit, 1000))
+    # ---- 人物（人臉辨識） ----
+    @app.get("/api/people")
+    def people(all: int = 0):
+        from .faces import list_persons
+
         c = conn()
         try:
-            use_sem = bool(semantic and cfg.embed_model)
-            try:
-                return search(c, q, limit=limit, offset=max(0, offset), semantic=use_sem,
-                              embedder=client_factory() if use_sem else None, embed_model=cfg.embed_model)
-            except OllamaUnavailable as exc:
-                result = search(c, q, limit=limit, offset=max(0, offset))
-                result["warning"] = str(exc)
-                return result
+            return list_persons(c, include_hidden=bool(all))
         finally:
             c.close()
+
+    @app.get("/api/people/{person_id:int}")
+    def person(person_id: int):
+        from .faces import list_persons
+
+        c = conn()
+        try:
+            info = next((p for p in list_persons(c, include_hidden=True) if p["id"] == person_id), None)
+            if info is None:
+                raise HTTPException(404, "找不到這個人物")
+            rows = c.execute(
+                "SELECT DISTINCT i.* FROM images i JOIN faces f ON f.image_id = i.id "
+                "WHERE f.person_id = ? AND i.status = 'ok' ORDER BY i.sort_at DESC, i.id DESC",
+                (person_id,),
+            ).fetchall()
+            return {**info, "assets": [summarize(r) for r in rows]}
+        finally:
+            c.close()
+
+    @app.post("/api/people/{person_id:int}")
+    def edit_person(person_id: int, body: dict = Body(...)):
+        from .faces import rename_person
+
+        c = conn()
+        try:
+            if c.execute("SELECT 1 FROM persons WHERE id = ?", (person_id,)).fetchone() is None:
+                raise HTTPException(404, "找不到這個人物")
+            if "name" in body:
+                rename_person(c, person_id, str(body["name"] or ""))
+            if "hidden" in body:
+                c.execute("UPDATE persons SET hidden = ? WHERE id = ?", (1 if body["hidden"] else 0, person_id))
+            if body.get("cover_face_id"):
+                c.execute("UPDATE persons SET cover_face_id = ? WHERE id = ?", (int(body["cover_face_id"]), person_id))
+            c.commit()
+            return {"ok": True}
+        finally:
+            c.close()
+
+    @app.post("/api/people/merge")
+    def merge_people(body: dict = Body(...)):
+        from .faces import merge_persons
+
+        c = conn()
+        try:
+            merge_persons(c, int(body["target"]), [int(x) for x in body.get("sources") or []])
+            return {"ok": True}
+        finally:
+            c.close()
+
+    @app.post("/api/people/{person_id:int}/remove")
+    def remove_from_person(person_id: int, body: dict = Body(...)):
+        from .faces import remove_images_from_person
+
+        c = conn()
+        try:
+            return {"removed": remove_images_from_person(c, person_id, [int(i) for i in body.get("ids") or []])}
+        finally:
+            c.close()
+
+    @app.get("/api/faces/{face_id:int}/thumb")
+    def face_thumb(face_id: int):
+        from .faces import face_thumb_path
+
+        target = face_thumb_path(cfg, face_id)
+        if not target.exists():
+            raise HTTPException(404, "找不到臉部縮圖")
+        return FileResponse(target, media_type="image/webp", headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
+    @app.post("/api/faces/{face_id:int}")
+    def edit_face(face_id: int, body: dict = Body(...)):
+        from .faces import assign_face
+
+        c = conn()
+        try:
+            pid = body.get("person_id")
+            person_id = assign_face(c, face_id, int(pid) if pid else None, body.get("name") or None)
+            return {"person_id": person_id}
+        finally:
+            c.close()
+
+    @app.get("/api/clip/models")
+    def clip_models():
+        from .clip import CLIP_MODELS, model_installed
+
+        return [
+            {"name": k, **v, "installed": model_installed(cfg, k), "active": k == cfg.clip_model}
+            for k, v in CLIP_MODELS.items()
+        ]
+
+    @app.post("/api/clip/models/delete")
+    def delete_clip_model(body: dict = Body(...)):
+        from .clip import CLIP_MODELS, delete_model
+
+        if body.get("name") not in CLIP_MODELS:
+            raise HTTPException(400, "未知的模型")
+        delete_model(cfg, body["name"])
+        return {"ok": True}
+
+    @app.get("/api/faces/models")
+    def face_models():
+        from .faces import FACE_MODELS, model_installed
+
+        return [
+            {"name": k, **v, "installed": model_installed(cfg, k), "active": k == cfg.face_model}
+            for k, v in FACE_MODELS.items()
+        ]
+
+    @app.post("/api/faces/models/delete")
+    def delete_face_model(body: dict = Body(...)):
+        from .faces import FACE_MODELS, delete_model
+
+        if body.get("name") not in FACE_MODELS:
+            raise HTTPException(400, "未知的人臉模型")
+        delete_model(cfg, body["name"])
+        return {"ok": True}
+
+    @app.post("/api/faces/clear")
+    def clear_faces(body: dict = Body(default={})):
+        from .faces import clear_all
+
+        c = conn()
+        try:
+            return {"removed": clear_all(c, cfg)}
+        finally:
+            c.close()
+
+    # ---- 搜尋與探索 ----
+    @app.get("/api/search")
+    def do_search(q: str = "", limit: int = 200, offset: int = 0, semantic: int = 0, smart: int = 1):
+        from .analyzer import rewrite_query
+        from .search import parse_query
+
+        limit = max(1, min(limit, 1000))
+        c = conn()
+        warnings = []
+        try:
+            terms = parse_query(q).terms
+            groups, english = None, ""
+            if smart and cfg.query_rewrite and terms:
+                try:
+                    rw = rewrite_query(client_factory(), cfg.vision_model, terms)
+                    groups, english = rw["groups"], rw["english"]
+                except Exception as exc:  # 改寫失敗不能讓搜尋失敗
+                    warnings.append(f"智慧搜尋暫時無法使用（{exc}），只用原始關鍵字")
+            clip_rank = None
+            if smart and cfg.clip_enabled and terms:
+                from . import clip as clipmod
+
+                if clipmod.model_installed(cfg, cfg.clip_model):
+                    texts = [q if clipmod.is_multilingual(cfg.clip_model) else (english or q)]
+                    if english and clipmod.is_multilingual(cfg.clip_model):
+                        texts.append(english)
+
+                    def clip_rank(_texts, allowed, _c=c, _t=texts):
+                        return clipmod.rank(_c, cfg, _t, allowed)
+            use_sem = bool(semantic and cfg.embed_model)
+            try:
+                result = search(c, q, limit=limit, offset=max(0, offset), semantic=use_sem,
+                                embedder=client_factory() if use_sem else None, embed_model=cfg.embed_model,
+                                groups=groups, clip_rank=clip_rank)
+            except (OllamaUnavailable, MediaError) as exc:
+                warnings.append(str(exc))
+                result = search(c, q, limit=limit, offset=max(0, offset), groups=groups)
+            if warnings:
+                result["warning"] = "；".join(warnings)
+            result["english"] = english
+            return result
+        finally:
+            c.close()
+
+    @app.post("/api/assets/{image_id:int}/translate")
+    def translate(image_id: int, body: dict = Body(default={})):
+        from .analyzer import translate_analysis
+
+        c = conn()
+        try:
+            image = get_image_or_404(c, image_id)
+        finally:
+            c.close()
+        if not image["description"]:
+            raise HTTPException(400, "這張還沒有 AI 描述")
+        try:
+            return translate_analysis(client_factory(), cfg.vision_model, image["description"],
+                                      db.json_list(image["tags"]), body.get("language") or cfg.language)
+        except OllamaUnavailable as exc:
+            raise HTTPException(503, str(exc))
 
     @app.get("/api/explore")
     def explore():
@@ -432,7 +622,10 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "SELECT substr(sort_at, 1, 4) AS value, COUNT(*) AS count, MAX(id) AS id FROM images "
                 "WHERE status = 'ok' AND sort_at IS NOT NULL GROUP BY value ORDER BY value DESC"
             ).fetchall()
+            from .faces import list_persons
+
             return {
+                "people": list_persons(c)[:24],
                 "tags": [{"value": t, "count": n, "cover": covers.get(t)} for t, n in tags if covers.get(t)],
                 "scenes": grouped("scene", 16),
                 "cameras": grouped("camera"),
@@ -648,7 +841,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     def start_job(body: dict = Body(...)):
         kind = body.get("kind")
         opts = {k: body[k] for k in ("roots", "folder", "root_id", "album_id", "redo", "retry_failed") if body.get(k) is not None}
-        if kind == "pull":
+        if kind in ("pull", "face_model", "clip_model"):
             opts = {"model": str(body["model"])}
         return jobs().submit(kind, **opts)
 
@@ -686,6 +879,16 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     @app.post("/api/settings")
     def save_settings(body: dict = Body(...)):
+        if "face_model" in body and body["face_model"] != cfg.face_model:
+            from .faces import FACE_MODELS, clear_all
+
+            if body["face_model"] not in FACE_MODELS:
+                raise HTTPException(400, "未知的人臉模型")
+            c = conn()
+            try:
+                clear_all(c, cfg)
+            finally:
+                c.close()
         for key, value in body.items():
             if key in SETTING_KEYS:
                 cfg.save_setting(key, value)

@@ -5,11 +5,19 @@
   import { api } from "../lib/api.js";
   import { toast, refresh } from "../lib/state.svelte.js";
   import {
-    mdiClose, mdiHeartOutline, mdiImageAlbum, mdiFolderMoveOutline, mdiCreation, mdiDeleteOutline, mdiImageRemoveOutline, mdiImageOutline,
+    mdiClose, mdiHeartOutline, mdiImageAlbum, mdiFolderMoveOutline, mdiCreation, mdiDeleteOutline, mdiImageRemoveOutline, mdiImageOutline, mdiAccountRemoveOutline,
   } from "../lib/icons.js";
 
   const ids = $derived([...selection]);
   const albumId = $derived(app.context?.album);
+  const personId = $derived(app.context?.person);
+
+  async function notThisPerson() {
+    const res = await api(`/api/people/${personId}/remove`, { body: { ids } });
+    toast(`已從這個人物移除 ${ids.length} 張，之後也不會自動歸回`);
+    refresh();
+    return res;
+  }
 
   async function run(fn) {
     try {
@@ -38,6 +46,9 @@
     {#if ids.length === 1}
       <button class="icon-btn" title="設為封面" onclick={() => run(setCover)}><Icon path={mdiImageOutline} /></button>
     {/if}
+  {/if}
+  {#if personId}
+    <button class="icon-btn" title="不是這個人" onclick={() => run(notThisPerson)}><Icon path={mdiAccountRemoveOutline} /></button>
   {/if}
   <button class="icon-btn" title="搬移到資料夾" onclick={() => run(() => moveAssets(ids))}><Icon path={mdiFolderMoveOutline} /></button>
   <button class="icon-btn" title="AI 分析" onclick={() => run(() => analyzeAssets(ids))}><Icon path={mdiCreation} /></button>

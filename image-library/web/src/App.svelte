@@ -13,6 +13,8 @@
   import Albums from "./pages/Albums.svelte";
   import Album from "./pages/Album.svelte";
   import MapPage from "./pages/MapPage.svelte";
+  import People from "./pages/People.svelte";
+  import Person from "./pages/Person.svelte";
   import Settings from "./pages/Settings.svelte";
   import Login from "./pages/Login.svelte";
   import { api } from "./lib/api.js";
@@ -20,12 +22,13 @@
   import { route, navigate, link } from "./lib/router.svelte.js";
   import {
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
-    mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk,
+    mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiAccountBoxOutline,
   } from "./lib/icons.js";
 
   const NAV = [
     { href: "/", label: "照片", icon: mdiImageMultipleOutline, mobile: true },
     { href: "/explore", label: "探索", icon: mdiCompassOutline, mobile: true },
+    { href: "/people", label: "人物", icon: mdiAccountBoxOutline },
     { href: "/map", label: "地圖", icon: mdiMapOutline },
     { href: "/folders", label: "資料夾", icon: mdiFolderOutline, mobile: true },
     { href: "/albums", label: "相簿", icon: mdiImageAlbum, mobile: true },
@@ -170,6 +173,10 @@
           <Album id={Number(seg[1])} />
         {:else if page === "albums"}
           <Albums />
+        {:else if page === "people" && seg[1]}
+          <Person id={Number(seg[1])} />
+        {:else if page === "people"}
+          <People />
         {:else if page === "map"}
           <MapPage />
         {:else if page === "settings"}

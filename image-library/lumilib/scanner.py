@@ -33,6 +33,7 @@ ANALYSIS_FIELDS = (
     "analyzed_at", "model", "description", "tags", "objects", "scene",
     "ocr_text", "error", "embedding", "embed_model",
 )
+RESET_FIELDS = ANALYSIS_FIELDS + ("faces_at", "faces_model", "clip", "clip_model")
 
 _CHUNK = 64 * 1024
 BATCH = 48
@@ -146,11 +147,12 @@ def _process_batch(conn: sqlite3.Connection, cfg: Config, root: sqlite3.Row, bat
             conn.execute(
                 f"""UPDATE images SET size = ?, mtime = ?, fingerprint = ?, media_type = ?, is_raw = ?,
                         sort_at = ?, status = 'ok', last_seen = ?, thumb_ok = ?, {set_meta},
-                        {", ".join(f"{f} = NULL" for f in ANALYSIS_FIELDS)}
+                        {", ".join(f"{f} = NULL" for f in RESET_FIELDS)}
                     WHERE id = ?""",
                 (item.size, item.mtime, item.fp, item.kind[0], int(item.kind[1]), sort_at, now,
                  0 if thumb_err else 1, *values, item.row["id"]),
             )
+            conn.execute("DELETE FROM faces WHERE image_id = ?", (item.row["id"],))
             image_id = item.row["id"]
             result.updated += 1
         else:

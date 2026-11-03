@@ -18,6 +18,18 @@
   {#if !data}
     <p class="muted"><span class="spinner"></span></p>
   {:else}
+    {#if data.people?.length}
+      <h2 class="section-title"><a href="/people" use:link class="more">人物 →</a></h2>
+      <div class="strip people">
+        {#each data.people as p (p.id)}
+          <a class="person" href={`/people/${p.id}`} use:link>
+            <img src={`/api/faces/${p.cover_face_id}/thumb`} alt="" loading="lazy" />
+            <span>{p.name || "未命名"}</span>
+          </a>
+        {/each}
+      </div>
+    {/if}
+
     {#if data.tags.length}
       <h2 class="section-title">事物</h2>
       <div class="strip">
@@ -92,6 +104,11 @@
   }
   .tile small { font-weight: 400; opacity: .8; font-size: 12px; }
   .chip span { margin-left: 4px; font-size: 12px; }
+  .more { color: var(--text); text-decoration: none; }
+  .strip.people { grid-auto-columns: 104px; }
+  .person { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; color: var(--text); font-size: 13px; }
+  .person img { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; background: var(--bg-2); }
+  .person span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .map-link { display: inline-block; padding: 14px 18px; background: var(--bg-2); border-radius: var(--radius); text-decoration: none; }
   @media (max-width: 760px) { .strip { grid-auto-columns: 124px; } }
 </style>

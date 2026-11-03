@@ -8,4 +8,6 @@ export {
   mdiWhiteBalanceSunny, mdiThemeLightDark, mdiCalendarOutline, mdiFileOutline, mdiImageRemoveOutline,
   mdiMagnifyPlusOutline, mdiMagnifyMinusOutline, mdiAlbum, mdiStarFourPoints, mdiServerNetwork, mdiLockOutline,
   mdiCheckboxMarkedCircle, mdiCheckboxBlankCircleOutline, mdiPlayCircle, mdiArrowUp, mdiFolderHome,
+  mdiAccountBoxOutline, mdiAccountMultiplePlusOutline, mdiAccountRemoveOutline, mdiEyeOffOutline, mdiEyeOutline,
+  mdiFaceRecognition, mdiTranslate, mdiImageSearchOutline,
 } from "@mdi/js";

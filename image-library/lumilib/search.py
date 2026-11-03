@@ -12,6 +12,7 @@
     root:外接SSD         限定某個登錄的資料夾
     lens:50mm           鏡頭
     type:video / type:photo / type:raw
+    person:媽媽          人物（人臉辨識後命名的人）
     is:favorite / is:pending / is:failed / is:analyzed / is:missing
 """
 
@@ -24,7 +25,7 @@ from dataclasses import dataclass, field
 
 from . import db
 
-FILTER_KEYS = {"tag", "folder", "camera", "lens", "ext", "year", "after", "before", "root", "is", "type", "album"}
+FILTER_KEYS = {"tag", "folder", "camera", "lens", "ext", "year", "after", "before", "root", "is", "type", "album", "person"}
 
 
 @dataclass
@@ -64,7 +65,7 @@ def _like(value: str) -> str:
     return f"%{escaped}%"
 
 
-def _filter_sql(query: Query, include_terms: bool) -> tuple[str, list]:
+def _filter_sql(query: Query, include_terms: bool, groups: list[list[str]] | None = None) -> tuple[str, list]:
     where: list[str] = []
     params: list = []
     statuses = {"ok"}
@@ -86,6 +87,12 @@ def _filter_sql(query: Query, include_terms: bool) -> tuple[str, list]:
                 where.append("i.media_type = 'photo'")
             elif low == "raw":
                 where.append("i.is_raw = 1")
+        elif key == "person":
+            where.append(
+                "i.id IN (SELECT f.image_id FROM faces f JOIN persons p ON p.id = f.person_id "
+                "WHERE lower(p.name) = ? OR CAST(p.id AS TEXT) = ?)"
+            )
+            params += [low, value]
         elif key == "album" and value.isdigit():
             where.append("i.id IN (SELECT image_id FROM album_items WHERE album_id = ?)")
             params.append(int(value))
@@ -127,13 +134,19 @@ def _filter_sql(query: Query, include_terms: bool) -> tuple[str, list]:
         where.append("i.search_text NOT LIKE ? ESCAPE '\\'")
         params.append(_like(term))
     if include_terms:
-        for term in query.terms:
-            where.append("i.search_text LIKE ? ESCAPE '\\'")
-            params.append(_like(term))
+        # 每個搜尋詞一組（原詞＋翻譯與同義詞），組內任一個符合即可，各組都要符合
+        for group in groups or [[t] for t in query.terms]:
+            where.append("(" + " OR ".join(["i.search_text LIKE ? ESCAPE '\\'"] * len(group)) + ")")
+            params += [_like(t) for t in group]
     return " AND ".join(where), params
 
 
-def keyword_score(row: sqlite3.Row, terms: list[str]) -> float:
+def keyword_score(row: sqlite3.Row, terms: list[str], groups: list[list[str]] | None = None) -> float:
+    if groups:
+        # 每組取最好的一個詞；翻譯／同義詞的分數打八折
+        return sum(
+            max(keyword_score(row, [t]) * (1.0 if i == 0 else 0.8) for i, t in enumerate(g)) for g in groups
+        )
     if not terms:
         return 0.0
     tags = [t.lower() for t in db.json_list(row["tags"]) + db.json_list(row["user_tags"]) + db.json_list(row["keywords"])]
@@ -238,47 +251,80 @@ def search(
     embedder=None,
     embed_model: str = "",
     min_similarity: float = 0.45,
+    groups: list[list[str]] | None = None,
+    clip_rank=None,
+    clip_texts: list[str] | None = None,
 ) -> dict:
-    """回傳 {"total": 符合數量, "results": [...], "mode": "keyword"|"hybrid"}。
+    """回傳 {"total", "results", "mode", "expanded"}。
 
-    semantic=True 且提供 embedder（有 embed(model, texts) 方法）時，
-    先列出關鍵字命中的結果，再補上語意相近但字面不同的圖片。
+    - groups：查詢改寫後的同義詞組（與 terms 一一對應），讓中文查詢也能找到英文標籤，反之亦然。
+    - clip_rank(texts, allowed_ids) -> [(id, 相似度)]：多語言 CLIP 直接比對畫面。
+    - semantic + embedder：描述文字的語意向量。
+    先列出字面相符的結果（再依畫面相似度微調），接著補上畫面相近、但沒有相符文字的圖片。
     """
     query = parse_query(q)
     base = "SELECT i.*, r.name AS root_name FROM images i JOIN roots r ON r.id = i.root_id"
+    if groups is not None and len(groups) != len(query.terms):
+        groups = None
     use_semantic = bool(semantic and embedder and embed_model and query.terms)
+    use_clip = bool(clip_rank and query.terms)
 
-    where, params = _filter_sql(query, include_terms=True)
+    where, params = _filter_sql(query, include_terms=True, groups=groups)
     rows = conn.execute(f"{base} WHERE {where}", params).fetchall()
-    scored = [(keyword_score(r, query.terms), r, "keyword") for r in rows]
+    scored = {r["id"]: [keyword_score(r, query.terms, groups), r, "keyword"] for r in rows}
+    modes = ["keyword"]
+
+    if use_clip or use_semantic:
+        f_where, f_params = _filter_sql(query, include_terms=False)
+        allowed = {r[0] for r in conn.execute(f"SELECT i.id FROM images i JOIN roots r ON r.id = i.root_id WHERE {f_where}", f_params)}
+
+    if use_clip:
+        ranked = clip_rank(clip_texts or [query.text], allowed)
+        if ranked:
+            modes.append("image")
+            top = ranked[0][1]
+            # 只補上和最佳結果差不多相似的圖片，避免列出一大堆不相關的
+            cutoff = max(top - 0.08, top * 0.75)
+            extra = {}
+            for image_id, sim in ranked:
+                if image_id in scored:
+                    scored[image_id][0] += 10 + sim * 10
+                elif sim >= cutoff and len(extra) < 500:
+                    extra[image_id] = sim
+            if extra:
+                for r in conn.execute(f"{base} WHERE i.id IN ({','.join('?' * len(extra))})", list(extra)):
+                    scored[r["id"]] = [extra[r["id"]] * 10, r, "image"]
 
     if use_semantic:
-        hit_ids = {r["id"] for r in rows}
-        f_where, f_params = _filter_sql(query, include_terms=False)
-        candidates = conn.execute(
-            f"{base} WHERE {f_where} AND i.embedding IS NOT NULL AND i.embed_model = ?",
-            f_params + [embed_model],
-        ).fetchall()
         vectors = embedder.embed(embed_model, [query.text])
-        if vectors and candidates:
-            sims = _cosine_scores(vectors[0], [c["embedding"] for c in candidates])
-            sim_by_id = {c["id"]: s for c, s in zip(candidates, sims)}
-            scored = [(s + 10 + sim_by_id.get(r["id"], 0.0), r, m) for s, r, m in scored]
-            for cand, sim in zip(candidates, sims):
-                if cand["id"] not in hit_ids and sim >= min_similarity:
-                    scored.append((sim, cand, "semantic"))
+        cands = conn.execute(
+            f"{base} WHERE i.embedding IS NOT NULL AND i.embed_model = ? AND i.status = 'ok'", [embed_model]
+        ).fetchall()
+        cands = [c for c in cands if c["id"] in allowed]
+        if vectors and cands:
+            modes.append("semantic")
+            sims = _cosine_scores(vectors[0], [c["embedding"] for c in cands])
+            for cand, sim in zip(cands, sims):
+                if cand["id"] in scored:
+                    scored[cand["id"]][0] += sim
+                elif sim >= min_similarity:
+                    scored[cand["id"]] = [sim, cand, "semantic"]
 
+    items = list(scored.values())
     if query.terms:
-        scored.sort(key=lambda x: (-x[0], -(_ts(x[1]["sort_at"])), x[1]["id"]))
+        items.sort(key=lambda x: (-x[0], -(_ts(x[1]["sort_at"])), x[1]["id"]))
     else:
-        scored.sort(key=lambda x: (-(_ts(x[1]["sort_at"])), -x[1]["id"]))
+        items.sort(key=lambda x: (-(_ts(x[1]["sort_at"])), -x[1]["id"]))
 
-    page = scored[offset:offset + limit]
+    page = items[offset:offset + limit]
+    expanded = sorted({t for g in groups for t in g[1:]}) if groups else []
     return {
-        "total": len(scored),
-        "mode": "hybrid" if use_semantic else "keyword",
+        "total": len(items),
+        "mode": "hybrid" if len(modes) > 1 else "keyword",
+        "modes": modes,
+        "expanded": expanded,
         "query": {"terms": query.terms, "excludes": query.excludes, "filters": query.filters},
-        "results": [_to_result(conn, r, s, m) for s, r, m in page],
+        "results": [_to_result(conn, r, sc, m) for sc, r, m in page],
     }
 
 

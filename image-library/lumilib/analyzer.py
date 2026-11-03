@@ -67,6 +67,21 @@ class OllamaUnavailable(Exception):
 class ModelClient(Protocol):
     def describe(self, model: str, prompt: str, images: list[str]) -> dict: ...
 
+    def chat_json(self, model: str, prompt: str, schema: dict, timeout: int | None = None) -> dict:
+        """純文字對話，輸出符合 schema 的 JSON（查詢改寫、翻譯用）。"""
+        old = self.timeout
+        if timeout:
+            self.timeout = timeout
+        try:
+            data = self._post("/api/chat", {
+                "model": model, "stream": False, "format": schema, "keep_alive": "15m",
+                "options": {"temperature": 0.1},
+                "messages": [{"role": "user", "content": prompt}],
+            })
+        finally:
+            self.timeout = old
+        return parse_model_json(data.get("message", {}).get("content", ""))
+
     def embed(self, model: str, texts: list[str]) -> list[list[float]]: ...
 
 
@@ -168,6 +183,21 @@ class OllamaClient:
                 "messages": [{"role": "user", "content": prompt, "images": images}],
             },
         )
+        return parse_model_json(data.get("message", {}).get("content", ""))
+
+    def chat_json(self, model: str, prompt: str, schema: dict, timeout: int | None = None) -> dict:
+        """純文字對話，輸出符合 schema 的 JSON（查詢改寫、翻譯用）。"""
+        old = self.timeout
+        if timeout:
+            self.timeout = timeout
+        try:
+            data = self._post("/api/chat", {
+                "model": model, "stream": False, "format": schema, "keep_alive": "15m",
+                "options": {"temperature": 0.1},
+                "messages": [{"role": "user", "content": prompt}],
+            })
+        finally:
+            self.timeout = old
         return parse_model_json(data.get("message", {}).get("content", ""))
 
     def embed(self, model: str, texts: list[str]) -> list[list[float]]:
@@ -385,3 +415,79 @@ def embed_images(
             done += 1
         conn.commit()
     return done
+
+
+# ---- 跨語言搜尋：查詢改寫 ---------------------------------------------------------------
+
+REWRITE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "groups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"term": {"type": "string"}, "synonyms": {"type": "array", "items": {"type": "string"}}},
+                "required": ["term", "synonyms"],
+            },
+        },
+        "english": {"type": "string"},
+    },
+    "required": ["groups", "english"],
+}
+
+REWRITE_PROMPT = """你是照片圖庫的搜尋助手。照片的描述與關鍵字以繁體中文和英文寫成。
+把使用者的每個搜尋詞翻譯並擴充成「最可能出現在照片描述或標籤中」的詞：
+- 每個搜尋詞一組，term 是原本的詞，synonyms 放 3 到 8 個：繁體中文同義詞、英文翻譯與英文同義詞。
+- 只放意思相同或非常接近的詞，不要放上位或無關的概念（例如「貓」不要放「動物」）。
+- 簡體字要加上對應的繁體字。
+- english 是整個查詢的自然英文描述，用於圖像搜尋。
+搜尋詞：{terms}"""
+
+_rewrite_cache: "OrderedDict[tuple, dict]" = None  # type: ignore[assignment]
+
+
+def rewrite_query(client, model: str, terms: list[str], timeout: int = 12) -> dict:
+    """回傳 {"groups": [[原詞, 同義詞...], ...], "english": "..."}，與 terms 一一對應。"""
+    from collections import OrderedDict
+
+    global _rewrite_cache
+    if _rewrite_cache is None:
+        _rewrite_cache = OrderedDict()
+    key = (model, tuple(terms))
+    if key in _rewrite_cache:
+        _rewrite_cache.move_to_end(key)
+        return _rewrite_cache[key]
+    raw = client.chat_json(model, REWRITE_PROMPT.format(terms="、".join(terms)), REWRITE_SCHEMA, timeout=timeout)
+    by_term = {}
+    for g in raw.get("groups") or []:
+        if isinstance(g, dict) and g.get("term"):
+            by_term[str(g["term"]).strip().lower()] = _str_list(g.get("synonyms"), 10)
+    groups = []
+    for i, term in enumerate(terms):
+        syn = by_term.get(term.lower())
+        if syn is None and len(raw.get("groups") or []) == len(terms):  # 模型改寫了 term 本身時依順序對應
+            g = raw["groups"][i]
+            syn = _str_list(g.get("synonyms"), 10) if isinstance(g, dict) else []
+        group = [term] + [x.lower() for x in (syn or []) if x.lower() != term and len(x) <= 40]
+        groups.append(list(dict.fromkeys(group)))
+    result = {"groups": groups, "english": str(raw.get("english") or "").strip()[:200]}
+    if any(len(g) > 1 for g in groups) or result["english"]:  # 空結果不快取，下次再問
+        _rewrite_cache[key] = result
+    if len(_rewrite_cache) > 512:
+        _rewrite_cache.popitem(last=False)
+    return result
+
+
+TRANSLATE_SCHEMA = {
+    "type": "object",
+    "properties": {"description": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}},
+    "required": ["description", "tags"],
+}
+
+
+def translate_analysis(client, model: str, description: str, tags: list[str], language: str) -> dict:
+    target = "繁體中文" if language == "zh-TW" else "English"
+    prompt = (f"把下面的照片描述與關鍵字翻譯成{target}，保持原意、語氣自然，只輸出 JSON。\n"
+              f"描述：{description}\n關鍵字：{'、'.join(tags)}")
+    raw = client.chat_json(model, prompt, TRANSLATE_SCHEMA, timeout=60)
+    return {"description": str(raw.get("description") or "").strip(), "tags": _str_list(raw.get("tags"), 40)}

@@ -28,6 +28,16 @@ DEFAULTS = {
     "lan": 0,
     # 啟動時自動掃描新增的檔案
     "scan_on_start": 1,
+    # 人臉辨識
+    "face_enabled": 0,
+    "face_model": "buffalo_l",
+    "face_similarity": 50,  # 相似度門檻（百分比），越高越嚴格
+    "face_min_faces": 3,  # 出現幾次以上才建立人物
+    # 跨語言搜尋：用模型把查詢翻譯並擴充成中英文關鍵字
+    "query_rewrite": 1,
+    # 多語言 CLIP 圖像搜尋（文字直接比對畫面）
+    "clip_enabled": 0,
+    "clip_model": "xlm-roberta-base-vit-b32",
 }
 
 ENV_PREFIX = "LUMILIB_"
@@ -46,6 +56,13 @@ class Config:
     port: int = DEFAULTS["port"]
     lan: int = DEFAULTS["lan"]
     scan_on_start: int = DEFAULTS["scan_on_start"]
+    face_enabled: int = DEFAULTS["face_enabled"]
+    face_model: str = DEFAULTS["face_model"]
+    face_similarity: int = DEFAULTS["face_similarity"]
+    face_min_faces: int = DEFAULTS["face_min_faces"]
+    query_rewrite: int = DEFAULTS["query_rewrite"]
+    clip_enabled: int = DEFAULTS["clip_enabled"]
+    clip_model: str = DEFAULTS["clip_model"]
 
     @property
     def db_path(self) -> Path:

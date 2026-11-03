@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -63,6 +63,28 @@ CREATE TABLE IF NOT EXISTS albums (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS persons (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    cover_face_id INTEGER,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS faces (
+    id INTEGER PRIMARY KEY,
+    image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+    person_id INTEGER REFERENCES persons(id) ON DELETE SET NULL,
+    x1 REAL, y1 REAL, x2 REAL, y2 REAL,
+    score REAL,
+    embedding BLOB NOT NULL,
+    model TEXT NOT NULL,
+    manual INTEGER NOT NULL DEFAULT 0,
+    excluded INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS album_items (
     album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
     image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
@@ -97,6 +119,10 @@ V2_COLUMNS = [
     ("software", "TEXT"),
     ("favorite", "INTEGER NOT NULL DEFAULT 0"),
     ("thumb_ok", "INTEGER NOT NULL DEFAULT 0"),
+    ("faces_at", "TEXT"),
+    ("faces_model", "TEXT"),
+    ("clip", "BLOB"),
+    ("clip_model", "TEXT"),
 ]
 
 INDEXES = """
@@ -106,6 +132,8 @@ CREATE INDEX IF NOT EXISTS idx_images_sort ON images(sort_at);
 CREATE INDEX IF NOT EXISTS idx_images_folder ON images(root_id, folder);
 CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite);
 CREATE INDEX IF NOT EXISTS idx_album_items_image ON album_items(image_id);
+CREATE INDEX IF NOT EXISTS idx_faces_image ON faces(image_id);
+CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id);
 """
 
 # 由掃描時的中繼資料寫入的欄位
@@ -189,6 +217,7 @@ def build_search_text(row: dict) -> str:
         row.get("caption") or "",
         row.get("note") or "",
         row.get("artist") or "",
+        " ".join(row.get("people") or []),
     ]
     return "\n".join(p for p in parts if p).lower()
 
@@ -196,7 +225,11 @@ def build_search_text(row: dict) -> str:
 def refresh_search_text(conn: sqlite3.Connection, image_id: int) -> None:
     row = conn.execute("SELECT * FROM images WHERE id = ?", (image_id,)).fetchone()
     if row is not None:
-        conn.execute("UPDATE images SET search_text = ? WHERE id = ?", (build_search_text(dict(row)), image_id))
+        data = dict(row)
+        data["people"] = [r[0] for r in conn.execute(
+            "SELECT DISTINCT p.name FROM faces f JOIN persons p ON p.id = f.person_id "
+            "WHERE f.image_id = ? AND p.name IS NOT NULL AND p.name != ''", (image_id,))]
+        conn.execute("UPDATE images SET search_text = ? WHERE id = ?", (build_search_text(data), image_id))
 
 
 # ---- roots -----------------------------------------------------------------
@@ -299,6 +332,10 @@ def stats(conn: sqlite3.Connection) -> dict:
         "embedded": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND embedding IS NOT NULL"),
         "favorites": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND favorite = 1"),
         "albums": q("SELECT COUNT(*) FROM albums"),
+        "faces": q("SELECT COUNT(*) FROM faces"),
+        "people": q("SELECT COUNT(*) FROM persons"),
+        "faces_pending": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND media_type = 'photo' AND faces_at IS NULL"),
+        "clip_done": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND clip IS NOT NULL"),
     }
 
 
