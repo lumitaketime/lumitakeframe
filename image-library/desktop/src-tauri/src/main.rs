@@ -20,6 +20,8 @@ use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder,
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 const PORT: u16 = 8765;
+/// App 與內建伺服器的版本一致（Cargo.toml 與 lumilib/__init__.py 一起更新）
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15 LumitakeApp/0.3";
 
 struct Server(Mutex<Option<Child>>);
@@ -28,22 +30,66 @@ fn library_url() -> String {
     format!("http://127.0.0.1:{PORT}/")
 }
 
-/// 伺服器是否已在執行（確認回應確實來自 Lumitake Library）
-fn server_alive() -> bool {
+fn http_get(path: &str) -> Option<String> {
     let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
-    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(400)) else {
-        return false;
-    };
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(1500)));
-    let request = format!(
-        "GET /api/auth/status HTTP/1.1\r\nHost: 127.0.0.1:{PORT}\r\nConnection: close\r\n\r\n"
-    );
-    if stream.write_all(request.as_bytes()).is_err() {
-        return false;
-    }
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(400)).ok()?;
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(3000)));
+    let request = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{PORT}\r\nConnection: close\r\n\r\n");
+    stream.write_all(request.as_bytes()).ok()?;
     let mut body = String::new();
     let _ = stream.read_to_string(&mut body);
-    body.contains("\"authenticated\"")
+    Some(body)
+}
+
+/// 伺服器是否已在執行（確認回應確實來自 Lumitake Library）
+fn server_alive() -> bool {
+    http_get("/api/auth/status").map(|b| b.contains("\"authenticated\"")).unwrap_or(false)
+}
+
+/// 正在執行的 Lumitake Library 版本（舊版沒有回報版本時視為未知）
+fn running_version() -> Option<String> {
+    let body = http_get("/api/server")?;
+    let key = "\"version\":\"";
+    let start = body.find(key)? + key.len();
+    let end = body[start..].find('"')? + start;
+    Some(body[start..end].to_string())
+}
+
+/// 找出佔用連接埠的 Lumitake Library 程序（例如之前用終端機安裝的舊版）並請它結束
+fn stop_other_server() -> bool {
+    let Ok(out) = Command::new("/usr/sbin/lsof").args(["-nP", "-t", &format!("-iTCP:{PORT}"), "-sTCP:LISTEN"]).output() else {
+        return false;
+    };
+    let mut stopped = false;
+    for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
+        let Ok(pid_num) = pid.parse::<i32>() else { continue };
+        let cmd = Command::new("/bin/ps").args(["-p", pid, "-o", "command="]).output();
+        let is_library = cmd
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains("lumilib"))
+            .unwrap_or(false);
+        if is_library {
+            unsafe {
+                libc::kill(pid_num, libc::SIGTERM);
+            }
+            stopped = true;
+        }
+    }
+    if stopped {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while server_alive() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(200));
+        }
+    }
+    stopped && !server_alive()
+}
+
+fn set_message(app: &AppHandle, message: &str) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.eval(&format!(
+            "document.getElementById('msg') && (document.getElementById('msg').textContent = {})",
+            serde_json_string(message)
+        ));
+    }
 }
 
 fn spawn_server(app: &AppHandle) -> Result<Child, String> {
@@ -225,15 +271,39 @@ fn main() {
                 .user_agent(USER_AGENT)
                 .build()?;
 
-            if !server_alive() {
-                match spawn_server(&handle) {
-                    Ok(child) => {
-                        *handle.state::<Server>().0.lock().unwrap() = Some(child);
+            let starter = handle.clone();
+            thread::spawn(move || {
+                let mut need_start = !server_alive();
+                if !need_start {
+                    // 已有圖庫服務：版本不同（例如之前用終端機安裝的舊版）就換成 App 內建的新版
+                    let version = running_version().unwrap_or_default();
+                    if version != APP_VERSION {
+                        thread::sleep(Duration::from_millis(400));
+                        set_message(&starter, &format!("正在關閉舊版圖庫服務（{}），改用 {}…",
+                            if version.is_empty() { "版本不明" } else { &version }, APP_VERSION));
+                        if stop_other_server() {
+                            need_start = true;
+                        } else {
+                            show_error(&starter, &format!(
+                                "有另一個 Lumitake Library（{}）正在使用連接埠 {PORT}，無法自動關閉。請關閉之前開啟的終端機視窗後重新打開 App。",
+                                if version.is_empty() { "舊版" } else { &version }));
+                            return;
+                        }
                     }
-                    Err(message) => show_error(&handle, &message),
                 }
-            }
-            open_when_ready(handle.clone());
+                if need_start {
+                    match spawn_server(&starter) {
+                        Ok(child) => {
+                            *starter.state::<Server>().0.lock().unwrap() = Some(child);
+                        }
+                        Err(message) => {
+                            show_error(&starter, &message);
+                            return;
+                        }
+                    }
+                }
+                open_when_ready(starter.clone());
+            });
             build_tray(&handle)?;
             Ok(())
         })

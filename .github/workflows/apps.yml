@@ -28,6 +28,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: 確認 App 與伺服器版本一致
+        run: |
+          PY=$(python3 -c "import re;print(re.search(r'__version__ = \"(.+)\"', open('image-library/lumilib/__init__.py').read()).group(1))")
+          RS=$(python3 -c "import re;print(re.search(r'^version = \"(.+)\"', open('image-library/desktop/src-tauri/Cargo.toml').read(), re.M).group(1))")
+          echo "lumilib $PY / app $RS"
+          test "$PY" = "$RS"
+
       - name: 打包圖庫伺服器（PyInstaller）
         working-directory: image-library
         run: |

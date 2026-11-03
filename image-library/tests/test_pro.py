@@ -279,6 +279,19 @@ class GearKeywordGroupTests(Base):
         self.assertEqual(faces.all_groups(self.conn)[0], {"name": "婚禮", "count": 1})
 
 
+class KeywordSplitTests(Base):
+    def test_semicolon_keywords_split_on_upgrade(self):
+        jpeg(self.photos / "a.jpg")
+        scan_all(self.conn, self.cfg)
+        self.conn.execute("UPDATE images SET keywords = ?", (json.dumps(["author;walk;beethoven", "Porträt"]),))
+        self.conn.execute("PRAGMA user_version = 6")
+        self.conn.commit()
+        self.conn.close()
+        self.conn = db.connect(self.cfg.db_path)  # 升級到 v7 時自動拆開
+        self.assertEqual(db.json_list(self.image("a.jpg")["keywords"]), ["author", "walk", "beethoven", "Porträt"])
+        self.assertEqual(search(self.conn, "tag:beethoven")["total"], 1)
+
+
 class CustomModelTests(Base):
     def test_custom_prompt_text_model_and_custom_entries(self):
         from lumilib import clip, faces

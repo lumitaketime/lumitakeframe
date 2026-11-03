@@ -268,16 +268,27 @@ def parse_datetime(value) -> tuple[str | None, str | None]:
     return None, None
 
 
+def split_keywords(value) -> list[str]:
+    """關鍵字清單。有些軟體把多個關鍵字用分號寫成一筆（a;b;c），這裡一併拆開。"""
+    import re
+
+    if value is None:
+        return []
+    items = value if isinstance(value, list) else re.split(r"[,;，；]", str(value))
+    out: list[str] = []
+    for item in items:
+        for part in str(item).split(";"):
+            text = part.strip()
+            if text and text not in out:
+                out.append(text)
+    return out
+
+
 def _keywords(raw: dict) -> list[str]:
     out: list[str] = []
     for key in ("Subject", "Keywords"):
-        value = raw.get(key)
-        if value is None:
-            continue
-        items = value if isinstance(value, list) else str(value).split(",")
-        for item in items:
-            text = str(item).strip()
-            if text and text not in out:
+        for text in split_keywords(raw.get(key)):
+            if text not in out:
                 out.append(text)
     return out
 

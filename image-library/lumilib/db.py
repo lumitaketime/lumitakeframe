@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -184,6 +184,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     person_cols = {row[1] for row in conn.execute("PRAGMA table_info(persons)")}
     if "groups" not in person_cols:
         conn.execute("ALTER TABLE persons ADD COLUMN groups TEXT")
+    # v7：已存的「a;b;c」關鍵字拆成多個
+    for row in conn.execute("SELECT id, keywords FROM images WHERE keywords LIKE '%;%'").fetchall():
+        from .media import split_keywords
+
+        fixed = split_keywords(json_list(row["keywords"]))
+        conn.execute("UPDATE images SET keywords = ? WHERE id = ?", (json.dumps(fixed, ensure_ascii=False), row["id"]))
+        refresh_search_text(conn, row["id"])
     if "folder" not in existing:  # 從 v1 升級：補齊資料夾與排序時間
         for row in conn.execute("SELECT id, rel_path, taken_at, mtime FROM images").fetchall():
             conn.execute(

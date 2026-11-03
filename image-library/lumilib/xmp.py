@@ -70,11 +70,9 @@ def read_sidecars(paths: list[Path]) -> dict[Path, dict]:
         r = raw.get(str(p))
         if r is None:
             continue
-        kws = r.get("Subject")
-        if kws is None:
-            kws = []
-        elif not isinstance(kws, list):
-            kws = [x.strip() for x in str(kws).split(",") if x.strip()]
+        from .media import split_keywords
+
+        kws = split_keywords(r.get("Subject"))
         rating = r.get("Rating")
         out[p] = {
             "rating": int(rating) if isinstance(rating, (int, float)) else None,
