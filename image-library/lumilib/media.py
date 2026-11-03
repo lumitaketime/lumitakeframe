@@ -385,10 +385,43 @@ def _pillow_metadata(path: Path) -> dict:
     return normalize_exiftool(raw, "photo")
 
 
+def _ffmpeg_info_metadata(path: Path) -> dict:
+    """沒有 ffprobe 時，從 `ffmpeg -i` 的輸出讀時長、尺寸、旋轉與建立時間。"""
+    import re
+
+    exe = which("ffmpeg")
+    if not exe:
+        raise MediaError("影片需要 ffmpeg：brew install ffmpeg")
+    proc = subprocess.run([exe, "-hide_banner", "-i", str(path)], capture_output=True, timeout=60)
+    text = proc.stderr.decode("utf-8", "replace")
+    raw: dict = {}
+    m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", text)
+    if m:
+        raw["Duration"] = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    m = re.search(r"Video:.*?,\s*(\d{2,5})x(\d{2,5})", text)
+    if m:
+        raw["ImageWidth"], raw["ImageHeight"] = int(m.group(1)), int(m.group(2))
+    else:
+        raise MediaError("無法讀取影片")
+    m = re.search(r"rotate\s*:\s*(-?\d+)", text) or re.search(r"rotation of (-?\d+(?:\.\d+)?)", text)
+    if m:
+        raw["Rotation"] = abs(int(float(m.group(1))))
+    m = re.search(r"com\.apple\.quicktime\.creationdate\s*:\s*(\S+)", text) or re.search(r"creation_time\s*:\s*(\S+)", text)
+    if m:
+        raw["CreationDate"] = m.group(1)
+    m = re.search(r"(\d+(?:\.\d+)?) fps", text)
+    if m:
+        raw["VideoFrameRate"] = float(m.group(1))
+    m = re.search(r"Video:\s*(\w+)", text)
+    if m:
+        raw["CompressorID"] = m.group(1)
+    return normalize_exiftool(raw, "video")
+
+
 def _ffprobe_metadata(path: Path) -> dict:
     exe = which("ffprobe")
     if not exe:
-        raise MediaError("找不到 ffprobe，請執行：brew install ffmpeg")
+        return _ffmpeg_info_metadata(path)
     proc = subprocess.run(
         [exe, "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(path)],
         capture_output=True, timeout=60,
