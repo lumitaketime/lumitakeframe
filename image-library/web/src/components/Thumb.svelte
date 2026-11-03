@@ -6,6 +6,7 @@
 
   let { asset, width, height, selected = false, selecting = false, onopen, onselect } = $props();
   let failed = $state(false);
+  let loaded = $state(false);
   let pressTimer;
   let pressed = false;
 
@@ -54,7 +55,8 @@
   {#if failed}
     <div class="fallback"><Icon path={mdiImageRemoveOutline} size={28} /></div>
   {:else}
-    <img src={thumbUrl(asset)} alt="" loading="lazy" decoding="async" draggable="false" onerror={() => (failed = true)} />
+    <img src={thumbUrl(asset)} alt="" loading="lazy" decoding="async" draggable="false" class:loaded
+      onload={() => (loaded = true)} onerror={() => (failed = true)} />
   {/if}
   <div class="shade"></div>
   <button
@@ -89,7 +91,13 @@
     position: relative; overflow: hidden; background: var(--bg-2); cursor: pointer; flex-shrink: 0;
     -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   }
-  img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .15s, border-radius .15s; }
+  img {
+    width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0;
+    transition: opacity var(--spring-effects-default-duration) var(--spring-effects-default),
+      transform var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial),
+      border-radius var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
+  }
+  img.loaded { opacity: 1; }
   .fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); }
   .shade {
     position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .15s;

@@ -946,7 +946,7 @@
     color: var(--text); font-size: 15px;
   }
   .cats a:hover { background: var(--bg-2); }
-  .cats a.on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+  .cats a.on { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 500; }
   .back { display: none; }
   .pane { min-width: 0; }
   details.more { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
@@ -985,8 +985,8 @@
     .cats a { padding: 13px 14px; border-radius: 12px; }
     .back { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: var(--muted); margin: 0 0 10px; }
   }
-  .card { background: var(--bg-2); border-radius: 20px; padding: 18px 20px; margin-bottom: 18px; }
-  h2 { display: flex; align-items: center; gap: 10px; font-size: 17px; margin: 0 0 6px; }
+  .card { background: var(--surface-container-low); border-radius: var(--corner-large); padding: 20px 24px; margin-bottom: 16px; }
+  h2 { display: flex; align-items: center; gap: 12px; font-size: 18px; line-height: 24px; font-weight: 500; margin: 0 0 8px; }
   h3 { font-size: 14px; margin: 20px 0 10px; }
   .root { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: #2fa66b; flex-shrink: 0; }
@@ -1023,8 +1023,7 @@
   .warn > div { color: var(--text); }
   .warn p { margin: 4px 0; }
   .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); min-width: 200px; flex: 1; }
-  .toggle { display: flex; align-items: center; gap: 8px; margin: 14px 0; font-weight: 500; }
-  .toggle input { width: 18px; height: 18px; accent-color: var(--primary); }
+  .toggle { display: flex; flex-direction: row-reverse; align-items: center; justify-content: space-between; gap: 16px; margin: 12px 0; font-size: 16px; line-height: 24px; letter-spacing: 0.5px; cursor: pointer; }
   .pw { max-width: 320px; }
   .qr-row { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   .qr { width: 170px; height: 170px; background: #fff; border-radius: 12px; padding: 6px; }

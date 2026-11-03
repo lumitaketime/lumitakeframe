@@ -27,13 +27,22 @@ export function openViewer(list, index) {
 }
 
 let toastId = 0;
-export function toast(message, kind = "info", ms = 3500) {
+/**
+ * Snackbar 提示。action：{ label, run } 例如「復原」。錯誤訊息停留較久並可手動關閉。
+ * 同時最多顯示 3 則，新的出現時最舊的先離開。
+ */
+export function toast(message, kind = "info", ms = 3500, action = null) {
   const id = ++toastId;
-  app.toasts.push({ id, message, kind });
-  setTimeout(() => {
-    const i = app.toasts.findIndex((t) => t.id === id);
-    if (i !== -1) app.toasts.splice(i, 1);
-  }, ms);
+  if (kind === "error" && ms === 3500) ms = 6000;
+  app.toasts.push({ id, message, kind, action });
+  while (app.toasts.length > 3) app.toasts.shift();
+  setTimeout(() => dismissToast(id), ms);
+  return id;
+}
+
+export function dismissToast(id) {
+  const i = app.toasts.findIndex((t) => t.id === id);
+  if (i !== -1) app.toasts.splice(i, 1);
 }
 
 export function refresh() {

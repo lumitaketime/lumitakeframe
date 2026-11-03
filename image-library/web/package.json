@@ -10,6 +10,7 @@
     "check": "svelte-check --tsconfig ./jsconfig.json"
   },
   "dependencies": {
+    "@fontsource/roboto": "5.1.0",
     "@mdi/js": "^7.4.47",
     "leaflet": "^1.9.4",
     "leaflet.markercluster": "^1.5.3"

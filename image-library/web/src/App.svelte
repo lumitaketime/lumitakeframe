@@ -25,6 +25,7 @@
   import { api } from "./lib/api.js";
   import { app, selection, viewer, refresh } from "./lib/state.svelte.js";
   import { route, navigate, link } from "./lib/router.svelte.js";
+  import { fadeThrough } from "./lib/motion.js";
   import {
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
     mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiContentDuplicate,
@@ -207,6 +208,7 @@
 
     <main class="scroll-area">
       {#key route.path}
+        <div class="route" in:fadeThrough>
         {#if page === "" || page === "welcome"}
           <Timeline />
         {:else if page === "favorites"}
@@ -242,12 +244,13 @@
         {:else}
           <div class="empty"><h2>找不到頁面</h2><a href="/" use:link>回到照片</a></div>
         {/if}
+        </div>
       {/key}
     </main>
 
     <nav class="bottom" aria-label="主選單">
       {#each NAV.filter((n) => n.mobile && visible(n)) as n (n.href)}
-        <a href={n.href} use:link class:active={active(n.href)}><Icon path={n.icon} /><span>{n.label}</span></a>
+        <a href={n.href} use:link class:active={active(n.href)}><span class="ind"><Icon path={n.icon} /></span><span>{n.label}</span></a>
       {/each}
     </nav>
   </div>
@@ -268,42 +271,55 @@
   }
   .topbar {
     grid-area: top; display: flex; align-items: center; gap: 16px; padding: 0 16px;
-    padding-top: env(safe-area-inset-top); background: var(--bg); border-bottom: 1px solid var(--line); z-index: 20;
+    padding-top: env(safe-area-inset-top); background: var(--surface); z-index: 20;
   }
-  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); width: calc(var(--sidebar) - 32px); flex-shrink: 0; }
-  .brand span { font-size: 18px; white-space: nowrap; }
-  .brand b { font-weight: 700; color: var(--primary); }
+  .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--on-surface); width: calc(var(--sidebar) - 32px); flex-shrink: 0; }
+  .brand span { font-size: 22px; line-height: 28px; white-space: nowrap; }
+  .brand b { font-weight: 500; color: var(--primary); }
   .search {
-    flex: 1; max-width: 720px; display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 6px 0 16px;
-    background: var(--bg-2); border-radius: 999px; color: var(--muted); border: 1px solid transparent;
+    flex: 1; max-width: 720px; display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 6px 0 16px;
+    background: var(--surface-container-high); border-radius: var(--corner-full); color: var(--on-surface-variant);
+    transition: background-color var(--spring-effects-default-duration) var(--spring-effects-default),
+      box-shadow var(--spring-effects-default-duration) var(--spring-effects-default);
   }
-  .search:focus-within { background: var(--bg); border-color: var(--primary); box-shadow: var(--shadow); }
-  .search input { flex: 1; border: 0; outline: none; background: none; color: var(--text); min-width: 0; font-size: 15px; }
+  .search:hover { background: color-mix(in srgb, var(--on-surface) 8%, var(--surface-container-high)); }
+  .search:focus-within { background: var(--surface-container-highest); box-shadow: var(--elevation-level2); }
+  .search input { flex: 1; border: 0; outline: none; background: none; color: var(--on-surface); min-width: 0; font-size: 16px; line-height: 24px; letter-spacing: 0.5px; }
+  .search input::placeholder { color: var(--on-surface-variant); }
   .search input::-webkit-search-cancel-button { display: none; }
-  .clear { width: 34px; height: 34px; }
+  .clear { width: 36px; height: 36px; }
   .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-  .right .icon-btn { color: var(--text); }
+  .right .icon-btn { color: var(--on-surface-variant); }
 
-  .sidebar { grid-area: side; padding: 12px 12px 24px 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  /* 導覽抽屜：膠囊形指示器從中心展開 */
+  .sidebar { grid-area: side; padding: 8px 12px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 0; }
   .sidebar a {
-    display: flex; align-items: center; gap: 18px; padding: 11px 22px; border-radius: 0 999px 999px 0;
-    text-decoration: none; color: var(--text); font-size: 15px;
+    display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px 0 16px; border-radius: var(--corner-full);
+    text-decoration: none; color: var(--on-surface-variant); font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0.1px;
+    flex-shrink: 0;
   }
-  .sidebar a:hover { background: var(--bg-2); }
-  .sidebar a.active { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+  .sidebar a.active { color: var(--on-secondary-container); }
+  .sidebar a.active::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--secondary-container); z-index: -1;
+    animation: nav-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
+  }
+  @keyframes nav-pill { from { transform: scaleX(0.3); opacity: 0.4; } }
   .sidebar .root span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sidebar .root em { font-style: normal; font-size: 11px; color: var(--danger); }
-  .add-root { color: var(--muted) !important; font-size: 14px !important; }
+  .sidebar .root em { font-style: normal; font-size: 11px; color: var(--error); }
+  .add-root { color: var(--on-surface-variant) !important; font-weight: 400 !important; height: 44px !important; }
   .group {
     display: flex; align-items: center; justify-content: space-between; border: 0; background: none; cursor: pointer;
-    margin: 10px 0 2px; padding: 4px 12px 4px 22px; font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .05em;
-    border-radius: 0 999px 999px 0;
+    margin: 12px 0 2px; padding: 8px 16px; font-size: 14px; line-height: 20px; color: var(--on-surface-variant); font-weight: 500; letter-spacing: 0.1px;
+    border-radius: var(--corner-full);
+    transition: background-color var(--spring-effects-fast-duration) var(--spring-effects-fast);
   }
   .group:first-child { margin-top: 0; }
-  .group:hover { background: var(--bg-2); color: var(--text); }
-  .stats { margin: 12px 22px 0; font-size: 12px; color: var(--muted); }
+  .group:hover { background: color-mix(in srgb, var(--on-surface) 8%, transparent); }
+  .group :global(svg) { transition: transform var(--spring-standard-fast-spatial-duration) var(--spring-standard-fast-spatial); }
+  .stats { margin: 12px 16px 0; font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
 
-  main { grid-area: main; position: relative; }
+  main { grid-area: main; position: relative; background: var(--surface); }
+  .route { min-height: 100%; }
   .bottom { display: none; }
 
   @media (max-width: 900px) {
@@ -316,13 +332,16 @@
     .topbar { gap: 8px; padding: 0 8px; padding-top: env(safe-area-inset-top); }
     .search { height: 42px; }
     .bottom {
-      display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--bg);
-      border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
+      display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface-container);
+      padding-bottom: env(safe-area-inset-bottom); height: calc(80px + env(safe-area-inset-bottom));
     }
     .bottom a {
-      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0 6px;
-      text-decoration: none; color: var(--muted); font-size: 11px;
+      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+      text-decoration: none; color: var(--on-surface-variant); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.5px;
     }
-    .bottom a.active { color: var(--primary); font-weight: 600; }
+    .bottom .ind { position: relative; display: flex; align-items: center; justify-content: center; width: 64px; height: 32px; border-radius: var(--corner-full); }
+    .bottom a.active { color: var(--on-surface); }
+    .bottom a.active .ind { color: var(--on-secondary-container); background: var(--secondary-container);
+      animation: nav-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial); }
   }
 </style>

@@ -2,6 +2,7 @@ import { mount } from "svelte";
 import "./app.css";
 import App from "./App.svelte";
 import { isMacApp, isAndroidApp } from "./lib/state.svelte.js";
+import { installRipple } from "./lib/ripple.js";
 
 try {
   const theme = localStorage.getItem("theme");
@@ -11,6 +12,7 @@ try {
 }
 
 mount(App, { target: document.getElementById("app") });
+installRipple();
 
 // Mac App 的視窗不能開新分頁：外部連結改用預設瀏覽器開啟
 if (isMacApp) {
