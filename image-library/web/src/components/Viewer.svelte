@@ -5,10 +5,11 @@
   import { api, originalUrl, previewUrl, thumbUrl } from "../lib/api.js";
   import { app, viewer, refresh, toast, isMacApp } from "../lib/state.svelte.js";
   import { addToAlbum, analyzeAssets, moveAssets, reveal, setFavorite, trashAssets, copyText } from "../lib/actions.js";
+  import { LABEL_COLORS, LABEL_KEYS, LABEL_NAMES } from "../lib/format.js";
   import {
     mdiArrowLeft, mdiChevronLeft, mdiChevronRight, mdiDeleteOutline, mdiDotsVertical, mdiDownload, mdiFolderOpenOutline,
     mdiHeart, mdiHeartOutline, mdiInformationOutline, mdiImageAlbum, mdiFolderMoveOutline, mdiCreation, mdiContentCopy,
-    mdiMagnifyPlusOutline, mdiMagnifyMinusOutline,
+    mdiMagnifyPlusOutline, mdiMagnifyMinusOutline, mdiStar, mdiStarOutline, mdiFlagRemove, mdiLayers,
   } from "../lib/icons.js";
 
   let detail = $state(null);
@@ -110,8 +111,53 @@
     }
   }
 
+  // ---- 星等、顏色標籤（與 Lightroom 相同的快捷鍵）----
+  async function setXmp(fields) {
+    if (!detail) return;
+    try {
+      const d = await api(`/api/assets/${detail.id}/xmp`, { body: fields });
+      detail = d;
+      const cur = viewer.list[viewer.index];
+      if (cur) {
+        cur.rating = d.rating || 0;
+        cur.label = d.label;
+      }
+      if (d.written_to === "sidecar") toast("已寫入 Lightroom 的 .xmp", "info", 1500);
+      else if (d.written_to === "embedded") toast("已寫入檔案的 XMP", "info", 1500);
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  function rate(n) {
+    setXmp({ rating: detail?.rating === n ? 0 : n });
+  }
+
+  function labelOf(key) {
+    setXmp({ label: detail?.label === key ? "" : key });
+  }
+
+  // ---- 疊放 ----
+  function showMember(m) {
+    viewer.list[viewer.index] = m;
+  }
+
+  async function stackAction(action) {
+    if (!detail) return;
+    detail = await api(`/api/assets/${detail.id}/stack`, { body: { action } });
+    toast(action === "unstack" ? "已解除疊放" : "已設為疊放封面");
+    refresh();
+  }
+
   function onkey(e) {
     if (e.target.closest?.("input, textarea")) return;
+    if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+      if ("012345".includes(e.key) && e.key.length === 1) return setXmp({ rating: Number(e.key) });
+      const labelKey = { 6: "red", 7: "yellow", 8: "green", 9: "blue" }[e.key];
+      if (labelKey) return labelOf(labelKey);
+      if (e.key === "x") return setXmp({ rating: -1 });
+      if (e.key === "u" && detail?.rating === -1) return setXmp({ rating: 0 });
+    }
     if (e.key === "Escape") close();
     else if (e.key === "ArrowRight") go(1);
     else if (e.key === "ArrowLeft") go(-1);
@@ -276,6 +322,35 @@
           {/key}
         {/if}
       {/if}
+      {#if detail && !isVideo}
+        <div class="rate-bar" class:hidden={!chrome}>
+          <button class="reject" class:on={detail.rating === -1} title="拒絕（X）" onclick={() => setXmp({ rating: detail.rating === -1 ? 0 : -1 })}>
+            <Icon path={mdiFlagRemove} size={20} />
+          </button>
+          {#each [1, 2, 3, 4, 5] as n (n)}
+            <button class="star" class:on={(detail.rating || 0) >= n} title="{n} 星（{n}）" onclick={() => rate(n)}>
+              <Icon path={(detail.rating || 0) >= n ? mdiStar : mdiStarOutline} size={22} />
+            </button>
+          {/each}
+          <span class="sep"></span>
+          {#each LABEL_KEYS as key (key)}
+            <button class="label" class:on={detail.label === key} title="{LABEL_NAMES[key]}色標籤" style:--c={LABEL_COLORS[key]} onclick={() => labelOf(key)}></button>
+          {/each}
+        </div>
+      {/if}
+      {#if detail?.stack?.length > 1}
+        <div class="stack-strip" class:hidden={!chrome}>
+          <span class="stack-title"><Icon path={mdiLayers} size={16} />疊放 {detail.stack.length} 張</span>
+          {#each detail.stack as m (m.id)}
+            <button class="member" class:current={m.id === detail.id} onclick={() => showMember(m)} title={m.name}>
+              <img src={thumbUrl(m)} alt="" />
+              {#if m.raw}<span>RAW</span>{/if}
+            </button>
+          {/each}
+          <button class="btn small ghost dark" onclick={() => stackAction("cover")}>設為封面</button>
+          <button class="btn small ghost dark" onclick={() => stackAction("unstack")}>解除疊放</button>
+        </div>
+      {/if}
       {#if viewer.index > 0}
         <button class="nav left" class:hidden={!chrome} onclick={() => go(-1)} aria-label="上一張"><Icon path={mdiChevronLeft} size={32} /></button>
       {/if}
@@ -331,6 +406,26 @@
   .nav:hover { background: rgba(255,255,255,.2); }
   .nav.left { left: 16px; }
   .nav.right { right: 16px; }
+  .rate-bar {
+    position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center;
+    gap: 2px; background: rgba(0,0,0,.55); border-radius: 999px; padding: 4px 10px; transition: opacity .2s;
+  }
+  .rate-bar button { border: 0; background: none; color: rgba(255,255,255,.75); cursor: pointer; padding: 4px; display: flex; }
+  .rate-bar .star.on { color: #f5c518; }
+  .rate-bar .reject.on { color: #ff6b6b; }
+  .rate-bar .sep { width: 1px; height: 18px; background: rgba(255,255,255,.3); margin: 0 6px; }
+  .rate-bar .label { width: 18px; height: 18px; border-radius: 50%; padding: 0; margin: 0 3px; background: var(--c); opacity: .45; }
+  .rate-bar .label.on { opacity: 1; box-shadow: 0 0 0 2px #fff; }
+  .stack-strip {
+    position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center;
+    gap: 6px; background: rgba(0,0,0,.6); border-radius: 14px; padding: 6px 10px; max-width: 92%; overflow-x: auto;
+  }
+  .stack-title { display: flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; margin-right: 4px; }
+  .member { position: relative; border: 2px solid transparent; border-radius: 8px; padding: 0; background: none; cursor: pointer; flex-shrink: 0; }
+  .member.current { border-color: #fff; }
+  .member img { width: 52px; height: 52px; object-fit: cover; border-radius: 6px; display: block; }
+  .member span { position: absolute; left: 2px; bottom: 2px; font-size: 9px; background: rgba(0,0,0,.6); color: #fff; padding: 0 3px; border-radius: 3px; }
+  .btn.dark { color: #fff; border-color: rgba(255,255,255,.4); }
   .menu-wrap { position: relative; }
   .menu {
     position: absolute; right: 0; top: 44px; background: var(--panel); color: var(--text); border-radius: 14px;
@@ -343,6 +438,8 @@
   .menu button:hover, .menu a:hover { background: var(--bg-2); }
   .side { height: 100%; }
   @media (max-width: 900px) {
+    .rate-bar { bottom: calc(10px + env(safe-area-inset-bottom)); }
+    .stack-strip { bottom: calc(62px + env(safe-area-inset-bottom)); }
     .viewer { flex-direction: column; }
     .side { position: absolute; left: 0; right: 0; bottom: 0; height: auto; z-index: 4; }
     .desktop { display: none !important; }

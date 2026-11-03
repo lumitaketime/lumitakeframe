@@ -53,3 +53,13 @@ export function shutter(t) {
 export function count(n) {
   return new Intl.NumberFormat("zh-TW").format(n || 0);
 }
+
+export const LABEL_COLORS = {
+  red: "#e5484d",
+  yellow: "#f5c518",
+  green: "#30a46c",
+  blue: "#3e63dd",
+  purple: "#8e4ec6",
+};
+export const LABEL_NAMES = { red: "紅", yellow: "黃", green: "綠", blue: "藍", purple: "紫" };
+export const LABEL_KEYS = ["red", "yellow", "green", "blue", "purple"];

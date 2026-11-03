@@ -3,12 +3,14 @@
   import { api, thumbUrl } from "../lib/api.js";
   import { navigate, link } from "../lib/router.svelte.js";
   import { app, showDialog, toast } from "../lib/state.svelte.js";
-  import { mdiImageAlbum, mdiPlus } from "../lib/icons.js";
+  import { mdiImageAlbum, mdiPlus, mdiAutoFix } from "../lib/icons.js";
 
   let albums = $state(null);
+  let smart = $state([]);
   $effect(() => {
     app.refreshKey;
     api("/api/albums").then((a) => (albums = a));
+    api("/api/smart-albums").then((a) => (smart = a));
   });
 
   async function create() {
@@ -32,10 +34,26 @@
     <h1>相簿</h1>
     <button class="btn" onclick={create}><Icon path={mdiPlus} size={18} />建立相簿</button>
   </div>
+  {#if smart.length}
+    <h2 class="section-title">智慧相簿 <span class="muted small">（依搜尋條件自動更新）</span></h2>
+    <div class="card-grid smart">
+      {#each smart as a (a.id)}
+        <a class="cover-card" href={`/albums/smart/${a.id}`} use:link>
+          <div class="cover">
+            {#if a.cover}<img src={thumbUrl({ id: a.cover })} alt="" loading="lazy" />{:else}<Icon path={mdiAutoFix} size={48} />{/if}
+            <span class="smart-badge"><Icon path={mdiAutoFix} size={14} /></span>
+          </div>
+          <div class="name">{a.name}</div>
+          <div class="sub">{a.count} 個項目 · {a.query}</div>
+        </a>
+      {/each}
+    </div>
+    <h2 class="section-title">相簿</h2>
+  {/if}
   {#if albums && !albums.length}
     <div class="empty">
       <h2>用相簿整理作品</h2>
-      <p>相簿只是收藏清單，不會複製或搬動檔案；同一張照片可以放進多個相簿。<br />想實際整理硬碟資料夾，請用「資料夾」或「搬移」。</p>
+      <p>也可以在搜尋結果按「存成智慧相簿」，例如 <code>rating:4 camera:x100vi</code>，新照片符合就自動加入。<br />相簿只是收藏清單，不會複製或搬動檔案；同一張照片可以放進多個相簿。<br />想實際整理硬碟資料夾，請用「資料夾」或「搬移」。</p>
     </div>
   {/if}
   <div class="card-grid">
@@ -53,4 +71,6 @@
 
 <style>
   a.cover-card { text-decoration: none; }
+  .smart { margin-bottom: 8px; }
+  .smart-badge { position: absolute; right: 8px; top: 8px; background: var(--primary); color: var(--on-primary); border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
 </style>

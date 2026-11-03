@@ -2,7 +2,7 @@
   import Grid from "../components/Grid.svelte";
   import { api } from "../lib/api.js";
   import { route, navigate } from "../lib/router.svelte.js";
-  import { app } from "../lib/state.svelte.js";
+  import { app, showDialog, toast } from "../lib/state.svelte.js";
 
   let result = $state(null);
   let loading = $state(false);
@@ -12,6 +12,7 @@
   const canSemantic = $derived(!!app.server?.models?.embed);
 
   const QUICK = [
+    ["rating:3", "★3 以上"], ["rating:5", "★5"], ["is:rejected", "已拒絕"], ["label:red", "紅標"], ["label:green", "綠標"],
     ["type:photo", "照片"], ["type:video", "影片"], ["type:raw", "RAW"], ["is:favorite", "我的最愛"],
     ["is:pending", "待分析"], ["is:failed", "分析失敗"], ["is:missing", "遺失檔案"],
   ];
@@ -39,6 +40,14 @@
     run();
   });
 
+  async function saveSmart() {
+    const name = await showDialog("prompt", { title: "存成智慧相簿", value: q, placeholder: "相簿名稱", ok: "儲存" });
+    if (!name) return;
+    const res = await api("/api/smart-albums", { body: { name, query: q } });
+    toast("已建立智慧相簿，符合條件的新照片會自動加入");
+    navigate(`/albums/smart/${res.id}`);
+  }
+
   function toggle(token) {
     const parts = q.split(/\s+/).filter(Boolean);
     const next = parts.includes(token) ? parts.filter((p) => p !== token) : [...parts, token];
@@ -50,6 +59,7 @@
   <div class="page-head">
     <h1>{q ? `「${q}」` : "搜尋"}</h1>
     {#if result}<span class="muted small">{result.total.toLocaleString()} 個結果{result.mode === "hybrid" ? "（含語意相近）" : ""}</span>{/if}
+    {#if q}<button class="btn small ghost" onclick={saveSmart}>存成智慧相簿</button>{/if}
     {#if canSemantic}
       <label class="sem"><input type="checkbox" bind:checked={semantic} /> 語意搜尋</label>
     {/if}
@@ -82,6 +92,7 @@
           <tr><td><code>type:video</code>　<code>type:raw</code>　<code>ext:heic</code></td><td>檔案類型</td></tr>
           <tr><td><code>person:媽媽</code></td><td>人物（人臉辨識後命名）</td></tr>
           <tr><td><code>place:恆春</code>　或直接輸入 <code>京都</code></td><td>地點（依 GPS 自動換算，不需連網）</td></tr>
+          <tr><td><code>rating:4</code>　<code>label:紅</code>　<code>is:rejected</code></td><td>星等（以上）、顏色標籤、被拒絕（與 Lightroom 同步）</td></tr>
           <tr><td><code>is:favorite</code>　<code>is:pending</code>　<code>is:missing</code></td><td>狀態</td></tr>
         </tbody>
       </table>

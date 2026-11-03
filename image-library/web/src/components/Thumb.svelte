@@ -1,8 +1,8 @@
 <script>
   import Icon from "./Icon.svelte";
   import { thumbUrl } from "../lib/api.js";
-  import { duration } from "../lib/format.js";
-  import { mdiCheckCircle, mdiCheckboxBlankCircleOutline, mdiHeart, mdiPlay, mdiImageRemoveOutline } from "../lib/icons.js";
+  import { duration, LABEL_COLORS } from "../lib/format.js";
+  import { mdiCheckCircle, mdiCheckboxBlankCircleOutline, mdiHeart, mdiPlay, mdiImageRemoveOutline, mdiStar, mdiLayers } from "../lib/icons.js";
 
   let { asset, width, height, selected = false, selecting = false, onopen, onselect } = $props();
   let failed = $state(false);
@@ -36,6 +36,7 @@
   class:selected
   class:selecting
   class:missing={asset.missing}
+  class:rejected={asset.rating === -1}
   style:width="{width}px"
   style:height="{height}px"
   role="button"
@@ -70,8 +71,16 @@
   {#if asset.fav}
     <span class="fav"><Icon path={mdiHeart} size={18} /></span>
   {/if}
-  {#if asset.raw}
+  {#if asset.stack > 1}
+    <span class="badge tr stack" class:with-video={asset.type === "video"}><Icon path={mdiLayers} size={15} />{asset.stack}</span>
+  {:else if asset.raw}
     <span class="badge br">RAW</span>
+  {/if}
+  {#if asset.rating > 0 || asset.label}
+    <span class="meta-badge">
+      {#if asset.label}<i class="dot" style:background={LABEL_COLORS[asset.label]}></i>{/if}
+      {#if asset.rating > 0}<Icon path={mdiStar} size={13} />{asset.rating}{/if}
+    </span>
   {/if}
 </div>
 
@@ -104,8 +113,17 @@
     text-shadow: 0 1px 3px rgba(0,0,0,.7); filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
   }
   .tr { top: 6px; right: 6px; }
-  .br { bottom: 5px; right: 6px; font-size: 10px; letter-spacing: .04em; background: rgba(0,0,0,.45); padding: 0 4px; border-radius: 4px; }
+  .br { top: 6px; right: 6px; font-size: 10px; letter-spacing: .04em; background: rgba(0,0,0,.45); padding: 0 4px; border-radius: 4px; }
   .fav { position: absolute; bottom: 5px; left: 6px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
   .missing img { filter: grayscale(1); opacity: .45; }
+  .rejected img { opacity: .35; }
+  .stack { background: rgba(0,0,0,.45); padding: 1px 6px 1px 4px; border-radius: 6px; font-size: 11px; }
+  .stack.with-video { top: 28px; }
+  .meta-badge {
+    position: absolute; right: 6px; bottom: 5px; display: flex; align-items: center; gap: 2px; color: #fff;
+    background: rgba(0,0,0,.45); border-radius: 6px; padding: 1px 5px; font-size: 11px; font-weight: 700;
+  }
+  .meta-badge :global(svg) { color: #f5c518; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 2px; box-shadow: 0 0 0 1px rgba(255,255,255,.7); }
   .thumb:focus-visible { outline: 3px solid var(--primary); outline-offset: -3px; }
 </style>

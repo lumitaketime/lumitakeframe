@@ -2,6 +2,7 @@
   import { onMount, tick, untrack } from "svelte";
   import Grid from "../components/Grid.svelte";
   import Icon from "../components/Icon.svelte";
+  import Memories from "../components/Memories.svelte";
   import { api } from "../lib/api.js";
   import { app, selection } from "../lib/state.svelte.js";
   import { link } from "../lib/router.svelte.js";
@@ -211,6 +212,8 @@
   <div class="content"><div class="inner" bind:clientWidth={width}>
     {#if title}
       <div class="page-head"><h1>{title}</h1><span class="muted small">{count(total)} 個項目</span></div>
+    {:else}
+      <Memories />
     {/if}
 
     {#if ready && !buckets.length}

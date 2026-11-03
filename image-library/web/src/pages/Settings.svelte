@@ -8,7 +8,7 @@
   import {
     mdiHarddisk, mdiRefresh, mdiPencilOutline, mdiDeleteOutline, mdiPlus, mdiCreation, mdiCheck, mdiDownload,
     mdiCellphone, mdiStop, mdiThemeLightDark, mdiServerNetwork, mdiAlertCircleOutline, mdiFaceRecognition,
-    mdiImageSearchOutline,
+    mdiImageSearchOutline, mdiStar,
   } from "../lib/icons.js";
 
   let roots = $state([]);
@@ -411,6 +411,42 @@
           </label>
         </div>
       {/if}
+    {/if}
+  </section>
+
+  <!-- Lightroom 與疊放 -->
+  <section class="card" id="lightroom">
+    <h2><Icon path={mdiStar} />Lightroom 同步與疊放</h2>
+    {#if settings}
+      <label class="toggle">
+        <input type="checkbox" checked={!!settings.xmp_sync}
+          onchange={async (e) => { settings = await api("/api/settings", { body: { xmp_sync: e.currentTarget.checked ? 1 : 0 } }); }} />
+        星等、顏色標籤、關鍵字寫回 RAW 的 .xmp 附屬檔
+      </label>
+      <label class="toggle">
+        <input type="checkbox" checked={!!settings.xmp_embed}
+          onchange={async (e) => { settings = await api("/api/settings", { body: { xmp_embed: e.currentTarget.checked ? 1 : 0 } }); }} />
+        也寫入 JPEG／HEIC／TIFF 檔案本身（會修改原檔；Lightroom 不讀這些格式的 .xmp）
+      </label>
+      <p class="muted small">在 Lightroom Classic：「目錄設定 → 中繼資料」勾選「自動將變更寫入 XMP」，兩邊的修改才會互相看到；
+        Lightroom 看到本程式的修改需要對照片按「中繼資料 → 從檔案讀取中繼資料」。
+        檢視照片時可用與 Lightroom 相同的快捷鍵：0–5 星等、6–9 顏色、X 拒絕、U 取消拒絕。</p>
+      <label class="toggle">
+        <input type="checkbox" checked={!!settings.stack_enabled}
+          onchange={async (e) => { settings = await api("/api/settings", { body: { stack_enabled: e.currentTarget.checked ? 1 : 0 } }); job("stacks"); }} />
+        自動疊放 RAW＋JPEG 與連拍
+      </label>
+      <div class="row wrap">
+        <label class="field">連拍判定間隔
+          <select class="input" value={String(settings.burst_seconds)}
+            onchange={async (e) => { await saveSetting("burst_seconds", Number(e.currentTarget.value)); job("stacks"); }}>
+            <option value="1">1 秒內（較嚴格）</option>
+            <option value="2">2 秒內</option>
+            <option value="3">3 秒內（較寬鬆）</option>
+          </select>
+        </label>
+      </div>
+      <p class="muted tiny">連續 3 張以上、同一台相機才算連拍。手動解除或調整過的疊放不會被重新計算覆蓋。</p>
     {/if}
   </section>
 

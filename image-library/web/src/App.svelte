@@ -14,6 +14,8 @@
   import Album from "./pages/Album.svelte";
   import MapPage from "./pages/MapPage.svelte";
   import People from "./pages/People.svelte";
+  import Duplicates from "./pages/Duplicates.svelte";
+  import SmartAlbum from "./pages/SmartAlbum.svelte";
   import Person from "./pages/Person.svelte";
   import Settings from "./pages/Settings.svelte";
   import Login from "./pages/Login.svelte";
@@ -22,7 +24,7 @@
   import { route, navigate, link } from "./lib/router.svelte.js";
   import {
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
-    mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiAccountBoxOutline,
+    mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiAccountBoxOutline, mdiContentDuplicate,
   } from "./lib/icons.js";
 
   const NAV = [
@@ -34,6 +36,7 @@
     { href: "/albums", label: "相簿", icon: mdiImageAlbum, mobile: true },
     { href: "/favorites", label: "我的最愛", icon: mdiHeartOutline },
     { href: "/videos", label: "影片", icon: mdiVideoOutline },
+    { href: "/duplicates", label: "重複照片", icon: mdiContentDuplicate },
   ];
 
   let q = $state(route.query.q || "");
@@ -169,6 +172,10 @@
           <Search />
         {:else if page === "folders"}
           <Folders rootId={seg[1] ? Number(seg[1]) : null} />
+        {:else if page === "albums" && seg[1] === "smart" && seg[2]}
+          <SmartAlbum id={Number(seg[2])} />
+        {:else if page === "duplicates"}
+          <Duplicates />
         {:else if page === "albums" && seg[1]}
           <Album id={Number(seg[1])} />
         {:else if page === "albums"}

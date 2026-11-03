@@ -19,8 +19,10 @@
   let translated = $state(null);
   let translating = $state(false);
 
+  const myKeywords = $derived([...new Set([...(detail?.keywords || []), ...(detail?.user_tags || [])])]);
+
   $effect(() => {
-    tagsText = (detail?.user_tags || []).join(", ");
+    tagsText = [...new Set([...(detail?.keywords || []), ...(detail?.user_tags || [])])].join(", ");
     note = detail?.note || "";
     editing = false;
     translated = null;
@@ -65,7 +67,7 @@
     ].filter(Boolean),
   );
   const megapixels = $derived(detail?.width && detail?.height ? ((detail.width * detail.height) / 1e6).toFixed(1) : null);
-  const tags = $derived([...(detail?.keywords || []), ...(detail?.tags || [])]);
+  const tags = $derived((detail?.tags || []).filter((t) => !myKeywords.includes(t)));
 
   function searchTag(t) {
     viewer.open = false;
@@ -74,10 +76,11 @@
 
   async function save() {
     try {
-      const d = await api(`/api/assets/${detail.id}`, { body: { user_tags: tagsText, note } });
+      const x = await api(`/api/assets/${detail.id}/xmp`, { body: { keywords: tagsText } });
+      const d = await api(`/api/assets/${detail.id}`, { body: { note } });
       onchange?.(d);
       editing = false;
-      toast("已儲存");
+      toast(x.written_to === "sidecar" ? "已儲存並寫入 Lightroom 的 .xmp" : x.written_to === "embedded" ? "已儲存並寫入檔案" : "已儲存");
     } catch (e) {
       toast(e.message, "error");
     }
@@ -133,18 +136,18 @@
 
       <div class="block">
         <div class="row-title">
-          <Icon path={mdiTagOutline} size={18} /><span>我的標籤與備註</span>
+          <Icon path={mdiTagOutline} size={18} /><span>關鍵字（與 Lightroom 同步）與備註</span>
           <button class="icon-btn sm" onclick={() => (editing = !editing)} aria-label="編輯"><Icon path={mdiPencilOutline} size={18} /></button>
         </div>
         {#if editing}
           <input class="input" bind:value={tagsText} placeholder="以逗號分隔，例如：作品集, 婚禮, 2024" />
           <textarea class="input" rows="2" bind:value={note} placeholder="備註"></textarea>
           <div class="btns"><button class="btn small" onclick={save}>儲存</button><button class="btn small ghost" onclick={() => (editing = false)}>取消</button></div>
-        {:else if detail.user_tags.length || detail.note}
-          <div class="chips">{#each detail.user_tags as t (t)}<button class="chip on" onclick={() => searchTag(t)}>{t}</button>{/each}</div>
+        {:else if myKeywords.length || detail.note}
+          <div class="chips">{#each myKeywords as t (t)}<button class="chip on" onclick={() => searchTag(t)}>{t}</button>{/each}</div>
           {#if detail.note}<p class="small">{detail.note}</p>{/if}
         {:else}
-          <p class="muted small">點鉛筆新增，之後可直接搜尋。</p>
+          <p class="muted small">點鉛筆新增關鍵字；RAW 會寫入 .xmp，Lightroom 讀取中繼資料後就會看到。</p>
         {/if}
       </div>
 

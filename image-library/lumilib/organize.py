@@ -153,19 +153,28 @@ def set_cover(conn: sqlite3.Connection, image_id: int) -> None:
 # ---- 重複與相似 -----------------------------------------------------------------
 
 def dhash(img: Image.Image) -> str:
-    """64 位元差異雜湊：縮圖再壓縮、調色、改尺寸後仍幾乎相同。"""
+    """64 位元差異雜湊（形狀）＋四個象限的平均顏色。
+
+    差異雜湊只看明暗變化，縮圖、重新壓縮、改尺寸後仍幾乎相同；
+    再加上顏色，避免構圖相似但顏色完全不同的照片被當成重複。
+    """
     small = img.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
     px = np.asarray(small, dtype=np.int16)
     bits = (px[:, 1:] > px[:, :-1]).flatten()
     value = 0
     for b in bits:
         value = (value << 1) | int(b)
-    return f"{value:016x}"
+    quads = np.asarray(img.convert("RGB").resize((2, 2), Image.Resampling.BOX), dtype=np.uint8).flatten()
+    return f"{value:016x}" + quads.tobytes().hex()
+
+
+HASH_LEN = 16 + 24
 
 
 def fill_hashes(conn: sqlite3.Connection, cfg: Config, progress=None, stop=None) -> int:
     rows = conn.execute(
-        "SELECT id, fingerprint FROM images WHERE status = 'ok' AND thumb_ok = 1 AND phash IS NULL"
+        "SELECT id, fingerprint FROM images WHERE status = 'ok' AND thumb_ok = 1 "
+        "AND (phash IS NULL OR length(phash) != ?)", (HASH_LEN,)
     ).fetchall()
     done = 0
     for n, r in enumerate(rows, 1):
@@ -196,7 +205,8 @@ def _popcount(x: np.ndarray) -> np.ndarray:
     return table[x.view(np.uint8).reshape(*x.shape, 8)].sum(axis=-1)
 
 
-def find_duplicates(conn: sqlite3.Connection, cfg: Config, threshold: int = 6, progress=None, stop=None) -> dict:
+def find_duplicates(conn: sqlite3.Connection, cfg: Config, threshold: int = 6, color_tolerance: int = 22,
+                    progress=None, stop=None) -> dict:
     """回傳 {"exact": [[id...]], "similar": [[id...]]} 並存到資料目錄。"""
     fill_hashes(conn, cfg, progress, stop)
     exact = [
@@ -207,10 +217,12 @@ def find_duplicates(conn: sqlite3.Connection, cfg: Config, threshold: int = 6, p
     ]
     exact_ids = {i for g in exact for i in g}
     rows = conn.execute(
-        "SELECT id, phash, root_id, folder, rel_path FROM images WHERE status = 'ok' AND phash IS NOT NULL ORDER BY id"
+        "SELECT id, phash, root_id, folder, rel_path FROM images WHERE status = 'ok' AND length(phash) = ? ORDER BY id",
+        (HASH_LEN,),
     ).fetchall()
     ids = np.array([r["id"] for r in rows], dtype=np.int64)
-    hashes = np.array([int(r["phash"], 16) for r in rows], dtype=np.uint64)
+    hashes = np.array([int(r["phash"][:16], 16) for r in rows], dtype=np.uint64)
+    colors = np.array([list(bytes.fromhex(r["phash"][16:])) for r in rows], dtype=np.int16).reshape(-1, 12)
     stems = [(r["root_id"], r["folder"], Path(r["rel_path"]).stem.lower()) for r in rows]
     parent = list(range(len(rows)))
 
@@ -229,6 +241,8 @@ def find_duplicates(conn: sqlite3.Connection, cfg: Config, threshold: int = 6, p
         ii, jj = np.nonzero(dist <= threshold)
         for a, b in zip(ii + start, jj):
             if b <= a or stems[a] == stems[b]:  # 同名 RAW＋JPEG 不算重複
+                continue
+            if np.abs(colors[a] - colors[b]).mean() > color_tolerance:  # 形狀像但顏色不同
                 continue
             ra, rb = find(a), find(b)
             if ra != rb:
