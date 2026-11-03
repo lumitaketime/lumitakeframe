@@ -34,6 +34,8 @@ DEFAULTS = {
     "scan_on_start": 1,
     # 掃描後自動用 AI 分析新照片（Ollama 與視覺模型都準備好時）
     "auto_analyze": 1,
+    # AI 描述的詳細程度：standard 標準、fast 快速（描述較短、關鍵字較少，約快一倍）
+    "analysis_detail": "standard",
     # AI 分析時段：always 隨時、ac 只在接電源、night 只在夜間、ac_night 兩者都要
     "analyze_schedule": "always",
     "night_start": 22,
@@ -92,6 +94,7 @@ class Config:
     lan: int = DEFAULTS["lan"]
     scan_on_start: int = DEFAULTS["scan_on_start"]
     auto_analyze: int = DEFAULTS["auto_analyze"]
+    analysis_detail: str = DEFAULTS["analysis_detail"]
     analyze_schedule: str = DEFAULTS["analyze_schedule"]
     night_start: int = DEFAULTS["night_start"]
     night_end: int = DEFAULTS["night_end"]

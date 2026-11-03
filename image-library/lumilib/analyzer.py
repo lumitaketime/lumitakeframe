@@ -49,6 +49,24 @@ PROMPTS = {
 Rules: describe only what is visible; never guess the real identity or name of a person.""",
 }
 
+# 快速模式：輸出約少一半，每張照片的時間大約少一半
+PROMPTS_FAST = {
+    "zh-TW": """你是圖片管理系統的標註助手。觀察這張圖片，以繁體中文輸出 JSON：
+- description：1 到 2 句話描述主體、地點與氛圍。
+- tags：8 到 12 個方便搜尋的關鍵字，重要主體附上常見英文詞，例如「狗」與「dog」。
+- objects：最多 8 個看得到的物品。
+- scene：一個詞描述場景類型，例如：室內、街道、海邊、山區、文件。
+- text_in_image：明顯的標題或招牌文字，最多 50 字，沒有就輸出空字串。
+規則：只描述看得到的內容；不要猜測人物的真實身分或姓名。""",
+    "en": """You are the tagging assistant of a photo library. Look at the image and output JSON:
+- description: 1-2 sentences about the subject, place and mood.
+- tags: 8-12 search keywords.
+- objects: up to 8 visible objects.
+- scene: one short phrase for the scene type.
+- text_in_image: prominent title or sign text, at most 50 characters, or an empty string.
+Rules: describe only what is visible; never guess the real identity or name of a person.""",
+}
+
 VIDEO_HINT = {
     "zh-TW": "\n這是一段影片，依時間順序附上 {n} 個畫面，請描述整段影片的內容與發生的事。",
     "en": "\nThis is a video; {n} frames are attached in chronological order. Describe the whole clip.",
@@ -324,7 +342,8 @@ def build_prompt(cfg: Config, image, frames: int = 1) -> str:
     date = ""
     if image["taken_at"]:
         date = f"，拍攝時間 {image['taken_at'][:10]}" if lang == "zh-TW" else f", taken {image['taken_at'][:10]}"
-    prompt = cfg.analysis_prompt.strip() or PROMPTS[lang]
+    base = PROMPTS_FAST if cfg.analysis_detail == "fast" else PROMPTS
+    prompt = cfg.analysis_prompt.strip() or base[lang]
     if image["media_type"] == "video":
         prompt += VIDEO_HINT[lang].format(n=frames)
     return prompt + PATH_HINT[lang].format(path=image["rel_path"], date=date)

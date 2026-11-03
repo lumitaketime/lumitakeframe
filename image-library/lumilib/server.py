@@ -38,7 +38,7 @@ SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces", "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "xmp_sync", "xmp_embed", "stack_enabled", "burst_seconds",
-    "auto_analyze", "analyze_schedule", "night_start", "night_end", "viewer_rating_bar", "nav_hidden", "grid_style", "onboarded",
+    "auto_analyze", "analysis_detail", "analyze_schedule", "night_start", "night_end", "viewer_rating_bar", "nav_hidden", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -689,7 +689,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             if image is None:
                 raise HTTPException(404, "圖庫裡還沒有照片")
             model = str(body.get("model") or cfg.vision_model)
-            out = {"id": image["id"], "name": image["filename"], "model": model, "ok": False}
+            out = {"id": image["id"], "name": image["rel_path"].rsplit("/", 1)[-1], "model": model, "ok": False}
             t0 = time.monotonic()
             try:
                 path = db.absolute_path(c, image)

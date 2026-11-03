@@ -489,6 +489,16 @@
           {/each}
         </div>
       {/if}
+      {#if settings}
+        <div class="detail-pick">
+          <span class="small"><b>分析詳細程度</b></span>
+          <div class="seg">
+            <button class:on={settings.analysis_detail !== "fast"} onclick={() => saveSetting("analysis_detail", "standard")}>標準</button>
+            <button class:on={settings.analysis_detail === "fast"} onclick={() => saveSetting("analysis_detail", "fast")}>快速</button>
+          </div>
+          <span class="tiny muted">{settings.analysis_detail === "fast" ? "描述 1–2 句、8–12 個關鍵字，每張約快一倍" : "描述 2–4 句、10–25 個關鍵字（中英對照）"}</span>
+        </div>
+      {/if}
       {#if models}
         <details class="more">
         <summary>所有視覺模型（含 Gemma 4、Qwen3-VL 各種大小）</summary>
@@ -932,6 +942,11 @@
   details.more { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
   details.more summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--muted); padding: 4px 0; }
   details.more[open] summary { color: var(--text); margin-bottom: 8px; }
+  .detail-pick { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 10px 0 4px; }
+  .detail-pick .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .detail-pick .seg button { border: 0; background: none; color: var(--muted); padding: 4px 16px; font-size: 13px; cursor: pointer; }
+  .detail-pick .seg button + button { border-left: 1px solid var(--line); }
+  .detail-pick .seg button.on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
   .picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 8px 0; }
   .pick { background: var(--bg); border: 2px solid transparent; border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
   .pick.active { border-color: var(--primary); }

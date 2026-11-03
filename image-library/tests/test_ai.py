@@ -325,6 +325,19 @@ class ScheduleTests(unittest.TestCase):
             schedule._power.update(at=0.0, ac=True)
 
 
+class DetailTests(unittest.TestCase):
+    def test_fast_prompt(self):
+        from lumilib.analyzer import build_prompt
+
+        cfg = load_config(tempfile.mkdtemp())
+        image = {"taken_at": None, "media_type": "photo", "rel_path": "a/b.jpg"}
+        standard = build_prompt(cfg, image)
+        cfg.analysis_detail = "fast"
+        fast = build_prompt(cfg, image)
+        self.assertIn("8 到 12", fast)
+        self.assertIn("10 到 25", standard)
+
+
 class SalvageTests(unittest.TestCase):
     def test_truncated_json_keeps_complete_fields(self):
         from lumilib.analyzer import salvage_json

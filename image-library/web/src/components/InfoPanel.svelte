@@ -9,7 +9,7 @@
   import {
     mdiCalendarOutline, mdiCameraIris, mdiCamera, mdiClose, mdiContentCopy, mdiCreation, mdiFileOutline,
     mdiFolderOpenOutline, mdiImageAlbum, mdiMapMarkerOutline, mdiPencilOutline, mdiTagOutline, mdiAlertCircleOutline,
-    mdiTranslate,
+    mdiTranslate, mdiCheck,
   } from "../lib/icons.js";
 
   let { detail, onclose, onchange } = $props();
@@ -18,6 +18,13 @@
   let note = $state("");
   let translated = $state(null);
   let translating = $state(false);
+  let editFaces = $state(false);
+
+  function openFace(f) {
+    if (editFaces || !f.person_id) return fixFace(f);
+    viewer.open = false;
+    navigate(`/people/${f.person_id}`);
+  }
 
   const myKeywords = $derived([...new Set([...(detail?.keywords || []), ...(detail?.user_tags || [])])]);
 
@@ -97,19 +104,25 @@
   {:else}
     <div class="pad">
       {#if detail.faces?.length}
+        <div class="people-head">
+          <h4>人物</h4>
+          <button class="icon-btn" class:on={editFaces} onclick={() => (editFaces = !editFaces)}
+            title={editFaces ? "完成" : "編輯人物"} aria-label={editFaces ? "完成編輯人物" : "編輯人物"}>
+            <Icon path={editFaces ? mdiCheck : mdiPencilOutline} size={18} />
+          </button>
+        </div>
         <div class="faces">
           {#each detail.faces as f (f.id)}
             <div class="face">
-              <button class="face-img" title={f.name || "未命名"} onclick={() => {
-                if (f.person_id) { viewer.open = false; navigate(`/people/${f.person_id}`); } else fixFace(f);
-              }}>
-                <img src={`/api/faces/${f.id}/thumb`} alt="" />
+              <button class="face-img" title={f.name || (f.person_id ? "還沒命名，點一下命名" : "這是誰？")} onclick={() => openFace(f)}>
+                <img src={`/api/faces/${f.id}/thumb`} alt={f.name || ""} />
               </button>
-              <button class="face-name" onclick={() => fixFace(f)} title="更正">{f.name || (f.person_id ? "未命名" : "這是誰？")}</button>
-              {#if f.person_id}<button class="face-x" onclick={() => removeFace(f)} title="不是這個人">×</button>{/if}
+              <span class="face-name" class:unnamed={!f.name}>{f.name || (f.person_id ? "" : "這是誰？")}</span>
+              {#if editFaces && f.person_id}<button class="face-x" onclick={() => removeFace(f)} title="不是這個人" aria-label="不是這個人">×</button>{/if}
             </div>
           {/each}
         </div>
+        {#if editFaces}<p class="muted tiny edit-tip">點臉可以改成正確的人，按 × 表示不是這個人。</p>{/if}
       {/if}
       {#if translated}
         <p class="desc">{translated.description}</p>
@@ -260,17 +273,22 @@
   .pad { padding: 0 18px 28px; }
   .desc { margin: 0 0 12px; line-height: 1.65; }
   .tr { margin: -4px 0 12px; }
-  .faces { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
-  .face { position: relative; display: flex; flex-direction: column; align-items: center; width: 64px; }
-  .face-img { border: 0; padding: 0; background: none; cursor: pointer; }
-  .face-img img { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: var(--bg-2); display: block; }
-  .face-name { border: 0; background: none; color: var(--text); font-size: 12px; cursor: pointer; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 0; }
+  .people-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; }
+  .people-head h4 { margin: 0; }
+  .people-head .icon-btn { width: 32px; height: 32px; color: var(--muted); }
+  .people-head .icon-btn.on { color: var(--primary); background: var(--primary-soft); }
+  .faces { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 10px; margin-bottom: 12px; }
+  .face { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+  .face-img { border: 0; padding: 0; background: none; cursor: pointer; width: 100%; }
+  .face-img img { width: 100%; aspect-ratio: 1; border-radius: 12px; object-fit: cover; background: var(--bg-2); display: block; }
+  .face-img:hover img { outline: 2px solid var(--primary); outline-offset: 2px; }
+  .face-name { font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 0 0; min-height: 20px; }
+  .face-name.unnamed { color: var(--muted); }
   .face-x {
-    position: absolute; top: -4px; right: 0; width: 20px; height: 20px; border-radius: 50%; border: 0; cursor: pointer;
-    background: var(--bg-3); color: var(--text); font-size: 13px; line-height: 1; opacity: 0; transition: opacity .15s;
+    position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: 0; cursor: pointer;
+    background: var(--text); color: var(--bg); font-size: 14px; line-height: 1; box-shadow: var(--shadow);
   }
-  .face:hover .face-x { opacity: 1; }
-  @media (hover: none) { .face-x { opacity: .8; } }
+  .edit-tip { margin: -4px 0 12px; }
   .warn { color: var(--danger); display: flex; gap: 6px; align-items: flex-start; }
   .block { margin-top: 16px; background: var(--bg-2); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
   .row-title { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }

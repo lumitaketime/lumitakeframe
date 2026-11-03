@@ -488,6 +488,16 @@ class ServerTests(LibraryTestCase):
         s = self.post("/api/settings", {"vision_model": "qwen2.5vl:3b", "port": 1}).json()
         self.assertEqual((s["vision_model"], s["port"]), ("qwen2.5vl:3b", 8765))  # port 不能從網頁改
 
+    def test_ai_test_endpoint(self):
+        self.post("/api/jobs", {"kind": "scan"})
+        wait_jobs(self.client)
+        r = self.client.post("/api/ai/test", json={})
+        self.assertEqual(r.status_code, 200, r.text)
+        data = r.json()
+        self.assertTrue(data["ok"], data)
+        self.assertTrue(data["name"].endswith(".jpg"))
+        self.assertTrue(data["result"]["description"])
+
     def test_detail_with_binary_columns(self):
         self.post("/api/jobs", {"kind": "scan"})
         wait_jobs(self.client)
