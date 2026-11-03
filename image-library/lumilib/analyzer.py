@@ -252,7 +252,7 @@ def build_prompt(cfg: Config, image, frames: int = 1) -> str:
     date = ""
     if image["taken_at"]:
         date = f"，拍攝時間 {image['taken_at'][:10]}" if lang == "zh-TW" else f", taken {image['taken_at'][:10]}"
-    prompt = PROMPTS[lang]
+    prompt = cfg.analysis_prompt.strip() or PROMPTS[lang]
     if image["media_type"] == "video":
         prompt += VIDEO_HINT[lang].format(n=frames)
     return prompt + PATH_HINT[lang].format(path=image["rel_path"], date=date)

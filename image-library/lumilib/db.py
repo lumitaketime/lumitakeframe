@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -181,6 +181,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if name not in existing:
             conn.execute(f"ALTER TABLE images ADD COLUMN {name} {ddl}")
     conn.executescript(INDEXES)
+    person_cols = {row[1] for row in conn.execute("PRAGMA table_info(persons)")}
+    if "groups" not in person_cols:
+        conn.execute("ALTER TABLE persons ADD COLUMN groups TEXT")
     if "folder" not in existing:  # 從 v1 升級：補齊資料夾與排序時間
         for row in conn.execute("SELECT id, rel_path, taken_at, mtime FROM images").fetchall():
             conn.execute(
@@ -252,9 +255,11 @@ def refresh_search_text(conn: sqlite3.Connection, image_id: int) -> None:
     row = conn.execute("SELECT * FROM images WHERE id = ?", (image_id,)).fetchone()
     if row is not None:
         data = dict(row)
-        data["people"] = [r[0] for r in conn.execute(
-            "SELECT DISTINCT p.name FROM faces f JOIN persons p ON p.id = f.person_id "
-            "WHERE f.image_id = ? AND p.name IS NOT NULL AND p.name != ''", (image_id,))]
+        people = conn.execute(
+            "SELECT DISTINCT p.name, p.groups FROM faces f JOIN persons p ON p.id = f.person_id WHERE f.image_id = ?",
+            (image_id,),
+        ).fetchall()
+        data["people"] = [p["name"] for p in people if p["name"]] + [g for p in people for g in json_list(p["groups"])]
         if data.get("country"):
             from .places import country_names
 

@@ -8,11 +8,18 @@
   import {
     mdiHarddisk, mdiRefresh, mdiPencilOutline, mdiDeleteOutline, mdiPlus, mdiCreation, mdiCheck, mdiDownload,
     mdiCellphone, mdiStop, mdiThemeLightDark, mdiServerNetwork, mdiAlertCircleOutline, mdiFaceRecognition,
-    mdiImageSearchOutline, mdiStar,
+    mdiImageSearchOutline, mdiStar, mdiTuneVariant,
   } from "../lib/icons.js";
 
   let roots = $state([]);
   let faceModels = $state([]);
+  let ollamaUrl = $state("");
+  let ollamaTest = $state("");
+  let prompt = $state("");
+  let textModel = $state("");
+  let embedCustom = $state("");
+  let clipRepo = $state("");
+  let faceCustom = $state({ url: "", det: "", rec: "" });
   let clipModels = $state([]);
   let models = $state(null);
   let settings = $state(null);
@@ -60,6 +67,11 @@
 
   async function loadAll() {
     [roots, settings, lan] = await Promise.all([api("/api/roots"), api("/api/settings"), api("/api/lan")]);
+    ollamaUrl = settings.ollama_url;
+    prompt = settings.analysis_prompt || "";
+    textModel = settings.text_model || "";
+    clipRepo = settings.clip_custom_repo || "";
+    faceCustom = { url: settings.face_custom_url, det: settings.face_custom_det, rec: settings.face_custom_rec };
     models = await api("/api/models");
     loadExtra();
   }
@@ -190,6 +202,19 @@
     } catch (e) {
       toast(e.message, "error");
     }
+  }
+
+  async function testOllama() {
+    ollamaTest = "測試中…";
+    const r = await api("/api/ollama/test", { body: { url: ollamaUrl } });
+    ollamaTest = r.ok ? `✓ 已連線，有 ${r.count} 個模型` : `✗ ${r.error}`;
+  }
+
+  async function saveMany(values, message = "已儲存") {
+    settings = await api("/api/settings", { body: values });
+    toast(message);
+    loadExtra();
+    models = await api("/api/models").catch(() => models);
   }
 
   async function saveSetting(key, value) {
@@ -414,6 +439,80 @@
     {/if}
   </section>
 
+  <!-- 自訂模型 -->
+  <section class="card" id="custom-models">
+    <h2><Icon path={mdiTuneVariant} />自訂模型與進階設定</h2>
+    <p class="muted small">推薦清單之外，任何模型都可以自己指定。改了模型或提示詞之後，可到資料夾或相簿按「AI 分析」重新分析。</p>
+    {#if settings && models}
+      <h3>Ollama 位址</h3>
+      <div class="row">
+        <input class="input" bind:value={ollamaUrl} placeholder="http://127.0.0.1:11434" />
+        <button class="btn ghost" onclick={testOllama}>測試</button>
+        <button class="btn" disabled={ollamaUrl === settings.ollama_url} onclick={() => saveMany({ ollama_url: ollamaUrl.trim() }, "已更新 Ollama 位址")}>儲存</button>
+      </div>
+      {#if ollamaTest}<p class="small">{ollamaTest}</p>{/if}
+      <p class="muted tiny">可以指向區網內另一台有更強顯示卡的電腦，例如 http://192.168.1.30:11434（那台的 Ollama 需設定 OLLAMA_HOST=0.0.0.0）。照片會透過區網傳過去分析。</p>
+
+      <h3>視覺模型（描述照片）</h3>
+      <div class="row">
+        <select class="input" value={settings.vision_model} onchange={(e) => useModel("vision", e.currentTarget.value)}>
+          {#if !models.installed.some((m) => sameModel(m.name, settings.vision_model))}<option value={settings.vision_model}>{settings.vision_model}（{models.ollama_ok ? "未下載" : "Ollama 未連線"}）</option>{/if}
+          {#each models.installed as m (m.name)}<option value={m.name}>{m.name}{m.parameter_size ? ` · ${m.parameter_size}` : ""} · {bytes(m.size)}</option>{/each}
+        </select>
+      </div>
+      <p class="muted tiny">清單是 Ollama 已下載的所有模型；要用沒下載的模型，在上方「AI 模型」區最下面輸入名稱並下載。請選支援圖片輸入的模型（例如 qwen2.5vl、gemma3、llava、minicpm-v）。</p>
+
+      <h3>搜尋翻譯用的文字模型</h3>
+      <div class="row">
+        <select class="input" bind:value={textModel}>
+          <option value="">與視覺模型相同（{settings.vision_model}）</option>
+          {#each models.installed as m (m.name)}<option value={m.name}>{m.name}</option>{/each}
+        </select>
+        <button class="btn" disabled={textModel === (settings.text_model || "")} onclick={() => saveMany({ text_model: textModel }, "已更新搜尋翻譯模型")}>儲存</button>
+      </div>
+      <p class="muted tiny">智慧搜尋把查詢翻成中英文同義詞、以及「翻譯成中文」時使用。用小一點的純文字模型（例如 qwen2.5:3b）搜尋會更快。</p>
+
+      <h3>語意搜尋向量模型</h3>
+      <div class="row">
+        <select class="input" value={settings.embed_model} onchange={async (e) => { await useModel("embed", e.currentTarget.value); if (e.currentTarget.value) job("embed"); }}>
+          <option value="">不使用</option>
+          {#if settings.embed_model && !models.installed.some((m) => sameModel(m.name, settings.embed_model))}<option value={settings.embed_model}>{settings.embed_model}（{models.ollama_ok ? "未下載" : "Ollama 未連線"}）</option>{/if}
+          {#each models.installed as m (m.name)}<option value={m.name}>{m.name}</option>{/each}
+        </select>
+      </div>
+      <div class="row">
+        <input class="input" bind:value={embedCustom} placeholder="其他向量模型名稱，例如 nomic-embed-text" />
+        <button class="btn ghost" disabled={!embedCustom.trim()} onclick={() => pull(embedCustom.trim())}>下載</button>
+        <button class="btn ghost" disabled={!embedCustom.trim()} onclick={async () => { await useModel("embed", embedCustom.trim()); job("embed"); }}>使用</button>
+      </div>
+
+      <h3>AI 描述提示詞</h3>
+      <textarea class="input prompt" rows="9" bind:value={prompt} placeholder={settings.default_prompt}></textarea>
+      <div class="row">
+        <button class="btn" disabled={prompt === (settings.analysis_prompt || "")} onclick={() => saveMany({ analysis_prompt: prompt }, "已更新提示詞")}>儲存</button>
+        <button class="btn ghost" onclick={() => (prompt = settings.default_prompt)}>從內建提示詞開始改</button>
+        <button class="btn ghost" disabled={!settings.analysis_prompt} onclick={() => { prompt = ""; saveMany({ analysis_prompt: "" }, "已恢復內建提示詞"); }}>恢復內建</button>
+      </div>
+      <p class="muted tiny">空白時使用內建提示詞（灰字）。自訂時請保留要求輸出 description、tags、objects、scene、text_in_image 的說明；程式會自動附上檔案路徑與拍攝日期作為參考。</p>
+
+      <h3>自訂圖像搜尋模型（CLIP）</h3>
+      <div class="row">
+        <input class="input" bind:value={clipRepo} placeholder="Hugging Face 儲存庫，例如 immich-app/ViT-B-16-SigLIP2__webli" />
+        <button class="btn ghost" disabled={!clipRepo.trim() || clipRepo === settings.clip_custom_repo} onclick={() => saveMany({ clip_custom_repo: clipRepo.trim() }, "已儲存，請到「智慧搜尋」區下載「自訂模型」")}>儲存</button>
+      </div>
+      <p class="muted tiny">需為 Immich 格式（含 visual/model.onnx 與 textual/model.onnx）。Immich 的模型清單：huggingface.co/immich-app。</p>
+
+      <h3>自訂人臉模型（InsightFace 格式）</h3>
+      <div class="row wrap">
+        <input class="input" bind:value={faceCustom.url} placeholder="模型 zip 網址" />
+        <input class="input short" bind:value={faceCustom.det} placeholder="偵測檔名，例如 det_10g.onnx" />
+        <input class="input short" bind:value={faceCustom.rec} placeholder="特徵檔名，例如 w600k_r50.onnx" />
+        <button class="btn ghost" disabled={!faceCustom.url || !faceCustom.det || !faceCustom.rec}
+          onclick={() => saveMany({ face_custom_url: faceCustom.url.trim(), face_custom_det: faceCustom.det.trim(), face_custom_rec: faceCustom.rec.trim() }, "已儲存，請到「人臉辨識」區下載「自訂模型」")}>儲存</button>
+      </div>
+    {/if}
+  </section>
+
   <!-- Lightroom 與疊放 -->
   <section class="card" id="lightroom">
     <h2><Icon path={mdiStar} />Lightroom 同步與疊放</h2>
@@ -465,11 +564,11 @@
           {@const active = settings.face_model === m.name}
           <div class="model" class:active>
             <div class="mhead"><b>{m.label}</b></div>
-            <div class="tiny muted">下載約 {m.download_mb} MB · 安裝後 {m.disk_mb} MB</div>
+            {#if m.download_mb}<div class="tiny muted">下載約 {m.download_mb} MB · 安裝後 {m.disk_mb} MB</div>{/if}
             <p class="small">{m.note}</p>
             <div class="row">
               {#if !m.installed}
-                <button class="btn small soft" disabled={!!busyModel} onclick={() => job("face_model", { model: m.name })}>
+                <button class="btn small soft" disabled={!!busyModel || (m.custom && !m.url)} onclick={() => job("face_model", { model: m.name })}>
                   <Icon path={mdiDownload} size={16} />{busyModel === m.name ? "下載中…" : "下載"}
                 </button>
               {/if}
@@ -542,7 +641,7 @@
             <p class="small">{m.note}</p>
             <div class="row">
               {#if !m.installed}
-                <button class="btn small soft" disabled={!!busyModel} onclick={() => job("clip_model", { model: m.name })}>
+                <button class="btn small soft" disabled={!!busyModel || (m.custom && !m.repo)} onclick={() => job("clip_model", { model: m.name })}>
                   <Icon path={mdiDownload} size={16} />{busyModel === m.name ? "下載中…" : "下載"}
                 </button>
               {/if}
@@ -663,6 +762,8 @@
   .qr-row { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   .qr { width: 170px; height: 170px; background: #fff; border-radius: 12px; padding: 6px; }
   .qr :global(svg) { width: 100%; height: 100%; }
+  .prompt { font-family: ui-monospace, Menlo, monospace; font-size: 12px; resize: vertical; margin-bottom: 8px; }
+  .short { max-width: 260px; }
   code { background: var(--bg); padding: 2px 8px; border-radius: 6px; font-size: 13px; word-break: break-all; }
   .sys { margin: 14px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
   @media (max-width: 760px) {

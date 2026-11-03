@@ -10,5 +10,5 @@ export {
   mdiCheckboxMarkedCircle, mdiCheckboxBlankCircleOutline, mdiPlayCircle, mdiArrowUp, mdiFolderHome,
   mdiAccountBoxOutline, mdiAccountMultiplePlusOutline, mdiAccountRemoveOutline, mdiEyeOffOutline, mdiEyeOutline,
   mdiFaceRecognition, mdiTranslate, mdiImageSearchOutline,
-  mdiStar, mdiStarOutline, mdiFlagRemove, mdiLayers, mdiLayersOff, mdiContentDuplicate, mdiAutoFix, mdiHistory, mdiImageFilterCenterFocus,
+  mdiStar, mdiStarOutline, mdiCameraOutline, mdiTagMultipleOutline, mdiAccountGroupOutline, mdiTuneVariant, mdiCloseCircle, mdiFlagRemove, mdiLayers, mdiLayersOff, mdiContentDuplicate, mdiAutoFix, mdiHistory, mdiImageFilterCenterFocus,
 } from "@mdi/js";

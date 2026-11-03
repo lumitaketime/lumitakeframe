@@ -37,6 +37,7 @@ SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces", "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "xmp_sync", "xmp_embed", "stack_enabled", "burst_seconds",
+    "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
 
@@ -565,6 +566,70 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    # ---- 器材與關鍵字 ----
+    @app.get("/api/gear")
+    def gear_stats():
+        from . import gear
+
+        c = conn()
+        try:
+            return gear.stats(c)
+        finally:
+            c.close()
+
+    @app.get("/api/gear/assets")
+    def gear_assets(camera: str | None = None, lens: str | None = None, focal: str | None = None,
+                    aperture: str | None = None, iso: str | None = None):
+        from . import gear
+
+        c = conn()
+        try:
+            rows = gear.assets(c, camera=camera, lens=lens, focal=focal, aperture=aperture, iso=iso)
+            return {"count": len(rows), "assets": [summarize(r) for r in rows]}
+        finally:
+            c.close()
+
+    @app.get("/api/keywords")
+    def keywords(source: str = "all", year: str | None = None, limit: int = 300):
+        from . import gear
+
+        c = conn()
+        try:
+            return {"keywords": gear.keyword_counts(c, source, year, max(10, min(limit, 1000))), "years": gear.years(c)}
+        finally:
+            c.close()
+
+    @app.get("/api/people/groups")
+    def people_groups():
+        from .faces import all_groups
+
+        c = conn()
+        try:
+            return all_groups(c)
+        finally:
+            c.close()
+
+    @app.post("/api/people/groups")
+    def assign_groups(body: dict = Body(...)):
+        from .faces import set_groups
+
+        c = conn()
+        try:
+            ids = [int(i) for i in body.get("ids") or []]
+            set_groups(c, ids, add=body.get("add"), remove=body.get("remove"), replace=body.get("replace"))
+            return {"ok": True}
+        finally:
+            c.close()
+
+    @app.post("/api/ollama/test")
+    def ollama_test(body: dict = Body(...)):
+        url = str(body.get("url") or cfg.ollama_url).strip().rstrip("/")
+        try:
+            models = OllamaClient(url, 8).installed()
+            return {"ok": True, "count": len(models)}
+        except OllamaUnavailable as exc:
+            return {"ok": False, "error": str(exc)}
+
     # ---- 人物（人臉辨識） ----
     @app.get("/api/people")
     def people(all: int = 0):
@@ -606,6 +671,10 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 rename_person(c, person_id, str(body["name"] or ""))
             if "hidden" in body:
                 c.execute("UPDATE persons SET hidden = ? WHERE id = ?", (1 if body["hidden"] else 0, person_id))
+            if isinstance(body.get("groups"), list):
+                from .faces import set_groups
+
+                set_groups(c, [person_id], replace=[str(g) for g in body["groups"]])
             if body.get("cover_face_id"):
                 c.execute("UPDATE persons SET cover_face_id = ? WHERE id = ?", (int(body["cover_face_id"]), person_id))
             c.commit()
@@ -659,34 +728,44 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     def clip_models():
         from .clip import CLIP_MODELS, model_installed
 
-        return [
+        items = [
             {"name": k, **v, "installed": model_installed(cfg, k), "active": k == cfg.clip_model}
             for k, v in CLIP_MODELS.items()
         ]
+        items.append({
+            "name": "custom", "repo": cfg.clip_custom_repo, "label": "自訂模型（Hugging Face）",
+            "multilingual": None, "note": cfg.clip_custom_repo or "在下方輸入 Immich 格式的儲存庫名稱",
+            "installed": model_installed(cfg, "custom"), "active": cfg.clip_model == "custom", "custom": True,
+        })
+        return items
 
     @app.post("/api/clip/models/delete")
     def delete_clip_model(body: dict = Body(...)):
         from .clip import CLIP_MODELS, delete_model
 
-        if body.get("name") not in CLIP_MODELS:
+        if body.get("name") not in CLIP_MODELS and body.get("name") != "custom":
             raise HTTPException(400, "未知的模型")
         delete_model(cfg, body["name"])
         return {"ok": True}
 
     @app.get("/api/faces/models")
     def face_models():
-        from .faces import FACE_MODELS, model_installed
+        from .faces import FACE_MODELS, model_info, model_installed
 
-        return [
+        items = [
             {"name": k, **v, "installed": model_installed(cfg, k), "active": k == cfg.face_model}
             for k, v in FACE_MODELS.items()
         ]
+        custom = model_info(cfg, "custom") or {"label": "自訂模型", "note": "在下方輸入 InsightFace 格式 zip 的網址與檔名"}
+        items.append({"name": "custom", **custom, "installed": model_installed(cfg, "custom"),
+                      "active": cfg.face_model == "custom", "custom": True})
+        return items
 
     @app.post("/api/faces/models/delete")
     def delete_face_model(body: dict = Body(...)):
         from .faces import FACE_MODELS, delete_model
 
-        if body.get("name") not in FACE_MODELS:
+        if body.get("name") not in FACE_MODELS and body.get("name") != "custom":
             raise HTTPException(400, "未知的人臉模型")
         delete_model(cfg, body["name"])
         return {"ok": True}
@@ -715,7 +794,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             groups, english = None, ""
             if smart and cfg.query_rewrite and terms:
                 try:
-                    rw = rewrite_query(client_factory(), cfg.vision_model, terms)
+                    rw = rewrite_query(client_factory(), cfg.search_model, terms)
                     groups, english = rw["groups"], rw["english"]
                 except Exception as exc:  # 改寫失敗不能讓搜尋失敗
                     warnings.append(f"智慧搜尋暫時無法使用（{exc}），只用原始關鍵字")
@@ -724,8 +803,9 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 from . import clip as clipmod
 
                 if clipmod.model_installed(cfg, cfg.clip_model):
-                    texts = [q if clipmod.is_multilingual(cfg.clip_model) else (english or q)]
-                    if english and clipmod.is_multilingual(cfg.clip_model):
+                    multi = clipmod.is_multilingual(cfg.clip_model, cfg)
+                    texts = [q if multi else (english or q)]
+                    if english and multi:
                         texts.append(english)
 
                     def clip_rank(_texts, allowed, _c=c, _t=texts):
@@ -757,7 +837,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         if not image["description"]:
             raise HTTPException(400, "這張還沒有 AI 描述")
         try:
-            return translate_analysis(client_factory(), cfg.vision_model, image["description"],
+            return translate_analysis(client_factory(), cfg.search_model, image["description"],
                                       db.json_list(image["tags"]), body.get("language") or cfg.language)
         except OllamaUnavailable as exc:
             raise HTTPException(503, str(exc))
@@ -1031,7 +1111,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             "recommended": [
                 {**m, "installed": any(same_model(m["name"], n) for n in names)} for m in RECOMMENDED
             ],
-            "active": {"vision": cfg.vision_model, "embed": cfg.embed_model},
+            "active": {"vision": cfg.vision_model, "embed": cfg.embed_model, "text": cfg.text_model},
+            "ollama_url": cfg.ollama_url,
         }
 
     @app.post("/api/models/delete")
@@ -1041,14 +1122,17 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     @app.get("/api/settings")
     def settings():
-        return {k: getattr(cfg, k) for k in CONFIG_KEYS}
+        from .analyzer import PROMPTS
+
+        return {**{k: getattr(cfg, k) for k in CONFIG_KEYS},
+                "default_prompt": PROMPTS.get(cfg.language, PROMPTS["zh-TW"])}
 
     @app.post("/api/settings")
     def save_settings(body: dict = Body(...)):
         if "face_model" in body and body["face_model"] != cfg.face_model:
             from .faces import FACE_MODELS, clear_all
 
-            if body["face_model"] not in FACE_MODELS:
+            if body["face_model"] not in FACE_MODELS and body["face_model"] != "custom":
                 raise HTTPException(400, "未知的人臉模型")
             c = conn()
             try:

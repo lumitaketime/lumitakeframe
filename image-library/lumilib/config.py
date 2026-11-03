@@ -16,6 +16,10 @@ DEFAULTS = {
     "vision_model": "qwen2.5vl:7b",
     # 向量模型：選用，用於語意搜尋（輸入「海邊夕陽」也能找到描述為「黃昏的沙灘」的照片）
     "embed_model": "",
+    # 文字模型：搜尋詞翻譯、描述翻譯用（空白＝使用視覺模型）
+    "text_model": "",
+    # 自訂 AI 描述提示詞（空白＝使用內建提示詞）
+    "analysis_prompt": "",
     # 模型輸出語言
     "language": "zh-TW",
     # 送進模型前把長邊縮到這個像素，越大越慢但細節越多
@@ -47,6 +51,12 @@ DEFAULTS = {
     # 多語言 CLIP 圖像搜尋（文字直接比對畫面）
     "clip_enabled": 0,
     "clip_model": "xlm-roberta-base-vit-b32",
+    # 自訂 CLIP：Hugging Face 上 Immich 格式（visual/、textual/ ONNX）的儲存庫，例如 immich-app/ViT-B-16-SigLIP2__webli
+    "clip_custom_repo": "",
+    # 自訂人臉模型：InsightFace 格式的 zip 網址與其中的偵測／特徵檔名
+    "face_custom_url": "",
+    "face_custom_det": "",
+    "face_custom_rec": "",
 }
 
 ENV_PREFIX = "LUMILIB_"
@@ -58,6 +68,8 @@ class Config:
     ollama_url: str = DEFAULTS["ollama_url"]
     vision_model: str = DEFAULTS["vision_model"]
     embed_model: str = DEFAULTS["embed_model"]
+    text_model: str = DEFAULTS["text_model"]
+    analysis_prompt: str = DEFAULTS["analysis_prompt"]
     language: str = DEFAULTS["language"]
     analyze_max_side: int = DEFAULTS["analyze_max_side"]
     thumb_size: int = DEFAULTS["thumb_size"]
@@ -77,6 +89,15 @@ class Config:
     query_rewrite: int = DEFAULTS["query_rewrite"]
     clip_enabled: int = DEFAULTS["clip_enabled"]
     clip_model: str = DEFAULTS["clip_model"]
+    clip_custom_repo: str = DEFAULTS["clip_custom_repo"]
+    face_custom_url: str = DEFAULTS["face_custom_url"]
+    face_custom_det: str = DEFAULTS["face_custom_det"]
+    face_custom_rec: str = DEFAULTS["face_custom_rec"]
+
+    @property
+    def search_model(self) -> str:
+        """搜尋詞翻譯與描述翻譯用的模型。"""
+        return self.text_model.strip() or self.vision_model
 
     @property
     def db_path(self) -> Path:

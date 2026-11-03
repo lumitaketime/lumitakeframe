@@ -84,10 +84,10 @@
     {/if}
 
     {#if data.cameras.length}
-      <h2 class="section-title">相機</h2>
+      <h2 class="section-title"><a href="/gear" use:link class="more">相機與鏡頭 →</a></h2>
       <div class="chips">
         {#each data.cameras as c (c.value)}
-          <button class="chip" onclick={() => go(`camera:${q(c.value)}`)}>{c.value}<span class="muted">{c.count}</span></button>
+          <button class="chip" onclick={() => navigate(`/gear?camera=${encodeURIComponent(c.value)}`)}>{c.value}<span class="muted">{c.count}</span></button>
         {/each}
       </div>
     {/if}
@@ -95,7 +95,7 @@
       <h2 class="section-title">鏡頭</h2>
       <div class="chips">
         {#each data.lenses as l (l.value)}
-          <button class="chip" onclick={() => go(`lens:${q(l.value)}`)}>{l.value}<span class="muted">{l.count}</span></button>
+          <button class="chip" onclick={() => navigate(`/gear?lens=${encodeURIComponent(l.value)}`)}>{l.value}<span class="muted">{l.count}</span></button>
         {/each}
       </div>
     {/if}

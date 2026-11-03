@@ -35,6 +35,24 @@ FACE_MODELS = {
         "rec": "w600k_r50.onnx",
         "note": "辨識最準，M1 每張約 0.05–0.1 秒，十萬張約 2–3 小時。",
     },
+    "antelopev2": {
+        "label": "antelopev2（最準、較慢）",
+        "url": "https://github.com/deepinsight/insightface/releases/download/v0.7/antelopev2.zip",
+        "download_mb": 361,
+        "disk_mb": 277,
+        "det": "scrfd_10g_bnkps.onnx",
+        "rec": "glintr100.onnx",
+        "note": "辨識特徵最強，速度約 buffalo_l 的一半，適合人像攝影師。",
+    },
+    "buffalo_m": {
+        "label": "buffalo_m（均衡）",
+        "url": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_m.zip",
+        "download_mb": 276,
+        "disk_mb": 178,
+        "det": "det_2.5g.onnx",
+        "rec": "w600k_r50.onnx",
+        "note": "與 buffalo_l 相同的辨識特徵，偵測稍快。",
+    },
     "buffalo_s": {
         "label": "buffalo_s（輕量）",
         "url": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip",
@@ -44,7 +62,28 @@ FACE_MODELS = {
         "rec": "w600k_mbf.onnx",
         "note": "檔案小、速度快，側臉與小臉較容易漏掉。",
     },
+    "buffalo_sc": {
+        "label": "buffalo_sc（最小）",
+        "url": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_sc.zip",
+        "download_mb": 15,
+        "disk_mb": 16,
+        "det": "det_500m.onnx",
+        "rec": "w600k_mbf.onnx",
+        "note": "只有偵測與特徵兩個檔案，下載最快。",
+    },
 }
+
+
+def model_info(cfg: Config, name: str) -> dict | None:
+    """內建模型或「custom」自訂模型（InsightFace 格式的 zip）。"""
+    if name == "custom":
+        if not (cfg.face_custom_url and cfg.face_custom_det and cfg.face_custom_rec):
+            return None
+        return {
+            "label": "自訂模型", "url": cfg.face_custom_url, "det": cfg.face_custom_det, "rec": cfg.face_custom_rec,
+            "download_mb": None, "disk_mb": None, "note": cfg.face_custom_url,
+        }
+    return FACE_MODELS.get(name)
 
 # ArcFace 標準 112×112 對齊位置：左眼、右眼、鼻尖、左嘴角、右嘴角
 ARCFACE_DST = np.array(
@@ -63,13 +102,15 @@ def model_dir(cfg: Config, name: str) -> Path:
 
 
 def model_installed(cfg: Config, name: str) -> bool:
-    info = FACE_MODELS.get(name)
+    info = model_info(cfg, name)
     return bool(info) and all((model_dir(cfg, name) / info[k]).exists() for k in ("det", "rec"))
 
 
 def download_model(cfg: Config, name: str, progress: Callable[[str, int, int], None] | None = None,
                    stop: threading.Event | None = None) -> None:
-    info = FACE_MODELS[name]
+    info = model_info(cfg, name)
+    if info is None:
+        raise ValueError("自訂人臉模型尚未設定網址與檔名")
     target = model_dir(cfg, name)
     target.mkdir(parents=True, exist_ok=True)
     tmp = target / "download.zip.part"
@@ -170,8 +211,8 @@ class FaceEngine:
 
     @classmethod
     def load(cls, cfg: Config, name: str) -> "FaceEngine":
-        info = FACE_MODELS[name]
-        if not model_installed(cfg, name):
+        info = model_info(cfg, name)
+        if info is None or not model_installed(cfg, name):
             raise MediaError(f"人臉模型 {name} 尚未下載，請到設定頁下載")
         return cls(model_dir(cfg, name) / info["det"], model_dir(cfg, name) / info["rec"])
 
@@ -492,6 +533,42 @@ def remove_images_from_person(conn: sqlite3.Connection, person_id: int, image_id
     return len(rows)
 
 
+DEFAULT_GROUPS = ["家人", "朋友", "同事", "客戶", "模特兒"]
+
+
+def set_groups(conn: sqlite3.Connection, person_ids: list[int], add: list[str] | None = None,
+               remove: list[str] | None = None, replace: list[str] | None = None) -> None:
+    """人物分類（家人、同事、客戶…），可多選；分類名稱也能直接搜尋。"""
+    import json
+
+    for pid in person_ids:
+        row = conn.execute("SELECT groups FROM persons WHERE id = ?", (pid,)).fetchone()
+        if row is None:
+            continue
+        current = db.json_list(row["groups"])
+        if replace is not None:
+            current = []
+            add = replace
+        for g in add or []:
+            g = str(g).strip()
+            if g and g not in current:
+                current.append(g)
+        current = [g for g in current if g not in set(remove or [])]
+        conn.execute("UPDATE persons SET groups = ?, updated_at = ? WHERE id = ?",
+                     (json.dumps(current, ensure_ascii=False) if current else None, db.now_iso(), pid))
+        _refresh_person_images(conn, pid)
+    conn.commit()
+
+
+def all_groups(conn: sqlite3.Connection) -> list[dict]:
+    counts: dict[str, int] = {}
+    for row in conn.execute("SELECT groups FROM persons WHERE groups IS NOT NULL"):
+        for g in db.json_list(row["groups"]):
+            counts[g] = counts.get(g, 0) + 1
+    names = list(counts) + [g for g in DEFAULT_GROUPS if g not in counts]
+    return [{"name": g, "count": counts.get(g, 0)} for g in sorted(names, key=lambda g: (-counts.get(g, 0), names.index(g)))]
+
+
 def list_persons(conn: sqlite3.Connection, include_hidden: bool = False, min_count: int = 1) -> list[dict]:
     rows = conn.execute(
         f"""SELECT p.*, COUNT(DISTINCT f.image_id) AS count
@@ -501,4 +578,9 @@ def list_persons(conn: sqlite3.Connection, include_hidden: bool = False, min_cou
             ORDER BY (p.name IS NULL OR p.name = ''), count DESC""",
         (min_count,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["groups"] = db.json_list(d.get("groups"))
+        out.append(d)
+    return out

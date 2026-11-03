@@ -214,5 +214,93 @@ class SmartAndMemoryTests(Base):
         self.assertEqual([(m["year"], m["years_ago"]) for m in mem], [(2023, 3), (2021, 5)])
 
 
+class GearKeywordGroupTests(Base):
+    def setUp(self):
+        super().setUp()
+        specs = [("a.jpg", "X-T5", "XF56mm", 85, 1.2, 160), ("b.jpg", "X-T5", "XF16mm", 24, 2.8, 3200),
+                 ("c.jpg", "X100VI", "", 35, 2.0, 400), ("d.jpg", "X-T50", "XF56mm", 85, 1.4, 12800)]
+        for name, model, lens, focal, ap, iso in specs:
+            jpeg(self.photos / name, model=model, taken="2024:05:01 10:00:00")
+        scan_all(self.conn, self.cfg)
+        for name, model, lens, focal, ap, iso in specs:
+            self.conn.execute("UPDATE images SET lens = ?, focal_35 = ?, aperture = ?, iso = ? WHERE rel_path = ?",
+                              (lens or None, focal, ap, iso, name))
+        self.conn.commit()
+
+    def test_gear_stats_and_exact_filters(self):
+        from lumilib import gear
+
+        st = gear.stats(self.conn)
+        self.assertEqual([(c["name"], c["count"]) for c in st["cameras"]][0], ("FUJIFILM X-T5", 2))
+        self.assertEqual({l["name"]: l["count"] for l in st["lenses"]}, {"XF56mm": 2, "XF16mm": 1})
+        tele = next(b for b in st["focal"] if b["label"] == "中望遠")
+        self.assertEqual(tele["count"], 2)
+        # 完全比對：X-T5 不會包含 X-T50
+        self.assertEqual(len(gear.assets(self.conn, camera="FUJIFILM X-T5")), 2)
+        self.assertEqual(len(gear.assets(self.conn, lens="XF56mm", aperture="0-1.3")), 1)
+        self.assertEqual(len(gear.assets(self.conn, iso="800-12800")), 2)  # 區間不含下限、含上限（與統計分組一致）
+        # 搜尋語法的範圍篩選
+        self.assertEqual(search(self.conn, "focal:24-50")["total"], 2)
+        self.assertEqual(search(self.conn, "f:1.4")["total"], 1)
+        self.assertEqual(search(self.conn, "iso:3200-12800")["total"], 2)
+
+    def test_keyword_counts(self):
+        from lumilib import gear
+
+        for name, tags, kws in (("a.jpg", ["海邊", "人像"], ["作品集"]), ("b.jpg", ["海邊", "Beach"], []),
+                                ("c.jpg", ["beach"], ["作品集", "海邊"])):
+            self.conn.execute("UPDATE images SET tags = ?, keywords = ? WHERE rel_path = ?",
+                              (json.dumps(tags, ensure_ascii=False), json.dumps(kws, ensure_ascii=False), name))
+        self.conn.commit()
+        top = gear.keyword_counts(self.conn)
+        self.assertEqual(top[0], {"tag": "海邊", "count": 3, "kind": "mine"})
+        self.assertIn({"tag": "Beach", "count": 2, "kind": "ai"}, top)  # 不分大小寫合併
+        self.assertEqual([k["tag"] for k in gear.keyword_counts(self.conn, "mine")], ["作品集", "海邊"])
+
+    def test_person_groups_searchable(self):
+        import numpy as np
+
+        from lumilib import faces
+
+        ids = [self.image(n)["id"] for n in ("a.jpg", "b.jpg")]
+        vec = (np.ones(512) / np.sqrt(512)).astype("float32").tobytes()
+        now = db.now_iso()
+        pid = self.conn.execute("INSERT INTO persons (name, created_at, updated_at) VALUES ('王小明', ?, ?)", (now, now)).lastrowid
+        for i in ids:
+            self.conn.execute("INSERT INTO faces (image_id, person_id, embedding, model, created_at) VALUES (?, ?, ?, 'm', ?)",
+                              (i, pid, vec, now))
+        self.conn.commit()
+        faces.set_groups(self.conn, [pid], add=["客戶", "婚禮"])
+        self.assertEqual(search(self.conn, "group:客戶")["total"], 2)
+        self.assertEqual(search(self.conn, "客戶")["total"], 2)
+        self.assertEqual(faces.list_persons(self.conn)[0]["groups"], ["客戶", "婚禮"])
+        faces.set_groups(self.conn, [pid], remove=["客戶"])
+        self.assertEqual(search(self.conn, "group:客戶")["total"], 0)
+        self.assertEqual(faces.all_groups(self.conn)[0], {"name": "婚禮", "count": 1})
+
+
+class CustomModelTests(Base):
+    def test_custom_prompt_text_model_and_custom_entries(self):
+        from lumilib import clip, faces
+        from lumilib.analyzer import build_prompt
+
+        jpeg(self.photos / "a.jpg")
+        scan_all(self.conn, self.cfg)
+        row = self.image("a.jpg")
+        self.assertIn("標註助手", build_prompt(self.cfg, row))
+        self.cfg.analysis_prompt = "只用英文列出畫面中的器材。"
+        self.assertTrue(build_prompt(self.cfg, row).startswith("只用英文列出畫面中的器材。"))
+        self.assertEqual(self.cfg.search_model, self.cfg.vision_model)
+        self.cfg.text_model = "qwen3:8b"
+        self.assertEqual(self.cfg.search_model, "qwen3:8b")
+        self.assertIsNone(faces.model_info(self.cfg, "custom"))
+        self.cfg.face_custom_url, self.cfg.face_custom_det, self.cfg.face_custom_rec = "https://x/y.zip", "d.onnx", "r.onnx"
+        self.assertEqual(faces.model_info(self.cfg, "custom")["det"], "d.onnx")
+        self.assertIsNone(clip.repo_for(self.cfg, "custom"))
+        self.cfg.clip_custom_repo = "immich-app/ViT-B-16-SigLIP2__webli"
+        self.assertEqual(clip.repo_for(self.cfg, "custom"), "immich-app/ViT-B-16-SigLIP2__webli")
+        self.assertTrue(clip.is_multilingual("custom", self.cfg))
+
+
 if __name__ == "__main__":
     unittest.main()

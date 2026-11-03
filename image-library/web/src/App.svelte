@@ -15,6 +15,8 @@
   import MapPage from "./pages/MapPage.svelte";
   import People from "./pages/People.svelte";
   import Duplicates from "./pages/Duplicates.svelte";
+  import Gear from "./pages/Gear.svelte";
+  import Keywords from "./pages/Keywords.svelte";
   import SmartAlbum from "./pages/SmartAlbum.svelte";
   import Person from "./pages/Person.svelte";
   import Settings from "./pages/Settings.svelte";
@@ -24,7 +26,7 @@
   import { route, navigate, link } from "./lib/router.svelte.js";
   import {
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
-    mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiAccountBoxOutline, mdiContentDuplicate,
+    mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiAccountBoxOutline, mdiContentDuplicate, mdiCameraOutline, mdiTagMultipleOutline,
   } from "./lib/icons.js";
 
   const NAV = [
@@ -32,6 +34,8 @@
     { href: "/explore", label: "探索", icon: mdiCompassOutline, mobile: true },
     { href: "/people", label: "人物", icon: mdiAccountBoxOutline },
     { href: "/map", label: "地圖", icon: mdiMapOutline },
+    { href: "/gear", label: "器材", icon: mdiCameraOutline },
+    { href: "/keywords", label: "關鍵字", icon: mdiTagMultipleOutline },
     { href: "/folders", label: "資料夾", icon: mdiFolderOutline, mobile: true },
     { href: "/albums", label: "相簿", icon: mdiImageAlbum, mobile: true },
     { href: "/favorites", label: "我的最愛", icon: mdiHeartOutline },
@@ -174,6 +178,10 @@
           <Folders rootId={seg[1] ? Number(seg[1]) : null} />
         {:else if page === "albums" && seg[1] === "smart" && seg[2]}
           <SmartAlbum id={Number(seg[2])} />
+        {:else if page === "gear"}
+          <Gear />
+        {:else if page === "keywords"}
+          <Keywords />
         {:else if page === "duplicates"}
           <Duplicates />
         {:else if page === "albums" && seg[1]}

@@ -43,6 +43,13 @@ CLIP_MODELS = {
     },
 }
 
+def repo_for(cfg: Config, name: str) -> str | None:
+    if name == "custom":
+        return cfg.clip_custom_repo.strip() or None
+    info = CLIP_MODELS.get(name)
+    return info["repo"] if info else None
+
+
 KEEP_FILES = {
     "": {"config.json"},
     "visual": {"model.onnx", "preprocess_cfg.json"},
@@ -77,9 +84,17 @@ def _list_files(repo: str, sub: str) -> list[dict]:
 
 def download_model(cfg: Config, name: str, progress: Callable[[str, int, int], None] | None = None,
                    stop: threading.Event | None = None) -> None:
-    info = CLIP_MODELS[name]
+    repo = repo_for(cfg, name)
+    if not repo:
+        raise ValueError("尚未設定自訂圖像搜尋模型的 Hugging Face 儲存庫")
+    if name == "custom":  # 換了儲存庫就重新下載
+        import shutil
+
+        marker = model_dir(cfg, name) / "repo.txt"
+        if marker.exists() and marker.read_text().strip() != repo:
+            shutil.rmtree(model_dir(cfg, name), ignore_errors=True)
     target = model_dir(cfg, name)
-    files = [f for sub in KEEP_FILES for f in _list_files(info["repo"], sub)]
+    files = [f for sub in KEEP_FILES for f in _list_files(repo, sub)]
     total = sum(f["size"] for f in files)
     done = 0
     for f in files:
@@ -89,7 +104,7 @@ def download_model(cfg: Config, name: str, progress: Callable[[str, int, int], N
             done += f["size"]
             continue
         tmp = dest.with_name(dest.name + ".part")
-        with urllib.request.urlopen(f"{HF}/{info['repo']}/resolve/main/{f['path']}", timeout=60) as resp, open(tmp, "wb") as out:
+        with urllib.request.urlopen(f"{HF}/{repo}/resolve/main/{f['path']}", timeout=60) as resp, open(tmp, "wb") as out:
             while True:
                 if stop is not None and stop.is_set():
                     out.close()
@@ -104,7 +119,9 @@ def download_model(cfg: Config, name: str, progress: Callable[[str, int, int], N
                     progress(f"下載 {name}", done, total)
         tmp.replace(dest)
     if not model_installed(cfg, name):
-        raise RuntimeError("下載的檔案不完整，請重試")
+        raise RuntimeError("下載的檔案不完整（這個儲存庫可能不是 Immich 格式），請重試或換一個")
+    if name == "custom":
+        (target / "repo.txt").write_text(repo)
 
 
 def delete_model(cfg: Config, name: str) -> None:
@@ -309,7 +326,10 @@ def rank(conn: sqlite3.Connection, cfg: Config, texts: list[str], allowed: set[i
     return out
 
 
-def is_multilingual(name: str) -> bool:
+def is_multilingual(name: str, cfg: Config | None = None) -> bool:
+    if name == "custom" and cfg is not None:
+        repo = cfg.clip_custom_repo.lower()
+        return any(k in repo for k in ("xlm", "multilingual", "siglip2", "nllb"))
     return bool(CLIP_MODELS.get(name, {}).get("multilingual"))
 
 

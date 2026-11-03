@@ -16,6 +16,8 @@
     place:恆春           地點（依 GPS 換算的城鎮）
     rating:4            四星以上；is:rejected 被拒絕（Lightroom 的 X）
     label:red / label:紅 顏色標籤
+    group:家人           人物分類（家人、同事、客戶…）
+    focal:24-70 aperture:1.4 iso:3200-12800  焦段（等效 35mm）、光圈、ISO
     is:favorite / is:pending / is:failed / is:analyzed / is:missing
 """
 
@@ -28,7 +30,7 @@ from dataclasses import dataclass, field
 
 from . import db
 
-FILTER_KEYS = {"tag", "folder", "camera", "lens", "ext", "year", "after", "before", "root", "is", "type", "album", "person", "place", "rating", "label"}
+FILTER_KEYS = {"tag", "folder", "camera", "lens", "ext", "year", "after", "before", "root", "is", "type", "album", "person", "place", "rating", "label", "group", "focal", "aperture", "f", "iso"}
 
 
 @dataclass
@@ -90,6 +92,28 @@ def _filter_sql(query: Query, include_terms: bool, groups: list[list[str]] | Non
                 where.append("i.media_type = 'photo'")
             elif low == "raw":
                 where.append("i.is_raw = 1")
+        elif key in ("focal", "aperture", "f", "iso"):
+            # focal:24-70、focal:35、aperture:1.2-2、f:1.4、iso:3200-12800
+            expr = {"focal": "COALESCE(i.focal_35, i.focal_length)", "aperture": "i.aperture", "f": "i.aperture", "iso": "i.iso"}[key]
+            lo, _, hi = value.lstrip("fF/").partition("-")
+            try:
+                lo_v = float(lo)
+                hi_v = float(hi) if hi else None
+            except ValueError:
+                continue
+            if hi_v is None:
+                tol = {"focal": 1, "iso": 0}.get(key, 0.06)
+                where.append(f"{expr} BETWEEN ? AND ?")
+                params += [lo_v - tol, lo_v + tol]
+            else:
+                where.append(f"{expr} BETWEEN ? AND ?")
+                params += [lo_v, hi_v]
+        elif key == "group":
+            where.append(
+                "i.id IN (SELECT f.image_id FROM faces f JOIN persons p ON p.id = f.person_id "
+                "WHERE p.groups LIKE ? ESCAPE '\\')"
+            )
+            params.append(_like(f'"{value}"'))
         elif key == "rating" and value.lstrip("-").isdigit():
             where.append("i.rating >= ?")
             params.append(int(value))

@@ -9,6 +9,24 @@
   let { id } = $props();
   let person = $state(null);
   let error = $state("");
+  let groups = $state([]);
+
+  $effect(() => {
+    app.refreshKey;
+    api("/api/people/groups").then((g) => (groups = g));
+  });
+
+  async function toggleGroup(name) {
+    const next = person.groups.includes(name) ? person.groups.filter((g) => g !== name) : [...person.groups, name];
+    await api(`/api/people/${id}`, { body: { groups: next } });
+    person.groups = next;
+    refresh();
+  }
+
+  async function newGroup() {
+    const name = await showDialog("prompt", { title: "新增分類", placeholder: "例如：客戶、模特兒、大學同學", ok: "加入", value: "" });
+    if (name?.trim()) await toggleGroup(name.trim());
+  }
 
   $effect(() => {
     app.context = { person: id };
@@ -56,7 +74,14 @@
         <Icon path={person.hidden ? mdiEyeOutline : mdiEyeOffOutline} />
       </button>
     </div>
-    <p class="muted tiny tip">認錯人？選取那些照片後按上方的「不是這個人」。</p>
+    <div class="chips groups">
+      <span class="muted small">分類：</span>
+      {#each [...new Set([...groups.map((g) => g.name), ...person.groups])] as g (g)}
+        <button class="chip" class:on={person.groups.includes(g)} onclick={() => toggleGroup(g)}>{person.groups.includes(g) ? "✓ " : ""}{g}</button>
+      {/each}
+      <button class="chip" onclick={newGroup}>＋新分類</button>
+    </div>
+    <p class="muted tiny tip">認錯人？選取那些照片後按上方的「不是這個人」。分類名稱可以直接搜尋，例如「客戶 海邊」或 <code>group:客戶</code>。</p>
     <Grid assets={person.assets} />
   {:else}
     <p class="muted"><span class="spinner"></span></p>
@@ -71,4 +96,6 @@
   .name { display: flex; align-items: center; gap: 8px; border: 0; background: none; padding: 0; cursor: pointer; font-size: 24px; font-weight: 600; color: var(--text); }
   .name :global(svg) { color: var(--muted); }
   .tip { margin: 0 0 12px 54px; }
+  .groups { margin: 4px 0 8px 54px; align-items: center; }
+  code { background: var(--bg-2); padding: 1px 5px; border-radius: 5px; }
 </style>
