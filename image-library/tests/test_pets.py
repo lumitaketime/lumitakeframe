@@ -77,6 +77,25 @@ class PetTests(unittest.TestCase):
         res2, _ = self.run_all()
         self.assertEqual(res2.scanned, 0)
 
+    def test_mislabeled_kind_still_groups(self):
+        """小模型把同一隻狗的其中一張認成貓：仍分在同一隻，種類取多數（狗）。"""
+
+        class Flip(FakeEngine):
+            seen = 0
+
+            def analyze(self, img):
+                out = super().analyze(img)
+                if out and out[0].kind == "dog" and np.asarray(img.convert("RGB"))[0, 0, 2] > 150:
+                    Flip.seen += 1
+                    if Flip.seen == 2:
+                        out[0].kind = "cat"
+                return out
+
+        detect_pets(self.conn, self.cfg, engine=Flip())
+        cluster_pets(self.conn, self.cfg)
+        pets = sorted((p["kind"], p["count"]) for p in list_pets(self.conn))
+        self.assertEqual(pets, [("cat", 3), ("dog", 3)])
+
     def test_name_merge_search_clear(self):
         self.run_all()
         pets = {p["kind"]: p for p in list_pets(self.conn)}

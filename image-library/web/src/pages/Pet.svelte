@@ -38,7 +38,7 @@
     try {
       if (name) {
         const all = await api("/api/petid/all");
-        const same = all.find((p) => p.id !== pet.id && p.kind === pet.kind && (p.name || "").trim().toLowerCase() === name.toLowerCase());
+        const same = all.find((p) => p.id !== pet.id && (p.name || "").trim().toLowerCase() === name.toLowerCase());
         if (same) {
           const ok = await confirm(`已經有一隻「${same.name}」`, "是同一隻嗎？合併後，兩邊的照片都會歸到同一隻。", { ok: "是，合併", cancel: "不是" });
           if (!ok) return;

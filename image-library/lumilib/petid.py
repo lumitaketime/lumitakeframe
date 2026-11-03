@@ -361,18 +361,22 @@ def _vec(blob: bytes) -> np.ndarray:
 
 
 def cluster_pets(conn: sqlite3.Connection, cfg: Config, progress=None, stop=None) -> PetResult:
-    """把還沒歸屬的貓狗分到既有寵物，或建立新寵物（貓和狗分開比）。"""
+    """把還沒歸屬的貓狗分到既有寵物，或建立新寵物。
+
+    只依長相比對，不看偵測模型給的「貓／狗」：小模型偶爾把狗認成貓，
+    同一隻仍會分在一起；寵物的種類取多數照片的結果。
+    """
     result = PetResult()
     threshold = cfg.pet_similarity / 100
     model = cfg.pet_model
     now = db.now_iso()
     touched: set[int] = set()
-    for kind in KINDS.values():
+    for kind in ("all",):
         sums: list[np.ndarray] = []
         counts: list[int] = []
         owners: list[int | None] = []
         members: list[list[int]] = []
-        for pet in conn.execute("SELECT id FROM pets WHERE kind = ?", (kind,)).fetchall():
+        for pet in conn.execute("SELECT id FROM pets").fetchall():
             vecs = [_vec(r["embedding"]) for r in conn.execute(
                 "SELECT embedding FROM pet_detections WHERE pet_id = ? AND model = ?", (pet["id"], model))]
             if not vecs:
@@ -382,8 +386,8 @@ def cluster_pets(conn: sqlite3.Connection, cfg: Config, progress=None, stop=None
             owners.append(pet["id"])
             members.append([])
         pending = conn.execute(
-            "SELECT id, embedding FROM pet_detections WHERE pet_id IS NULL AND excluded = 0 AND model = ? AND kind = ? ORDER BY score DESC",
-            (model, kind),
+            "SELECT id, embedding FROM pet_detections WHERE pet_id IS NULL AND excluded = 0 AND model = ? ORDER BY score DESC",
+            (model,),
         ).fetchall()
         dim = len(_vec(pending[0]["embedding"])) if pending else (len(sums[0]) if sums else 384)
         centroids = np.array([s / np.linalg.norm(s) for s in sums], dtype=np.float32).reshape(-1, dim)
@@ -416,7 +420,7 @@ def cluster_pets(conn: sqlite3.Connection, cfg: Config, progress=None, stop=None
             if owner is None:
                 if cnt < cfg.pet_min_photos:
                     continue
-                owner = conn.execute("INSERT INTO pets (kind, created_at, updated_at) VALUES (?, ?, ?)", (kind, now, now)).lastrowid
+                owner = conn.execute("INSERT INTO pets (kind, created_at, updated_at) VALUES ('dog', ?, ?)", (now, now)).lastrowid
                 result.pets_new += 1
             conn.executemany("UPDATE pet_detections SET pet_id = ? WHERE id = ?", [(owner, i) for i in ids])
             result.assigned += len(ids)
@@ -430,6 +434,13 @@ def cluster_pets(conn: sqlite3.Connection, cfg: Config, progress=None, stop=None
 
 
 def refresh_covers(conn: sqlite3.Connection) -> None:
+    """封面用分數最高的那張；種類取多數照片的偵測結果；沒有照片的寵物移除。"""
+    conn.execute(
+        """UPDATE pets SET kind = (
+               SELECT d.kind FROM pet_detections d WHERE d.pet_id = pets.id
+               GROUP BY d.kind ORDER BY COUNT(*) DESC, MAX(d.score) DESC LIMIT 1)
+           WHERE EXISTS (SELECT 1 FROM pet_detections d WHERE d.pet_id = pets.id)"""
+    )
     conn.execute(
         """UPDATE pets SET cover_id = (
                SELECT d.id FROM pet_detections d WHERE d.pet_id = pets.id ORDER BY d.score DESC LIMIT 1)

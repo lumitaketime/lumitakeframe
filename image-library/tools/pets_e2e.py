@@ -41,11 +41,11 @@ def main() -> int:
         animals = eng.analyze(img)
         dt = time.time() - t
         print(f"{label}: {[(a.kind, round(a.score, 2), [int(v) for v in a.box]) for a in animals]}  {dt:.2f}s")
-        dogs = [a for a in animals if a.kind == "dog"]
-        if not dogs:
-            print(f"錯誤：{label} 沒有找到狗")
+        # 小模型偶爾把狗認成貓；分群只看長相，所以這裡只要求找到動物
+        if not animals:
+            print(f"錯誤：{label} 沒有找到貓狗")
             return 1
-        vecs[label] = max(dogs, key=lambda a: a.score).embedding
+        vecs[label] = max(animals, key=lambda a: a.score).embedding
 
     s_same = float(np.dot(vecs["dog"], vecs["same"]))
     s_other = float(np.dot(vecs["dog"], vecs["other"]))

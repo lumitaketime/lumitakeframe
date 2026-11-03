@@ -1436,7 +1436,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             out: dict = {"id": pet_id}
             if "name" in body:
                 name = str(body["name"] or "").strip()[:60]
-                same = c.execute("SELECT id FROM pets WHERE name = ? AND id != ? AND kind = ?", (name, pet_id, pet["kind"])).fetchone() if name else None
+                same = c.execute("SELECT id FROM pets WHERE name = ? AND id != ?", (name, pet_id)).fetchone() if name else None
                 if same:
                     merge_pets(c, same["id"], [pet_id])
                     out = {"id": same["id"], "merged": True}
