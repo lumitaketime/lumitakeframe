@@ -6,6 +6,7 @@
   import Grid from "../components/Grid.svelte";
   import Icon from "../components/Icon.svelte";
   import JobList from "../components/JobList.svelte";
+  import QualitySettings from "../components/QualitySettings.svelte";
   import { api, thumbUrl } from "../lib/api.js";
   import { app, selection, refresh, toast, openViewer } from "../lib/state.svelte.js";
   import { navigate, link } from "../lib/router.svelte.js";
@@ -22,7 +23,7 @@
   let summary = $state(null);
   let items = $state(null);
   let folders = $state(null);
-  let level = $state("standard");
+  let showStd = $state(false);
   let largeKind = $state("all");
   let largeTab = $state("files");
   let busy = $state(false);
@@ -32,14 +33,14 @@
 
   $effect(() => {
     app.refreshKey;
-    sub; level; largeKind;
+    sub; largeKind;
     load();
   });
 
   async function load() {
     try {
       if (!sub) summary = await api("/api/tools/summary");
-      else if (sub === "blurry") items = await api("/api/tools/blurry", { params: { level } });
+      else if (sub === "blurry") items = await api("/api/tools/blurry");
       else if (sub === "exposure") items = await api("/api/tools/exposure");
       else if (sub === "screens") items = await api("/api/tools/screens");
       else if (sub === "large") {
@@ -194,17 +195,20 @@
 
     {#if sub === "blurry"}
       <div class="bar">
-        <div class="seg" role="group" aria-label="嚴格程度">
-          {#each [["loose", "只列很糊的"], ["standard", "標準"], ["strict", "嚴格"]] as [v, label] (v)}
-            <button class:on={level === v} onclick={() => (level = v)}>{label}</button>
-          {/each}
-        </div>
+        <button class="btn ghost small" onclick={() => (showStd = !showStd)} aria-expanded={showStd}>{showStd ? "收起判定標準" : "調整判定標準"}</button>
         <span class="spacer"></span>
         {#if items?.length}
           <button class="btn ghost small" onclick={() => selectAll(items)}><Icon path={mdiCheckAll} size={18} />全選</button>
           <button class="btn small" onclick={() => rejectAll(items)} disabled={busy}><Icon path={mdiFlagRemove} size={18} />全部標為拒絕</button>
         {/if}
       </div>
+    {/if}
+
+    {#if sub === "exposure"}
+      <div class="bar"><button class="btn ghost small" onclick={() => (showStd = !showStd)} aria-expanded={showStd}>{showStd ? "收起判定標準" : "調整判定標準"}</button></div>
+    {/if}
+    {#if showStd && (sub === "blurry" || sub === "exposure")}
+      <div class="std"><QualitySettings only={sub === "blurry" ? "blur" : "exposure"} /></div>
     {/if}
 
     {#if !items}
@@ -258,6 +262,7 @@
               <button class="thumb-btn" onclick={() => openViewer(items, i)} aria-label="檢視 {a.name}">
                 <img src={thumbUrl(a)} alt="" loading="lazy" />
                 {#if a.type === "video"}<span class="vid"><Icon path={mdiVideoOutline} size={14} /></span>{/if}
+                {#if a.raw}<span class="rawb">RAW</span>{/if}
               </button>
               <div class="grow">
                 <b>{a.name}</b>
@@ -321,6 +326,7 @@
   .seg button + button { border-left: 1px solid var(--outline); }
   .seg button.on { background: var(--secondary-container); color: var(--on-secondary-container); }
   .group-sec { margin-bottom: 24px; }
+  .std { background: var(--surface-container-low); border-radius: var(--corner-large); padding: 16px 20px; margin-bottom: 16px; animation: m3-enter var(--duration-medium4) var(--easing-emphasized-decelerate); }
   .group-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .group-head .section-title { display: flex; align-items: baseline; gap: 10px; margin: 16px 0 10px; }
   .rows { list-style: none; padding: 0; margin: 0 0 10px; display: flex; flex-direction: column; background: var(--surface-container-low); border-radius: var(--corner-large); overflow: hidden; }
@@ -330,6 +336,7 @@
   .thumb-btn { position: relative; border: 0; padding: 0; background: var(--surface-container); width: 56px; height: 56px; border-radius: var(--corner-small); overflow: hidden; cursor: pointer; flex-shrink: 0; }
   .thumb-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .vid { position: absolute; right: 3px; bottom: 3px; background: rgb(0 0 0 / .55); color: #fff; border-radius: 4px; display: flex; padding: 1px; }
+  .rawb { position: absolute; right: 3px; bottom: 3px; font-size: 8px; line-height: 12px; font-weight: 600; color: #fff; background: rgb(0 0 0 / .4); border: 1px solid rgb(255 255 255 / .45); border-radius: 3px; padding: 0 3px; }
   .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .grow b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
   .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

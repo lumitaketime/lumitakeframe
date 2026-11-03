@@ -38,7 +38,7 @@ SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces", "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "xmp_sync", "xmp_embed", "stack_enabled", "burst_seconds",
-    "auto_analyze", "analysis_detail", "analyze_schedule", "night_start", "night_end", "viewer_rating_bar", "nav_hidden", "grid_style", "onboarded",
+    "auto_analyze", "blur_threshold", "under_luma", "over_percent", "analysis_detail", "analyze_schedule", "night_start", "night_end", "viewer_rating_bar", "nav_hidden", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -463,6 +463,32 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                     except Exception as exc:  # 個別檔案寫回失敗不影響其他
                         errors.append(str(exc))
                 return {"done": len(ids), "errors": errors[:5]}
+            if action in ("add_tags", "remove_tags"):
+                # 批次加上或移除我的關鍵字（#標籤）；RAW 會寫入 .xmp，和 Lightroom 同步
+                from .xmp import write
+
+                tags = [str(t).strip().lstrip("#").strip() for t in (body.get("tags") or []) if str(t).strip().lstrip("#").strip()]
+                if not tags:
+                    raise HTTPException(400, "請輸入至少一個標籤")
+                lower = {t.lower() for t in tags}
+                errors, changed = [], 0
+                for i in ids:
+                    row = db.get_image(c, i)
+                    if row is None:
+                        continue
+                    current = list(dict.fromkeys(db.json_list(row["keywords"]) + db.json_list(row["user_tags"])))
+                    if action == "add_tags":
+                        new = current + [t for t in tags if t.lower() not in {x.lower() for x in current}]
+                    else:
+                        new = [t for t in current if t.lower() not in lower]
+                    if new == current:
+                        continue
+                    try:
+                        write(c, cfg, i, keywords=new)
+                        changed += 1
+                    except Exception as exc:  # 個別檔案寫回失敗不影響其他
+                        errors.append(str(exc))
+                return {"done": changed, "errors": errors[:5]}
             if action == "stack":
                 from .organize import make_stack
 
@@ -1217,7 +1243,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             dups = load_duplicates(c, cfg)
             return {
                 "photos": q[0] or 0, "quality_done": q[1] or 0,
-                "blurry": len(blurry(c, "standard")), "exposure": len(exposure_problems(c)),
+                "blurry": len(blurry(c, float(cfg.blur_threshold))),
+                "exposure": len(exposure_problems(c, under_luma=cfg.under_luma, over_frac=cfg.over_percent / 100)),
                 "screens": len(screens_and_documents(c)),
                 "biggest": c.execute("SELECT COALESCE(SUM(size), 0) FROM images WHERE status = 'ok'").fetchone()[0],
                 "videos_bytes": c.execute("SELECT COALESCE(SUM(size), 0) FROM images WHERE status = 'ok' AND media_type = 'video'").fetchone()[0],
@@ -1227,12 +1254,13 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             c.close()
 
     @app.get("/api/tools/blurry")
-    def tools_blurry(level: str = "standard"):
+    def tools_blurry(threshold: float | None = None):
         from .quality import blurry
 
         c = conn()
         try:
-            return [{**summarize(r), "sharpness": r["sharpness"]} for r in blurry(c, level)]
+            t = float(threshold) if threshold is not None else float(cfg.blur_threshold)
+            return [{**summarize(r), "sharpness": r["sharpness"]} for r in blurry(c, t)]
         finally:
             c.close()
 
@@ -1242,7 +1270,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
         c = conn()
         try:
-            return [{**summarize(r), "flag": flag, "reason": EXPOSURE_LABELS[flag]} for r, flag in exposure_problems(c)]
+            return [{**summarize(r), "flag": flag, "reason": EXPOSURE_LABELS[flag]}
+                    for r, flag in exposure_problems(c, under_luma=cfg.under_luma, over_frac=cfg.over_percent / 100)]
         finally:
             c.close()
 
@@ -1274,6 +1303,29 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         c = conn()
         try:
             return large_folders(c)
+        finally:
+            c.close()
+
+    @app.get("/api/pets")
+    def pets_list():
+        from .tools import pets
+
+        c = conn()
+        try:
+            return pets(c)
+        finally:
+            c.close()
+
+    @app.get("/api/pets/{key}")
+    def pets_kind(key: str):
+        from .tools import PET_KINDS, pet_images
+
+        label = next((lbl for k, lbl, _ in PET_KINDS if k == key), None)
+        if label is None:
+            raise HTTPException(404, "找不到這個分類")
+        c = conn()
+        try:
+            return {"key": key, "label": label, "assets": [summarize(r) for r in pet_images(c, key)]}
         finally:
             c.close()
 

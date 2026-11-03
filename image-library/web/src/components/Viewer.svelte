@@ -310,6 +310,7 @@
     <div class="top" class:hidden={!chrome}>
       <button class="icon-btn" onclick={close} aria-label="返回"><Icon path={mdiArrowLeft} /></button>
       <span class="count">{viewer.index + 1} / {viewer.list.length}</span>
+      {#if item?.raw}<span class="raw-tag" title="RAW 檔">RAW</span>{/if}
       <span class="spacer"></span>
       {#if !isVideo}
         <button class="icon-btn desktop" class:active={zoomOpen || zoom > 1} onclick={toggleZoom} aria-label="縮放" title="縮放">
@@ -468,6 +469,7 @@
   }
   .top .icon-btn { color: #fff; text-decoration: none; }
   .count { font-size: 13px; opacity: .7; margin-left: 4px; }
+  .raw-tag { margin-left: 8px; font-size: 10px; line-height: 16px; font-weight: 600; letter-spacing: .06em; border: 1px solid rgb(255 255 255 / .5); border-radius: 4px; padding: 0 5px; opacity: .85; }
   .spacer { flex: 1; }
   .hidden { opacity: 0; pointer-events: none; }
   .stage {

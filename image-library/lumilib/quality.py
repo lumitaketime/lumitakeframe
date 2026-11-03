@@ -63,7 +63,7 @@ def measure(img: Image.Image) -> dict:
 
 
 def exposure_flag(luma: float | None, dark: float | None, bright: float | None, sharp: float | None = None,
-                  highlight: float | None = None) -> str | None:
+                  highlight: float | None = None, under_luma: float = 25, over_frac: float = 0.45) -> str | None:
     if luma is None:
         return None
     flat = sharp is not None and sharp < 15  # 幾乎沒有細節（夜景有燈光、輪廓，不會是 flat）
@@ -71,9 +71,9 @@ def exposure_flag(luma: float | None, dark: float | None, bright: float | None, 
         return "black"
     if luma > 243 and (bright or 0) > 0.9 and flat:
         return "white"
-    if luma < 25 and (highlight if highlight is not None else 255) < 90:  # 整張很暗、連最亮處都不亮
+    if luma < under_luma and (highlight if highlight is not None else 255) < 90:  # 整張很暗、連最亮處都不亮
         return "under"
-    if (bright or 0) > 0.45:
+    if (bright or 0) > over_frac:
         return "over"
     return None
 
@@ -114,8 +114,9 @@ def check_images(conn: sqlite3.Connection, cfg: Config, ids: list[int] | None = 
     return done
 
 
-def blurry(conn: sqlite3.Connection, level: str = "standard", limit: int = 2000) -> list[sqlite3.Row]:
-    threshold = LEVELS.get(level, LEVELS["standard"])
+def blurry(conn: sqlite3.Connection, level: str | float = "standard", limit: int = 2000) -> list[sqlite3.Row]:
+    """level：寬鬆／標準／嚴格，或直接給清晰度門檻（設定頁可調）。"""
+    threshold = float(level) if isinstance(level, (int, float)) else LEVELS.get(level, LEVELS["standard"])
     return conn.execute(
         "SELECT * FROM images WHERE status = 'ok' AND media_type = 'photo' AND sharpness IS NOT NULL "
         "AND sharpness < ? AND stack_top = 1 AND NOT (luma < 12 OR luma > 243) ORDER BY sharpness ASC LIMIT ?",
@@ -123,15 +124,16 @@ def blurry(conn: sqlite3.Connection, level: str = "standard", limit: int = 2000)
     ).fetchall()
 
 
-def exposure_problems(conn: sqlite3.Connection, limit: int = 2000) -> list[tuple[sqlite3.Row, str]]:
+def exposure_problems(conn: sqlite3.Connection, limit: int = 2000, under_luma: float = 25,
+                      over_frac: float = 0.45) -> list[tuple[sqlite3.Row, str]]:
     rows = conn.execute(
         "SELECT * FROM images WHERE status = 'ok' AND media_type = 'photo' AND luma IS NOT NULL AND stack_top = 1 "
-        "AND (luma < 25 OR luma > 243 OR bright_frac > 0.45) ORDER BY sort_at DESC LIMIT ?",
-        (limit,),
+        "AND (luma < ? OR luma < 12 OR luma > 243 OR bright_frac > ?) ORDER BY sort_at DESC LIMIT ?",
+        (under_luma, over_frac, limit),
     ).fetchall()
     out = []
     for r in rows:
-        flag = exposure_flag(r["luma"], r["dark_frac"], r["bright_frac"], r["sharpness"], r["highlight"])
+        flag = exposure_flag(r["luma"], r["dark_frac"], r["bright_frac"], r["sharpness"], r["highlight"], under_luma, over_frac)
         if flag:
             out.append((r, flag))
     return out

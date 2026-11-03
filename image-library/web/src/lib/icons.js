@@ -10,6 +10,6 @@ export {
   mdiCheckboxMarkedCircle, mdiCheckboxBlankCircleOutline, mdiPlayCircle, mdiArrowUp, mdiFolderHome,
   mdiAccountBoxOutline, mdiAccountMultiplePlusOutline, mdiAccountRemoveOutline, mdiEyeOffOutline, mdiEyeOutline,
   mdiFaceRecognition, mdiTranslate, mdiImageSearchOutline, mdiViewDashboardOutline, mdiDatabaseOutline, mdiBroom,
-  mdiBlur, mdiBrightness6, mdiCellphoneScreenshot, mdiFileExportOutline, mdiToolboxOutline, mdiCheckAll, mdiChartBoxOutline,
+  mdiPound, mdiBlur, mdiBrightness6, mdiCellphoneScreenshot, mdiFileExportOutline, mdiToolboxOutline, mdiCheckAll, mdiChartBoxOutline,
   mdiStar, mdiStarOutline, mdiCameraOutline, mdiTagMultipleOutline, mdiAccountGroupOutline, mdiTuneVariant, mdiCloseCircle, mdiFlagRemove, mdiLayers, mdiLayersOff, mdiContentDuplicate, mdiAutoFix, mdiHistory, mdiImageFilterCenterFocus,
 } from "@mdi/js";

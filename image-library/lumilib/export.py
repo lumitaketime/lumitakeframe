@@ -1,7 +1,8 @@
 """批次匯出交件：縮成指定長邊的 JPEG，可加文字浮水印、移除 GPS、依規則重新命名。
 
 - 原始照片不會被修改，輸出到另一個資料夾。
-- RAW 檔使用相機內嵌的預覽圖（多數相機為全尺寸，部分機型較小），輸出比要求小時會提醒。
+- RAW 檔預設直接複製原始檔（交 RAW 就是要給原檔），連同 Lightroom 的 .xmp 一起，只依規則改檔名；
+  也可以選擇轉成 JPEG（使用相機內嵌的預覽圖，部分機型尺寸較小）。
 - 保留拍攝資訊（相機、鏡頭、時間）與色彩描述檔；方向已經轉正，所以寫入「方向＝正常」。
 """
 
@@ -113,6 +114,29 @@ def _exif_bytes(path: Path, strip_gps: bool, keep_exif: bool) -> tuple[bytes | N
         return None, None
 
 
+def _copy_raw(src: Path, out: Path, strip_gps: bool) -> None:
+    """複製原始 RAW（保留時間），有 Lightroom 的 .xmp 附屬檔就一起複製並改成相同檔名。"""
+    import shutil
+
+    from .xmp import sidecar_path
+
+    shutil.copy2(src, out)
+    side = sidecar_path(src)
+    outs = [out]
+    if side is not None and side.exists():
+        target = out.with_suffix(".xmp")
+        shutil.copy2(side, target)
+        outs.append(target)
+    if strip_gps:
+        et = exiftool()
+        if et.available:
+            for p in outs:
+                try:
+                    et.execute("-overwrite_original", "-P", "-gps:all=", str(p))
+                except Exception:  # noqa: BLE001  移除失敗時保留原樣
+                    pass
+
+
 def _copy_raw_tags(src: Path, out: Path, strip_gps: bool) -> None:
     """RAW 的拍攝資訊用 exiftool 複製到輸出的 JPEG（方向已轉正）。"""
     et = exiftool()
@@ -139,10 +163,11 @@ def export_images(conn: sqlite3.Connection, cfg: Config, ids: list[int], opts: d
     dest = Path(opts.get("dest") or default_dest()).expanduser()
     dest.mkdir(parents=True, exist_ok=True)
 
+    raw_mode = str(opts.get("raw_mode") or "original")
     rows = [db.get_image(conn, int(i)) for i in ids]
     rows = [r for r in rows if r is not None]
     used: set[str] = {p.name.lower() for p in dest.iterdir()} if dest.exists() else set()
-    done, skipped, small = 0, [], 0
+    done, skipped, small, raw_copied = 0, [], 0, 0
     for seq, image in enumerate(rows, 1):
         if stop is not None and stop.is_set():
             break
@@ -151,6 +176,22 @@ def export_images(conn: sqlite3.Connection, cfg: Config, ids: list[int], opts: d
             skipped.append(f"{name}（影片不匯出）")
             continue
         path = db.absolute_path(conn, image)
+        if image["is_raw"] and raw_mode == "original":
+            if not path.exists():
+                skipped.append(f"{name}（檔案不存在或硬碟未連接）")
+                continue
+            base = output_name(pattern, image, seq, len(rows))
+            ext = path.suffix
+            final, n = f"{base}{ext}", 2
+            while final.lower() in used:
+                final, n = f"{base}-{n}{ext}", n + 1
+            used.add(final.lower())
+            _copy_raw(path, dest / final, strip_gps)
+            raw_copied += 1
+            done += 1
+            if progress:
+                progress(seq, len(rows), final)
+            continue
         try:
             img = load_image(path, "photo", bool(image["is_raw"]), max(long_side, 8000) if long_side else 20000,
                              None, image["orientation"])
@@ -182,4 +223,4 @@ def export_images(conn: sqlite3.Connection, cfg: Config, ids: list[int], opts: d
         done += 1
         if progress:
             progress(seq, len(rows), final)
-    return {"exported": done, "skipped": skipped, "smaller": small, "dest": str(dest)}
+    return {"exported": done, "skipped": skipped, "smaller": small, "raw_copied": raw_copied, "dest": str(dest)}

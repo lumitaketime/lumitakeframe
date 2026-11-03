@@ -68,3 +68,40 @@ def large_folders(conn: sqlite3.Connection, limit: int = 60) -> list[dict]:
     ]
     items.sort(key=lambda x: x["bytes"], reverse=True)
     return items[:limit]
+
+
+# ---- 寵物（依 AI 描述與關鍵字分類；之後可加個別寵物辨識） ----
+PET_KINDS = [
+    ("dog", "狗", ["狗", "dog", "puppy", "幼犬", "犬", "柴犬", "柯基", "貴賓", "拉布拉多", "黃金獵犬", "哈士奇"]),
+    ("cat", "貓", ["貓", "cat", "kitten", "幼貓", "kitty"]),
+    # 「鳥」單字會配到「鳥居」，雞、鴨常是食物，所以只用明確的詞
+    ("bird", "鳥", ["鸚鵡", "parrot", "小鳥", "鳥類", "寵物鳥", "bird", "文鳥", "雀"]),
+    ("rabbit", "兔子", ["兔", "rabbit", "bunny"]),
+    ("rodent", "倉鼠與天竺鼠", ["倉鼠", "hamster", "天竺鼠", "guinea pig", "龍貓", "chinchilla"]),
+    ("fish", "魚", ["金魚", "goldfish", "魚缸", "aquarium", "觀賞魚"]),
+    ("reptile", "爬蟲", ["烏龜", "turtle", "tortoise", "蜥蜴", "lizard", "蛇", "snake"]),
+]
+
+
+def pets(conn: sqlite3.Connection) -> list[dict]:
+    """每一種寵物有幾張照片與封面（只看已經 AI 分析過的照片）。"""
+    rows = conn.execute(
+        "SELECT id, search_text FROM images WHERE status = 'ok' AND analyzed_at IS NOT NULL AND stack_top = 1 ORDER BY sort_at DESC"
+    ).fetchall()
+    out = []
+    for key, label, words in PET_KINDS:
+        ids = [r["id"] for r in rows if any(w in (r["search_text"] or "") for w in words)]
+        if ids:
+            out.append({"key": key, "label": label, "count": len(ids), "cover": ids[0]})
+    return out
+
+
+def pet_images(conn: sqlite3.Connection, key: str) -> list[sqlite3.Row]:
+    words = next((w for k, _, w in PET_KINDS if k == key), None)
+    if not words:
+        return []
+    cond = " OR ".join("search_text LIKE ?" for _ in words)
+    return conn.execute(
+        f"SELECT * FROM images WHERE status = 'ok' AND analyzed_at IS NOT NULL AND stack_top = 1 AND ({cond}) ORDER BY sort_at DESC",
+        [f"%{w}%" for w in words],
+    ).fetchall()

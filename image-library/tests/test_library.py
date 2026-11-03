@@ -467,6 +467,22 @@ class ServerTests(LibraryTestCase):
         self.assertEqual(self.client.get(f"/api/albums/{album['id']}").json()["count"], 1)
         self.assertEqual(self.client.delete(f"/api/albums/{album['id']}").status_code, 200)
 
+    def test_bulk_tags(self):
+        self.post("/api/jobs", {"kind": "scan"})
+        wait_jobs(self.client)
+        ids = [a["id"] for a in self.client.get("/api/search", params={"q": "旅行"}).json()["results"]][:2]
+        self.assertEqual(len(ids), 2)
+        r = self.post("/api/assets/bulk", {"ids": ids, "action": "add_tags", "tags": ["#嘉義車站", "交件"]}).json()
+        self.assertEqual(r["done"], 2)
+        found = self.client.get("/api/search", params={"q": "tag:嘉義車站"}).json()
+        self.assertEqual(sorted(a["id"] for a in found["results"]), sorted(ids))
+        self.assertEqual(self.post("/api/assets/bulk", {"ids": ids, "action": "add_tags", "tags": ["嘉義車站"]}).json()["done"], 0)
+        self.post("/api/assets/bulk", {"ids": ids[:1], "action": "remove_tags", "tags": ["嘉義車站"]})
+        found = self.client.get("/api/search", params={"q": "嘉義車站"}).json()
+        self.assertEqual([a["id"] for a in found["results"]], ids[1:])
+        kw = self.client.get(f"/api/assets/{ids[0]}").json()["keywords"]
+        self.assertEqual(kw, ["交件"])
+
     def test_search_explore_models_jobs(self):
         data = self.client.get("/api/search", params={"q": "海邊"}).json()
         self.assertEqual((data["total"], data["results"][0]["type"]), (1, "photo"))

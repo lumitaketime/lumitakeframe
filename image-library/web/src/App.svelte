@@ -17,6 +17,7 @@
   import People from "./pages/People.svelte";
   import Duplicates from "./pages/Duplicates.svelte";
   import Tools from "./pages/Tools.svelte";
+  import Pets from "./pages/Pets.svelte";
   import Gear from "./pages/Gear.svelte";
   import Keywords from "./pages/Keywords.svelte";
   import SmartAlbum from "./pages/SmartAlbum.svelte";
@@ -52,7 +53,7 @@
   ];
   const NAV = NAV_GROUPS.flatMap((g) => g.items);
   // 人物、器材、關鍵字整合在「探索」的分頁裡
-  const EXPLORE_PAGES = ["/explore", "/people", "/gear", "/keywords"];
+  const EXPLORE_PAGES = ["/explore", "/people", "/pets", "/gear", "/keywords"];
 
   const hidden = $derived(new Set((app.server?.ui?.nav_hidden || "").split(",").filter(Boolean)));
   const visible = (n) => n.fixed || !hidden.has(n.href);
@@ -250,6 +251,8 @@
           <Gear />
         {:else if page === "keywords"}
           <Keywords />
+        {:else if page === "pets"}
+          <Pets kind={seg[1] || ""} />
         {:else if page === "tools"}
           <Tools sub={seg[1] || ""} />
         {:else if page === "duplicates"}

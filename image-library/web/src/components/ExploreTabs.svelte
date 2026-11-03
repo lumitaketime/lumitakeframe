@@ -6,6 +6,7 @@
   const TABS = [
     { href: "/explore", label: "總覽", fixed: true },
     { href: "/people", label: "人物" },
+    { href: "/pets", label: "寵物" },
     { href: "/gear", label: "器材" },
     { href: "/keywords", label: "關鍵字" },
   ];

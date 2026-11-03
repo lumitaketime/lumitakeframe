@@ -3,6 +3,7 @@
   import Icon from "../components/Icon.svelte";
   import JobList from "../components/JobList.svelte";
   import StoragePanel from "../components/StoragePanel.svelte";
+  import QualitySettings from "../components/QualitySettings.svelte";
   import { api } from "../lib/api.js";
   import { app, refresh, showDialog, toast } from "../lib/state.svelte.js";
   import { link } from "../lib/router.svelte.js";
@@ -11,7 +12,7 @@
   import {
     mdiHarddisk, mdiRefresh, mdiPencilOutline, mdiDeleteOutline, mdiPlus, mdiCreation, mdiCheck, mdiDownload,
     mdiCellphone, mdiStop, mdiThemeLightDark, mdiServerNetwork, mdiAlertCircleOutline, mdiFaceRecognition,
-    mdiImageSearchOutline, mdiStar, mdiTuneVariant, mdiArrowLeft, mdiViewDashboardOutline, mdiDatabaseOutline,
+    mdiImageSearchOutline, mdiStar, mdiTuneVariant, mdiArrowLeft, mdiViewDashboardOutline, mdiDatabaseOutline, mdiToolboxOutline,
   } from "../lib/icons.js";
 
 
@@ -23,6 +24,7 @@
     { id: "faces", label: "人臉辨識", icon: mdiFaceRecognition },
     { id: "search", label: "智慧搜尋", icon: mdiImageSearchOutline },
     { id: "lightroom", label: "Lightroom 與檢視", icon: mdiStar },
+    { id: "tools", label: "整理工具", icon: mdiToolboxOutline },
     { id: "features", label: "功能與選單", icon: mdiViewDashboardOutline },
     { id: "phone", label: "手機與平板", icon: mdiCellphone },
     { id: "storage", label: "儲存空間與模型", icon: mdiDatabaseOutline },
@@ -38,6 +40,7 @@
     { href: "/favorites", label: "我的最愛", hint: "按愛心收藏的作品" },
     { href: "/videos", label: "影片", hint: "只看影片" },
     { href: "/people", label: "人物", hint: "人臉辨識；關掉時也會停止在背景偵測人臉" },
+    { href: "/pets", label: "寵物", hint: "依 AI 分析整理狗、貓、鳥等寵物照片" },
     { href: "/gear", label: "器材", hint: "依相機、鏡頭、焦段篩選" },
     { href: "/keywords", label: "關鍵字", hint: "常拍內容的關鍵字雲" },
     { href: "/tools", label: "整理工具", hint: "模糊與曝光檢查、截圖與文件、大檔案、重複照片" },
@@ -820,6 +823,13 @@
         {/if}
       {/if}
     </section>
+    {/if}
+    {#if current === "tools"}
+      <section class="card">
+        <h2><Icon path={mdiToolboxOutline} />整理工具的判定標準</h2>
+        <p class="muted small">模糊與曝光的偵測都在這台 Mac 上計算，不用 AI。調整後，「整理工具」的清單會立刻更新。</p>
+        <QualitySettings />
+      </section>
     {/if}
     {#if current === "storage"}
       <StoragePanel />

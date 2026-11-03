@@ -10,7 +10,7 @@
 
   const DEFAULTS = {
     size: "2048", custom: 3000, quality: 90, rename: "{name}", customRename: "{date}_{seq}",
-    wm: false, wmText: "© ", wmPos: "br", wmSize: 3, wmOpacity: 70, stripGps: true, keepExif: true,
+    wm: false, wmText: "© ", wmPos: "br", wmSize: 3, wmOpacity: 70, stripGps: true, keepExif: true, rawMode: "original",
   };
   let o = $state(read());
   let dest = $state("");
@@ -60,7 +60,7 @@
           kind: "export", ids,
           options: {
             long_side: longSide, quality: Number(o.quality), rename: pattern || "{name}",
-            strip_gps: o.stripGps, keep_exif: o.keepExif,
+            strip_gps: o.stripGps, keep_exif: o.keepExif, raw_mode: o.rawMode,
             watermark: { enabled: o.wm, text: o.wmText, position: o.wmPos, size: Number(o.wmSize), opacity: Number(o.wmOpacity) },
             dest: dest || undefined,
           },
@@ -80,7 +80,18 @@
 <Modal title="匯出 {ids.length} 張照片" wide onclose={() => onclose?.(false)}>
   <div class="form">
     <div class="field">
-      <span class="label">尺寸（長邊）</span>
+      <span class="label">RAW 檔</span>
+      <div class="chips">
+        <button class="chip" class:on={o.rawMode === "original"} onclick={() => (o.rawMode = "original")}>交付原始 RAW</button>
+        <button class="chip" class:on={o.rawMode === "jpeg"} onclick={() => (o.rawMode = "jpeg")}>轉成 JPEG</button>
+      </div>
+      <span class="hint">{o.rawMode === "original"
+        ? "RAW 直接複製原檔（連同 Lightroom 的 .xmp），只依下方規則改檔名，不縮圖、不加浮水印。"
+        : "用相機內嵌的預覽圖轉成 JPEG，部分機型（例如 Sony）預覽圖只有約 1600px。"}</span>
+    </div>
+
+    <div class="field">
+      <span class="label">尺寸（長邊，JPEG）</span>
       <div class="chips">
         {#each [["orig", "原尺寸"], ["3840", "3840"], ["2048", "2048"], ["1600", "1600"], ["1080", "1080"], ["custom", "自訂"]] as [v, label] (v)}
           <button class="chip" class:on={o.size === v} onclick={() => (o.size = v)}>{label}{v !== "orig" && v !== "custom" ? " px" : ""}</button>
@@ -150,7 +161,7 @@
         {#if app.server?.local && app.server?.platform === "darwin"}<button class="btn ghost small" onclick={pick}>選擇資料夾…</button>{/if}
         {#if dest}<button class="btn text small" onclick={() => (dest = "")}>用預設位置</button>{/if}
       </div>
-      <span class="hint">原始照片不會被修改。影片不會匯出。RAW 檔使用相機內嵌的預覽圖，部分機型尺寸較小。</span>
+      <span class="hint">原始照片不會被修改，影片不會匯出。</span>
     </div>
   </div>
 

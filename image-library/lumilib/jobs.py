@@ -361,6 +361,8 @@ class JobRunner:
                                     progress=lambda i, t, m: upd(done=i, total=t, message=f"匯出 {i}/{t}　{m}"))
                 job["result"] = res
                 msg = f"已匯出 {res['exported']} 張到「{res['dest']}」"
+                if res.get("raw_copied"):
+                    msg += f"（其中 {res['raw_copied']} 個 RAW 原檔）"
                 if res["skipped"]:
                     msg += f"；略過 {len(res['skipped'])} 個（{'、'.join(res['skipped'][:3])}）"
                 if res["smaller"]:

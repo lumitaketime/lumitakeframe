@@ -75,13 +75,16 @@
   {/if}
   {#if asset.stack > 1}
     <span class="badge tr stack" class:with-video={asset.type === "video"}><Icon path={mdiLayers} size={15} />{asset.stack}</span>
-  {:else if asset.raw}
-    <span class="badge br">RAW</span>
   {/if}
-  {#if asset.rating > 0 || asset.label}
-    <span class="meta-badge">
-      {#if asset.label}<i class="dot" style:background={LABEL_COLORS[asset.label]}></i>{/if}
-      {#if asset.rating > 0}<Icon path={mdiStar} size={13} />{asset.rating}{/if}
+  {#if asset.rating > 0 || asset.label || asset.raw}
+    <span class="corner">
+      {#if asset.rating > 0 || asset.label}
+        <span class="meta-badge">
+          {#if asset.label}<i class="dot" style:background={LABEL_COLORS[asset.label]}></i>{/if}
+          {#if asset.rating > 0}<Icon path={mdiStar} size={13} />{asset.rating}{/if}
+        </span>
+      {/if}
+      {#if asset.raw}<span class="raw" title="RAW 檔">RAW</span>{/if}
     </span>
   {/if}
 </div>
@@ -121,14 +124,19 @@
     text-shadow: 0 1px 3px rgba(0,0,0,.7); filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
   }
   .tr { top: 6px; right: 6px; }
-  .br { top: 6px; right: 6px; font-size: 10px; letter-spacing: .04em; background: rgba(0,0,0,.45); padding: 0 4px; border-radius: 4px; }
   .fav { position: absolute; bottom: 5px; left: 6px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
   .missing img { filter: grayscale(1); opacity: .45; }
   .rejected img { opacity: .35; }
   .stack { background: rgba(0,0,0,.45); padding: 1px 6px 1px 4px; border-radius: 6px; font-size: 11px; }
   .stack.with-video { top: 28px; }
+  .corner { position: absolute; right: 5px; bottom: 5px; display: flex; align-items: center; gap: 4px; pointer-events: none; }
+  .raw {
+    font-size: 9px; line-height: 14px; font-weight: 600; letter-spacing: .06em; color: rgb(255 255 255 / .92);
+    background: rgb(0 0 0 / .38); border: 1px solid rgb(255 255 255 / .45); border-radius: 4px; padding: 0 4px;
+    backdrop-filter: blur(4px);
+  }
   .meta-badge {
-    position: absolute; right: 6px; bottom: 5px; display: flex; align-items: center; gap: 2px; color: #fff;
+    display: flex; align-items: center; gap: 2px; color: #fff;
     background: rgba(0,0,0,.45); border-radius: 6px; padding: 1px 5px; font-size: 11px; font-weight: 700;
   }
   .meta-badge :global(svg) { color: #f5c518; }

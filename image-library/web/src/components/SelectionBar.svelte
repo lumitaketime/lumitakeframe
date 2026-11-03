@@ -1,17 +1,19 @@
 <script>
   import Icon from "./Icon.svelte";
   import ExportDialog from "./ExportDialog.svelte";
+  import TagDialog from "./TagDialog.svelte";
   import { app, selection } from "../lib/state.svelte.js";
   import { addToAlbum, analyzeAssets, moveAssets, removeFromAlbum, setFavorite, trashAssets } from "../lib/actions.js";
   import { api } from "../lib/api.js";
   import { toast, refresh } from "../lib/state.svelte.js";
   import {
-    mdiFileExportOutline, mdiClose, mdiHeartOutline, mdiImageAlbum, mdiFolderMoveOutline, mdiCreation, mdiDeleteOutline, mdiImageRemoveOutline, mdiImageOutline, mdiAccountRemoveOutline, mdiStarOutline, mdiStar, mdiFlagRemove, mdiLayers,
+    mdiFileExportOutline, mdiPound, mdiClose, mdiHeartOutline, mdiImageAlbum, mdiFolderMoveOutline, mdiCreation, mdiDeleteOutline, mdiImageRemoveOutline, mdiImageOutline, mdiAccountRemoveOutline, mdiStarOutline, mdiStar, mdiFlagRemove, mdiLayers,
   } from "../lib/icons.js";
   import { LABEL_COLORS, LABEL_KEYS, LABEL_NAMES } from "../lib/format.js";
 
   let rateMenu = $state(false);
   let exporting = $state(false);
+  let tagging = $state(false);
 
   async function bulk(action, value) {
     const res = await api("/api/assets/bulk", { body: { ids, action, value } });
@@ -79,6 +81,7 @@
       </div>
     {/if}
   </div>
+  <button class="icon-btn" title="加上 #標籤" aria-label="加上標籤" onclick={() => (tagging = true)}><Icon path={mdiPound} /></button>
   <button class="icon-btn" title="加到我的最愛" onclick={() => run(() => setFavorite(ids, true))}><Icon path={mdiHeartOutline} /></button>
   <button class="icon-btn" title="加到相簿" onclick={() => run(() => addToAlbum(ids))}><Icon path={mdiImageAlbum} /></button>
   {#if albumId}
@@ -99,6 +102,9 @@
   <button class="icon-btn" title="移到垃圾桶" onclick={() => run(async () => ((await trashAssets(ids)).length ? null : "keep"))}><Icon path={mdiDeleteOutline} /></button>
 </div>
 
+{#if tagging}
+  <TagDialog {ids} onclose={() => (tagging = false)} />
+{/if}
 {#if exporting}
   <ExportDialog {ids} onclose={(done) => { exporting = false; if (done) selection.clear(); }} />
 {/if}

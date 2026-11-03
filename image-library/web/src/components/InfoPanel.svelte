@@ -13,9 +13,10 @@
   } from "../lib/icons.js";
 
   let { detail, onclose, onchange } = $props();
-  let editing = $state(false);
-  let tagsText = $state("");
   let note = $state("");
+  let noteState = $state("");  // "" | "saving" | "saved"
+  let newTag = $state("");
+  let addingTag = $state(false);
   let translated = $state(null);
   let translating = $state(false);
   let editFaces = $state(false);
@@ -28,12 +29,77 @@
 
   const myKeywords = $derived([...new Set([...(detail?.keywords || []), ...(detail?.user_tags || [])])]);
 
+  let lastId = null;
   $effect(() => {
-    tagsText = [...new Set([...(detail?.keywords || []), ...(detail?.user_tags || [])])].join(", ");
-    note = detail?.note || "";
-    editing = false;
-    translated = null;
+    if (detail?.id !== lastId) {
+      lastId = detail?.id;
+      note = detail?.note || "";
+      noteState = "";
+      newTag = "";
+      addingTag = false;
+      translated = null;
+    }
   });
+
+  // ---- 說明（備註）：像 Google 相簿，直接在空白處輸入，離開時自動儲存 ----
+  async function saveNote() {
+    if (!detail || note === (detail.note || "")) return;
+    noteState = "saving";
+    try {
+      const d = await api(`/api/assets/${detail.id}`, { body: { note: note.trim() } });
+      onchange?.(d);
+      noteState = "saved";
+      setTimeout(() => (noteState = noteState === "saved" ? "" : noteState), 1800);
+    } catch (e) {
+      noteState = "";
+      toast(e.message, "error");
+    }
+  }
+  function noteKey(e) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.blur();
+    if (e.key === "Escape") {
+      note = detail?.note || "";
+      e.stopPropagation();
+      e.currentTarget.blur();
+    }
+  }
+  function grow(node) {
+    const fit = () => {
+      node.style.height = "auto";
+      node.style.height = `${node.scrollHeight}px`;
+    };
+    fit();
+    node.addEventListener("input", fit);
+    return { update: fit, destroy: () => node.removeEventListener("input", fit) };
+  }
+
+  // ---- 我的標籤：直接新增、移除，RAW 會寫入 .xmp ----
+  async function setTags(list, message) {
+    try {
+      const x = await api(`/api/assets/${detail.id}/xmp`, { body: { keywords: list } });
+      onchange?.(await api(`/api/assets/${detail.id}`));
+      toast(message + (x.written_to === "sidecar" ? "（已寫入 .xmp）" : x.written_to === "embedded" ? "（已寫入檔案）" : ""));
+      refresh();
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+  function addTag() {
+    const t = newTag.trim().replace(/^#+/, "").trim();
+    newTag = "";
+    if (!t || myKeywords.some((k) => k.toLowerCase() === t.toLowerCase())) return;
+    setTags([...myKeywords, t], `已加上 #${t}`);
+  }
+  function tagKey(e) {
+    if (e.key === "Enter" && !e.isComposing) {
+      e.preventDefault();
+      addTag();
+    } else if (e.key === "Escape") {
+      e.stopPropagation();
+      newTag = "";
+      addingTag = false;
+    }
+  }
 
   // 描述不是中文（例如換過語言或模型）時提供翻譯
   const needsTranslate = $derived(
@@ -81,17 +147,6 @@
     navigate(`/search?q=${encodeURIComponent(`tag:${/\s/.test(t) ? `"${t}"` : t}`)}`);
   }
 
-  async function save() {
-    try {
-      const x = await api(`/api/assets/${detail.id}/xmp`, { body: { keywords: tagsText } });
-      const d = await api(`/api/assets/${detail.id}`, { body: { note } });
-      onchange?.(d);
-      editing = false;
-      toast(x.written_to === "sidecar" ? "已儲存並寫入 Lightroom 的 .xmp" : x.written_to === "embedded" ? "已儲存並寫入檔案" : "已儲存");
-    } catch (e) {
-      toast(e.message, "error");
-    }
-  }
 </script>
 
 <aside class="info">
@@ -103,6 +158,11 @@
     <p class="muted pad"><span class="spinner"></span></p>
   {:else}
     <div class="pad">
+      <div class="note" class:has={!!note}>
+        <textarea use:grow bind:value={note} onblur={saveNote} onkeydown={noteKey} rows="1"
+          placeholder="新增說明" aria-label="說明" maxlength="2000"></textarea>
+        <span class="note-state" aria-live="polite">{noteState === "saving" ? "儲存中…" : noteState === "saved" ? "已儲存" : ""}</span>
+      </div>
       {#if detail.faces?.length}
         <div class="people-head">
           <h4>人物</h4>
@@ -147,21 +207,24 @@
         </div>
       {/if}
 
-      <div class="block">
-        <div class="row-title">
-          <Icon path={mdiTagOutline} size={18} /><span>關鍵字（與 Lightroom 同步）與備註</span>
-          <button class="icon-btn sm" onclick={() => (editing = !editing)} aria-label="編輯"><Icon path={mdiPencilOutline} size={18} /></button>
+      <div class="mytags">
+        <h4>我的標籤</h4>
+        <div class="chips">
+          {#each myKeywords as t (t)}
+            <span class="mytag">
+              <button class="t" onclick={() => searchTag(t)} title="搜尋 #{t}">#{t}</button>
+              <button class="x" onclick={() => setTags(myKeywords.filter((k) => k !== t), `已移除 #${t}`)} aria-label="移除 {t}"><Icon path={mdiClose} size={14} /></button>
+            </span>
+          {/each}
+          {#if addingTag}
+            <!-- svelte-ignore a11y_autofocus -->
+            <input class="tag-input" bind:value={newTag} onkeydown={tagKey} onblur={() => { addTag(); addingTag = false; }}
+              placeholder="輸入後按 Enter" aria-label="新增標籤" autofocus />
+          {:else}
+            <button class="chip add" onclick={() => (addingTag = true)}><Icon path={mdiTagOutline} size={16} />新增標籤</button>
+          {/if}
         </div>
-        {#if editing}
-          <input class="input" bind:value={tagsText} placeholder="以逗號分隔，例如：作品集, 婚禮, 2024" />
-          <textarea class="input" rows="2" bind:value={note} placeholder="備註"></textarea>
-          <div class="btns"><button class="btn small" onclick={save}>儲存</button><button class="btn small ghost" onclick={() => (editing = false)}>取消</button></div>
-        {:else if myKeywords.length || detail.note}
-          <div class="chips">{#each myKeywords as t (t)}<button class="chip on" onclick={() => searchTag(t)}>{t}</button>{/each}</div>
-          {#if detail.note}<p class="small">{detail.note}</p>{/if}
-        {:else}
-          <p class="muted small">點鉛筆新增關鍵字；RAW 會寫入 .xmp，Lightroom 讀取中繼資料後就會看到。</p>
-        {/if}
+        <p class="muted tiny">和 AI 關鍵字一起被搜尋；RAW 會寫入 .xmp，Lightroom 看得到。</p>
       </div>
 
       <h4>詳細資料</h4>
@@ -273,6 +336,32 @@
   .pad { padding: 0 18px 28px; }
   .desc { margin: 0 0 12px; line-height: 1.65; }
   .tr { margin: -4px 0 12px; }
+  .note { position: relative; margin: 0 0 14px; }
+  .note textarea {
+    width: 100%; resize: none; overflow: hidden; border: 0; border-bottom: 1px solid var(--outline-variant);
+    background: transparent; color: var(--on-surface); font-size: 16px; line-height: 24px; padding: 8px 0 8px 28px;
+    outline: none; min-height: 40px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23747780'%3E%3Cpath d='M14.06 9.02l.92.92L5.92 19H5v-.92l9.06-9.06M17.66 3c-.25 0-.51.1-.7.29l-1.83 1.83 3.75 3.75 1.83-1.83a.996.996 0 0 0 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.71-.29zm-3.6 3.19L3 17.25V21h3.75L17.81 9.94l-3.75-3.75z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: 0 10px; background-size: 18px;
+    transition: border-color var(--spring-effects-fast-duration) var(--spring-effects-fast);
+  }
+  .note textarea::placeholder { color: var(--on-surface-variant); opacity: .7; }
+  .note.has textarea { background-image: none; padding-left: 0; }
+  .note textarea:hover { border-bottom-color: var(--outline); }
+  .note textarea:focus { border-bottom: 2px solid var(--primary); padding-left: 0; background-image: none; }
+  .note-state { position: absolute; right: 0; bottom: -18px; font-size: 11px; color: var(--on-surface-variant); }
+  .mytags { margin: 6px 0 4px; }
+  .mytags h4 { margin: 14px 0 8px; }
+  .mytag {
+    display: inline-flex; align-items: center; height: 32px; border-radius: var(--corner-small);
+    background: var(--secondary-container); color: var(--on-secondary-container); overflow: hidden;
+    animation: m3-pop var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
+  }
+  .mytag .t { border: 0; background: none; color: inherit; font-weight: 500; padding: 0 4px 0 12px; height: 100%; cursor: pointer; }
+  .mytag .x { border: 0; background: none; color: inherit; display: flex; padding: 0 8px 0 4px; height: 100%; align-items: center; cursor: pointer; opacity: .7; }
+  .mytag .x:hover, .mytag .t:hover { background: color-mix(in srgb, currentColor 8%, transparent); opacity: 1; }
+  .chip.add { border-style: dashed; }
+  .tag-input { height: 32px; border: 1px solid var(--primary); border-radius: var(--corner-small); padding: 0 10px; background: none; outline: none; font-size: 14px; min-width: 140px; }
   .people-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; }
   .people-head h4 { margin: 0; }
   .people-head .icon-btn { width: 32px; height: 32px; color: var(--muted); }
@@ -290,9 +379,6 @@
   }
   .edit-tip { margin: -4px 0 12px; }
   .warn { color: var(--danger); display: flex; gap: 6px; align-items: flex-start; }
-  .block { margin-top: 16px; background: var(--bg-2); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
-  .row-title { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }
-  .row-title span { flex: 1; }
   .icon-btn.sm { width: 32px; height: 32px; }
   dl { margin: 0; display: flex; flex-direction: column; gap: 14px; }
   .item { display: flex; gap: 14px; align-items: flex-start; color: var(--muted); }
@@ -306,7 +392,6 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all;
   }
   .path:hover { color: var(--primary); }
-  textarea.input { resize: vertical; }
   @media (max-width: 900px) {
     .info { width: 100%; height: auto; max-height: 62vh; border-radius: 20px 20px 0 0; }
   }

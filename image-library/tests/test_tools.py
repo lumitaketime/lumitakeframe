@@ -90,6 +90,32 @@ class ToolsTests(unittest.TestCase):
         exif = Image.open(dest / sharp_out[0]).getexif()
         self.assertNotIn(0x8825, exif)  # GPS 已移除
 
+    def test_export_raw_as_original(self):
+        raw = self.tmp / "photos" / "trip" / "DSC0001.ARW"
+        raw.write_bytes(b"RAWDATA" * 100)
+        (self.tmp / "photos" / "trip" / "DSC0001.xmp").write_text("<x:xmpmeta/>")
+        self.conn.execute(
+            "INSERT INTO images (root_id, rel_path, folder, size, mtime, fingerprint, status, media_type, is_raw, sort_at, first_seen, last_seen) "
+            "SELECT root_id, 'trip/DSC0001.ARW', 'trip', 700, 0, 'rawfp', 'ok', 'photo', 1, '2024-01-01T10:00:00', first_seen, last_seen FROM images LIMIT 1"
+        )
+        self.conn.commit()
+        rid = self.conn.execute("SELECT id FROM images WHERE rel_path = 'trip/DSC0001.ARW'").fetchone()[0]
+        dest = self.tmp / "raw-out"
+        res = export_images(self.conn, self.cfg, [rid], {"rename": "client_{seq}", "dest": str(dest), "strip_gps": False})
+        self.assertEqual(res["raw_copied"], 1)
+        self.assertEqual(sorted(p.name for p in dest.iterdir()), ["client_001.ARW", "client_001.xmp"])
+        self.assertEqual((dest / "client_001.ARW").read_bytes(), raw.read_bytes())
+
+    def test_pets(self):
+        from lumilib.tools import pet_images, pets
+
+        self.conn.execute("UPDATE images SET analyzed_at = '2026-01-01', search_text = 'a black puppy on the floor 狗' WHERE rel_path LIKE '%sharp%'")
+        self.conn.commit()
+        kinds = {p["key"]: p for p in pets(self.conn)}
+        self.assertEqual(kinds["dog"]["count"], 1)
+        self.assertNotIn("cat", kinds)
+        self.assertEqual(len(pet_images(self.conn, "dog")), 1)
+
     def test_name_and_watermark(self):
         row = {"rel_path": "a/IMG_1.jpg", "taken_at": "2024-06-25T18:06:00", "sort_at": None, "camera": "ILCE 7M4"}
         self.assertEqual(output_name("{date}_{camera}_{seq}", row, 7, 120), "20240625_ILCE-7M4_007")
