@@ -19,6 +19,7 @@ dependencies = [
     "numpy>=1.24",
     "onnxruntime>=1.17",
     "tokenizers>=0.15",
+    "geonamescache>=2.0",
 ]
 
 [project.optional-dependencies]

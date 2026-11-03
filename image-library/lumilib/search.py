@@ -13,6 +13,7 @@
     lens:50mm           鏡頭
     type:video / type:photo / type:raw
     person:媽媽          人物（人臉辨識後命名的人）
+    place:恆春           地點（依 GPS 換算的城鎮）
     is:favorite / is:pending / is:failed / is:analyzed / is:missing
 """
 
@@ -25,7 +26,7 @@ from dataclasses import dataclass, field
 
 from . import db
 
-FILTER_KEYS = {"tag", "folder", "camera", "lens", "ext", "year", "after", "before", "root", "is", "type", "album", "person"}
+FILTER_KEYS = {"tag", "folder", "camera", "lens", "ext", "year", "after", "before", "root", "is", "type", "album", "person", "place"}
 
 
 @dataclass
@@ -87,6 +88,9 @@ def _filter_sql(query: Query, include_terms: bool, groups: list[list[str]] | Non
                 where.append("i.media_type = 'photo'")
             elif low == "raw":
                 where.append("i.is_raw = 1")
+        elif key == "place":
+            where.append("(lower(i.place) LIKE ? ESCAPE '\\' OR lower(i.place_en) LIKE ? ESCAPE '\\' OR lower(i.country) = ?)")
+            params += [_like(low), _like(low), low]
         elif key == "person":
             where.append(
                 "i.id IN (SELECT f.image_id FROM faces f JOIN persons p ON p.id = f.person_id "

@@ -81,6 +81,7 @@
           <tr><td><code>year:2024</code>　<code>after:2024-05-01</code>　<code>before:2024-06-01</code></td><td>拍攝日期</td></tr>
           <tr><td><code>type:video</code>　<code>type:raw</code>　<code>ext:heic</code></td><td>檔案類型</td></tr>
           <tr><td><code>person:媽媽</code></td><td>人物（人臉辨識後命名）</td></tr>
+          <tr><td><code>place:恆春</code>　或直接輸入 <code>京都</code></td><td>地點（依 GPS 自動換算，不需連網）</td></tr>
           <tr><td><code>is:favorite</code>　<code>is:pending</code>　<code>is:missing</code></td><td>狀態</td></tr>
         </tbody>
       </table>

@@ -33,7 +33,7 @@ ANALYSIS_FIELDS = (
     "analyzed_at", "model", "description", "tags", "objects", "scene",
     "ocr_text", "error", "embedding", "embed_model",
 )
-RESET_FIELDS = ANALYSIS_FIELDS + ("faces_at", "faces_model", "clip", "clip_model")
+RESET_FIELDS = ANALYSIS_FIELDS + ("faces_at", "faces_model", "clip", "clip_model", "place", "place_en", "country")
 
 _CHUNK = 64 * 1024
 BATCH = 48
@@ -283,4 +283,7 @@ def scan_all(conn, cfg, root_names=None, progress=None, stop=None) -> list[ScanR
         if stop is not None and stop.is_set():
             break
         results.append(scan_root(conn, cfg, root, progress, stop))
+    from .places import geocode_images
+
+    geocode_images(conn, progress)
     return results

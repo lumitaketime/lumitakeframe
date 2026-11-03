@@ -266,6 +266,9 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             "WHERE f.image_id = ? AND f.excluded = 0 ORDER BY f.x1",
             (image["id"],),
         ).fetchall()
+        from .places import country_names
+
+        data["country_name"] = country_names(image["country"])[0] if image["country"] else ""
         data.update(
             faces=[{"id": f["id"], "person_id": f["person_id"], "name": f["name"],
                     "box": [f["x1"], f["y1"], f["x2"], f["y2"]]} for f in faces],
@@ -624,7 +627,13 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             ).fetchall()
             from .faces import list_persons
 
+            places = c.execute(
+                "SELECT place AS value, COUNT(*) AS count, MAX(id) AS id FROM images "
+                "WHERE status = 'ok' AND thumb_ok = 1 AND place IS NOT NULL AND place != '' "
+                "GROUP BY place ORDER BY count DESC LIMIT 30"
+            ).fetchall()
             return {
+                "places": [{"value": r["value"], "count": r["count"], "cover": r["id"]} for r in places],
                 "people": list_persons(c)[:24],
                 "tags": [{"value": t, "count": n, "cover": covers.get(t)} for t, n in tags if covers.get(t)],
                 "scenes": grouped("scene", 16),

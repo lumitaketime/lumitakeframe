@@ -198,7 +198,10 @@
           <div class="item">
             <Icon path={mdiMapMarkerOutline} />
             <div class="min">
-              <span class="small">{detail.lat.toFixed(5)}, {detail.lon.toFixed(5)}{detail.altitude ? ` · 海拔 ${Math.round(detail.altitude)}m` : ""}</span>
+              {#if detail.place || detail.country_name}
+                <b>{[detail.place, detail.country_name].filter(Boolean).join("，")}</b>
+              {/if}
+              <span class="small muted">{detail.lat.toFixed(5)}, {detail.lon.toFixed(5)}{detail.altitude ? ` · 海拔 ${Math.round(detail.altitude)}m` : ""}</span>
               <a class="small" href={`https://www.openstreetmap.org/?mlat=${detail.lat}&mlon=${detail.lon}#map=15/${detail.lat}/${detail.lon}`} target="_blank" rel="noopener">在地圖上開啟</a>
             </div>
           </div>

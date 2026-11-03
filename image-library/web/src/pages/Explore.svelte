@@ -58,9 +58,18 @@
       </div>
     {/if}
 
-    {#if data.gps}
+    {#if data.places?.length || data.gps}
       <h2 class="section-title">地點</h2>
-      <a class="map-link" href="/map" use:link>在地圖上瀏覽 {data.gps.toLocaleString()} 個有 GPS 的項目 →</a>
+      {#if data.places?.length}
+        <div class="strip">
+          {#each data.places as p (p.value)}
+            <button class="tile" onclick={() => go(`place:${q(p.value)}`)}>
+              <img src={thumbUrl({ id: p.cover })} alt="" loading="lazy" /><span>{p.value}<small>{p.count.toLocaleString()}</small></span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+      {#if data.gps}<a class="map-link" href="/map" use:link>在地圖上瀏覽 {data.gps.toLocaleString()} 個有 GPS 的項目 →</a>{/if}
     {/if}
 
     {#if data.years.length}
@@ -109,6 +118,6 @@
   .person { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; color: var(--text); font-size: 13px; }
   .person img { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; background: var(--bg-2); }
   .person span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .map-link { display: inline-block; padding: 14px 18px; background: var(--bg-2); border-radius: var(--radius); text-decoration: none; }
+  .map-link { margin-top: 10px; display: inline-block; padding: 14px 18px; background: var(--bg-2); border-radius: var(--radius); text-decoration: none; }
   @media (max-width: 760px) { .strip { grid-auto-columns: 124px; } }
 </style>

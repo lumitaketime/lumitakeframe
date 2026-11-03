@@ -19,7 +19,8 @@
 - **智慧搜尋（跨語言）**：AI 把搜尋詞翻譯並擴充成中英文同義詞（「貓」也找 cat、kitten），
   加上多語言 CLIP 圖像搜尋直接比對畫面內容，即使照片還沒有 AI 描述也找得到。
   英文描述可一鍵翻譯成中文。
-- **地圖**：有 GPS 的照片顯示在 OpenStreetMap 上，靠近的會群組成一個。
+- **地圖與地點**：有 GPS 的照片顯示在 OpenStreetMap 上；並離線換算成最近的城鎮（例如「恆春鎮，台灣」、
+  「京都，日本」），可以直接搜尋地名（中英文皆可），探索頁會列出常去的地點。
 - **真的整理硬碟**：搬移到其他資料夾、移到垃圾桶（可還原）。Lightroom `.xmp` 與 iPhone `.aae`
   附屬檔會跟著走；RAW+JPEG 同名時，`.xmp` 會留給 RAW。
 - **格式**：JPG、PNG、WebP、HEIC/HEIF、TIFF、GIF、AVIF；RAW（CR2/CR3/NEF/ARW/RAF/ORF/RW2/DNG 等，
@@ -86,6 +87,7 @@ InsightFace 預訓練模型的授權僅限非商業用途。
   | `year:2024` `after:2024-05-01` `before:2024-06-01` | 日期 |
   | `type:video` `type:raw` `ext:heic` | 類型 |
   | `person:媽媽` | 人物（人臉辨識後命名） |
+  | `place:恆春`，或直接輸入 `京都` | 地點（依 GPS 換算） |
   | `is:favorite` `is:pending` `is:failed` `is:missing` | 狀態 |
 
 ### 把圖庫資料也放在 SSD（行動作品集）
@@ -148,10 +150,10 @@ pnpm dev   # 開發模式，API 轉到 127.0.0.1:8765
 | `lumilib/fileops.py` | 垃圾桶、搬移、附屬檔、Finder |
 | `lumilib/faces.py` | 人臉偵測（SCRFD）、對齊、特徵（ArcFace）、分群、人物操作 |
 | `lumilib/clip.py` | 多語言 CLIP 圖像搜尋：模型下載、索引、排序 |
+| `lumilib/places.py` | 離線地名（GeoNames 資料，CC BY 4.0） |
 | `lumilib/server.py`、`auth.py`、`jobs.py` | FastAPI、登入、背景工作佇列 |
 | `web/src/` | PWA 介面：時間軸、檢視器、資料夾、相簿、地圖、設定 |
 
 ## 接下來
 
-- 離線地名（GPS → 城市名稱）
 - 出門在外連線（Tailscale）、Windows 版

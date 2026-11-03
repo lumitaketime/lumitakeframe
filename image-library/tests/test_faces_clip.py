@@ -299,5 +299,24 @@ class RewriteTests(Base):
         self.assertEqual(search(self.conn, "beach", groups=rw["groups"])["results"][0]["filename"], "b.jpg")
 
 
+class PlaceTests(Base):
+    def test_gps_becomes_searchable_place(self):
+        from lumilib import places
+
+        if not places.available():
+            self.skipTest("需要 geonamescache")
+        Image.new("RGB", (40, 30)).save(self.photos / "kenting.jpg")
+        Image.new("RGB", (40, 30)).save(self.photos / "nogps.jpg")
+        scan_all(self.conn, self.cfg)
+        self.conn.execute("UPDATE images SET lat = 21.95, lon = 120.78 WHERE rel_path = 'kenting.jpg'")
+        self.conn.commit()
+        self.assertEqual(places.geocode_images(self.conn), 1)
+        row = self.conn.execute("SELECT * FROM images WHERE rel_path = 'kenting.jpg'").fetchone()
+        self.assertEqual((row["place"], row["place_en"], row["country"]), ("恆春鎮", "Hengchun", "TW"))
+        for q in ("恆春", "hengchun", "台灣", "taiwan", "place:恆春"):
+            self.assertEqual(search(self.conn, q)["total"], 1, q)
+        self.assertEqual(places.geocode_images(self.conn), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

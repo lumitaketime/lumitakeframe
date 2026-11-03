@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -123,6 +123,9 @@ V2_COLUMNS = [
     ("faces_model", "TEXT"),
     ("clip", "BLOB"),
     ("clip_model", "TEXT"),
+    ("place", "TEXT"),
+    ("place_en", "TEXT"),
+    ("country", "TEXT"),
 ]
 
 INDEXES = """
@@ -218,6 +221,9 @@ def build_search_text(row: dict) -> str:
         row.get("note") or "",
         row.get("artist") or "",
         " ".join(row.get("people") or []),
+        row.get("place") or "",
+        row.get("place_en") or "",
+        " ".join(row.get("country_names") or []),
     ]
     return "\n".join(p for p in parts if p).lower()
 
@@ -229,6 +235,10 @@ def refresh_search_text(conn: sqlite3.Connection, image_id: int) -> None:
         data["people"] = [r[0] for r in conn.execute(
             "SELECT DISTINCT p.name FROM faces f JOIN persons p ON p.id = f.person_id "
             "WHERE f.image_id = ? AND p.name IS NOT NULL AND p.name != ''", (image_id,))]
+        if data.get("country"):
+            from .places import country_names
+
+            data["country_names"] = list(country_names(data["country"]))
         conn.execute("UPDATE images SET search_text = ? WHERE id = ?", (build_search_text(data), image_id))
 
 
