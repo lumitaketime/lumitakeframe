@@ -355,14 +355,17 @@ def top_tags(conn: sqlite3.Connection, limit: int = 60) -> list[tuple[str, int]]
 
 
 def tag_covers(conn: sqlite3.Connection, tags: list[str]) -> dict[str, int]:
-    """每個關鍵字挑一張最新的照片當封面。"""
+    """每個關鍵字挑一張照片當封面，盡量不和其他關鍵字重複。"""
     covers: dict[str, int] = {}
+    used: set[int] = set()
     for tag in tags:
-        row = conn.execute(
+        rows = conn.execute(
             "SELECT id FROM images WHERE status = 'ok' AND thumb_ok = 1 AND (tags LIKE ? OR user_tags LIKE ? OR keywords LIKE ?) "
-            "ORDER BY sort_at DESC LIMIT 1",
+            "ORDER BY sort_at DESC LIMIT 12",
             (f'%"{tag}"%',) * 3,
-        ).fetchone()
-        if row:
-            covers[tag] = row["id"]
+        ).fetchall()
+        pick = next((r["id"] for r in rows if r["id"] not in used), rows[0]["id"] if rows else None)
+        if pick is not None:
+            covers[tag] = pick
+            used.add(pick)
     return covers
