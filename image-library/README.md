@@ -30,20 +30,49 @@
 - **手機與平板**：在設定頁設定密碼、開啟「手機連線」，用 iPhone 相機掃 QR code，
   Safari「加入主畫面」後像 App 一樣全螢幕使用。
 
-## 安裝（macOS）
+## 安裝
 
-1. 下載這個專案（GitHub 頁面 → Code → Download ZIP，解壓縮）。
-2. 打開「終端機」，把 `install-mac.sh` 拖進視窗前面加上 `bash `，按 Enter：
+所有安裝檔都在 GitHub 的 **Releases → 「Lumitake Library 最新版」**（`app-latest`），每次更新程式後自動重新建置。
+
+### Mac App（建議）
+
+1. 下載 `Lumitake-Library-mac.dmg`（Apple Silicon：M1 以後的 Mac），打開後把 App 拖進「應用程式」。
+2. 第一次打開時，macOS 會說無法驗證開發者（這個 App 沒有付費的 Apple 簽章）：
+   到「系統設定 → 隱私權與安全性」，往下找到 Lumitake Library，按「仍要打開」。
+   如果出現「已損毀，無法打開」，在終端機執行一次：
 
    ```bash
-   bash ~/Downloads/lumitakeframe-main/image-library/install-mac.sh
+   xattr -cr "/Applications/Lumitake Library.app"
    ```
 
-   會自動安裝 Homebrew、Python、exiftool、ffmpeg、Ollama，並詢問是否下載推薦的 AI 模型（約 6 GB）。
-   過程中可能需要輸入 Mac 的登入密碼。
-3. 完成後桌面會出現 **Lumitake Library.command**，點兩下就會啟動並開啟瀏覽器。
-   關閉那個終端機視窗即停止。
-4. 第一次使用：到「設定 → 圖庫資料夾」按「選擇資料夾…」，練習可先加入 `~/Pictures`。
+3. AI 分析需要 [Ollama](https://ollama.com/download)：下載安裝後打開一次，再到 App 的「設定 → AI 模型」下載模型。
+   exiftool、ffmpeg 已經內建在 App 裡，不用另外安裝。
+4. 關閉視窗後 App 會留在上方選單列（手機才能繼續連線）；要完全結束請按選單列圖示 →「結束」。
+   選單裡也可以勾選「登入時自動啟動」。
+
+App 與命令列版本共用同一個圖庫資料（`~/.lumilib`），可以互相切換。
+
+### Android App
+
+1. 在手機下載 `Lumitake-Library.apk` 並安裝（需允許「安裝不明來源的應用程式」）。
+2. Mac 上打開「設定 → 手機與平板」，設定密碼並開啟連線。
+3. 打開手機 App，掃描 Mac 畫面上的 QR code，輸入密碼。
+4. 照片頁的「存到這台裝置」會存到手機的「圖片/Lumitake」。長按 App 圖示可以「更換連線」。
+
+介面來自 Mac，Mac 更新後手機自動是新版，APK 很少需要更新。
+更新 APK 時如果無法直接覆蓋安裝，先解除安裝舊版即可（只要重新掃一次 QR code）。
+
+### iPhone／iPad
+
+用 Safari 開啟 Mac 設定頁顯示的網址，登入後按「分享 →『加入主畫面』」，就能像 App 一樣全螢幕使用。
+
+### 進階：用終端機安裝（開發用）
+
+```bash
+bash ~/Downloads/lumitakeframe-claude-kind-dijkstra-7t80hs/image-library/install-mac.sh
+```
+
+會用 Homebrew 安裝 Python、exiftool、ffmpeg、Ollama，並在桌面建立 `Lumitake Library.command`。
 
 ### 推薦模型（M1 Pro 16GB）
 
@@ -92,12 +121,14 @@ InsightFace 預訓練模型的授權僅限非商業用途。
 
 ### 把圖庫資料也放在 SSD（行動作品集）
 
-資料庫與縮圖預設在 `~/.lumilib`（十萬張約 2–3 GB 縮圖）。想讓它跟著 SSD 走：
-用文字編輯器打開桌面的 `Lumitake Library.command`，把這行的註解拿掉並改成你的 SSD：
+資料庫與縮圖預設在 `~/.lumilib`（十萬張約 2–3 GB 縮圖）。想讓它跟著 SSD 走，
+先結束 App，在終端機把資料搬到 SSD 並建立捷徑（`你的SSD` 換成實際名稱）：
 
 ```bash
-export LUMILIB_HOME="/Volumes/你的SSD/.lumilib"
+mv ~/.lumilib "/Volumes/你的SSD/.lumilib" && ln -s "/Volumes/你的SSD/.lumilib" ~/.lumilib
 ```
+
+之後 App 會透過這個捷徑讀寫 SSD 上的資料；使用時 SSD 需要接著。
 
 ### 手機與平板
 
@@ -153,7 +184,12 @@ pnpm dev   # 開發模式，API 轉到 127.0.0.1:8765
 | `lumilib/places.py` | 離線地名（GeoNames 資料，CC BY 4.0） |
 | `lumilib/server.py`、`auth.py`、`jobs.py` | FastAPI、登入、背景工作佇列 |
 | `web/src/` | PWA 介面：時間軸、檢視器、資料夾、相簿、地圖、設定 |
+| `desktop/` | Mac App（Tauri 外殼、PyInstaller 打包的伺服器、啟動畫面） |
+| `android/` | Android App（WebView 外殼、QR 配對、下載） |
+| `../.github/workflows/apps.yml` | 自動建置 DMG 與 APK 並發布到 Releases |
 
 ## 接下來
 
-- 出門在外連線（Tailscale）、Windows 版
+- 出門在外連線（Tailscale）
+- 攝影師進階功能：星等與標籤寫回 Lightroom .xmp、RAW+JPEG 疊放、相似照片、智慧相簿
+- Windows 版
