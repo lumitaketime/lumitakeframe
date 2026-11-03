@@ -19,6 +19,11 @@
 - **智慧搜尋（跨語言）**：AI 把搜尋詞翻譯並擴充成中英文同義詞（「貓」也找 cat、kitten），
   加上多語言 CLIP 圖像搜尋直接比對畫面內容，即使照片還沒有 AI 描述也找得到。
   英文描述可一鍵翻譯成中文。
+- **與 Lightroom 同步**：星等（含拒絕）、顏色標籤、關鍵字讀寫 RAW 的 `.xmp` 附屬檔（選擇性寫入 JPEG／HEIC 檔案）；
+  檢視器使用和 Lightroom 一樣的快捷鍵（0–5 星、6–9 顏色、X 拒絕、U 取消）。
+- **疊放**：RAW＋JPEG 同名雙檔、連拍（同相機連續 3 張以上）自動疊成一張，可手動調整封面、解除或疊放。
+- **重複與相似照片**：找出完全相同的檔案與幾乎一樣的照片（連拍、縮小再存的版本），建議保留最好的一張，其餘移到垃圾桶。
+- **智慧相簿與那年今日**：任何搜尋都能存成會自動更新的相簿（例如 `rating:4 camera:x100vi`）；時間軸上方顯示往年的今天。
 - **地圖與地點**：有 GPS 的照片顯示在 OpenStreetMap 上；並離線換算成最近的城鎮（例如「恆春鎮，台灣」、
   「京都，日本」），可以直接搜尋地名（中英文皆可），探索頁會列出常去的地點。
 - **真的整理硬碟**：搬移到其他資料夾、移到垃圾桶（可還原）。Lightroom `.xmp` 與 iPhone `.aae`
@@ -87,6 +92,14 @@ bash ~/Downloads/lumitakeframe-claude-kind-dijkstra-7t80hs/image-library/install
 十萬張照片用 7B 模型大約需要一到兩週的累積時間。建議：先用 3B 掃一輪，
 重要作品再到資料夾或相簿頁按「AI 分析」用 7B 重跑。分析可以隨時停止，下次會接著做。
 
+### 與 Lightroom Classic 同步
+
+1. Lightroom：「目錄設定 → 中繼資料」勾選「自動將變更寫入 XMP」。
+2. Lumitake Library 掃描時會讀取 `.xmp`；之後 Lightroom 改了星等或標籤，重新掃描就會更新。
+3. 在 Lumitake Library 改的星等、標籤、關鍵字會寫回 RAW 的 `.xmp`（沒有就建立，Lightroom 的修圖設定不受影響）。
+   回到 Lightroom 對照片按「中繼資料 → 從檔案讀取中繼資料」即可看到。
+4. JPEG／HEIC 預設只存在圖庫裡；若也要寫進檔案，到「設定 → Lightroom 同步與疊放」開啟（會修改原檔）。
+
 ### 人臉辨識與圖像搜尋
 
 到「設定」：
@@ -116,6 +129,7 @@ InsightFace 預訓練模型的授權僅限非商業用途。
   | `year:2024` `after:2024-05-01` `before:2024-06-01` | 日期 |
   | `type:video` `type:raw` `ext:heic` | 類型 |
   | `person:媽媽` | 人物（人臉辨識後命名） |
+  | `rating:4` `label:紅` `is:rejected` | 星等（以上）、顏色標籤、被拒絕 |
   | `place:恆春`，或直接輸入 `京都` | 地點（依 GPS 換算） |
   | `is:favorite` `is:pending` `is:failed` `is:missing` | 狀態 |
 
@@ -182,6 +196,8 @@ pnpm dev   # 開發模式，API 轉到 127.0.0.1:8765
 | `lumilib/faces.py` | 人臉偵測（SCRFD）、對齊、特徵（ArcFace）、分群、人物操作 |
 | `lumilib/clip.py` | 多語言 CLIP 圖像搜尋：模型下載、索引、排序 |
 | `lumilib/places.py` | 離線地名（GeoNames 資料，CC BY 4.0） |
+| `lumilib/xmp.py` | Lightroom 星等／標籤／關鍵字同步 |
+| `lumilib/organize.py` | 疊放、重複與相似照片、智慧相簿、那年今日 |
 | `lumilib/server.py`、`auth.py`、`jobs.py` | FastAPI、登入、背景工作佇列 |
 | `web/src/` | PWA 介面：時間軸、檢視器、資料夾、相簿、地圖、設定 |
 | `desktop/` | Mac App（Tauri 外殼、PyInstaller 打包的伺服器、啟動畫面） |
@@ -191,5 +207,4 @@ pnpm dev   # 開發模式，API 轉到 127.0.0.1:8765
 ## 接下來
 
 - 出門在外連線（Tailscale）
-- 攝影師進階功能：星等與標籤寫回 Lightroom .xmp、RAW+JPEG 疊放、相似照片、智慧相簿
 - Windows 版
