@@ -30,6 +30,13 @@ DEFAULTS = {
     "scan_on_start": 1,
     # 圖庫開著時避免 Mac 閒置睡眠（接電源時），手機才能持續連線
     "keep_awake": 1,
+    # Lightroom 同步：星等、顏色標籤、關鍵字寫回 .xmp（RAW）
+    "xmp_sync": 1,
+    # 也寫入 JPEG／HEIC／TIFF 檔案內嵌的 XMP（會修改原檔）
+    "xmp_embed": 0,
+    # RAW+JPEG 與連拍疊放
+    "stack_enabled": 1,
+    "burst_seconds": 2,
     # 人臉辨識
     "face_enabled": 0,
     "face_model": "buffalo_l",
@@ -59,6 +66,10 @@ class Config:
     lan: int = DEFAULTS["lan"]
     scan_on_start: int = DEFAULTS["scan_on_start"]
     keep_awake: int = DEFAULTS["keep_awake"]
+    xmp_sync: int = DEFAULTS["xmp_sync"]
+    xmp_embed: int = DEFAULTS["xmp_embed"]
+    stack_enabled: int = DEFAULTS["stack_enabled"]
+    burst_seconds: int = DEFAULTS["burst_seconds"]
     face_enabled: int = DEFAULTS["face_enabled"]
     face_model: str = DEFAULTS["face_model"]
     face_similarity: int = DEFAULTS["face_similarity"]

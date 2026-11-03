@@ -110,7 +110,7 @@ EXIF_TAGS = [
     "-GPSLatitude", "-GPSLongitude", "-GPSAltitude", "-ImageWidth", "-ImageHeight",
     "-ExifImageWidth", "-ExifImageHeight", "-Orientation", "-Rotation", "-Duration", "-Rating",
     "-Subject", "-Keywords", "-Title", "-Description", "-ImageDescription", "-Caption-Abstract",
-    "-Artist", "-Creator", "-Copyright", "-Software", "-VideoFrameRate", "-CompressorID", "-MIMEType",
+    "-Artist", "-Creator", "-Copyright", "-Software", "-VideoFrameRate", "-CompressorID", "-MIMEType", "-Label",
 ]
 
 
@@ -333,7 +333,13 @@ def normalize_exiftool(raw: dict, media_type: str) -> dict:
         meta["fps"] = _num(raw.get("VideoFrameRate"))
         meta["codec"] = _str(raw.get("CompressorID"))
     rating = _num(raw.get("Rating"))
-    meta["rating"] = int(rating) if rating is not None else None
+    meta["rating"] = int(rating) if rating else None
+    label_raw = _str(raw.get("Label"))
+    if label_raw:
+        from .xmp import normalize_label
+
+        meta["label"] = normalize_label(label_raw)
+        meta["label_text"] = label_raw
     meta["keywords"] = _keywords(raw)
     meta["title"] = _str(raw.get("Title"))
     meta["caption"] = _str(raw.get("Description")) or _str(raw.get("ImageDescription")) or _str(raw.get("Caption-Abstract"))

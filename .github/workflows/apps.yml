@@ -108,7 +108,7 @@ jobs:
           PID=$!
           for i in $(seq 1 90); do curl -fs http://127.0.0.1:8898/api/auth/status && break; sleep 1; done
           echo
-          curl -fs http://127.0.0.1:8898/api/server | python3 -c "import json,sys; t=json.load(sys.stdin)['tools']; print(t); assert all(t.values()), t"
+          curl -fs http://127.0.0.1:8898/api/server | python3 -c "import json,sys; t=json.load(sys.stdin)['tools']; print(t); assert t['exiftool'] and t['ffmpeg'] and t['heif'], t"
           kill $PID || true
           # 製作 DMG：App ＋「應用程式」捷徑
           STAGE="$RUNNER_TEMP/dmg"

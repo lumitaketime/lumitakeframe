@@ -28,7 +28,7 @@ from .config import CONFIG_KEYS, Config
 from .jobs import JobRunner
 from .media import BROWSER_VIDEO, MediaError, encode, exiftool, load_image, thumb_path, tool_status, write_thumbnail
 from .models import RECOMMENDED, same_model
-from .search import search, summarize, tag_covers, top_tags
+from .search import STACK_COUNT_SQL, search, summarize, tag_covers, top_tags
 
 WEB_DIR = Path(__file__).parent / "web"
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
@@ -36,7 +36,7 @@ LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces", "query_rewrite", "clip_enabled", "clip_model",
-    "keep_awake",
+    "keep_awake", "xmp_sync", "xmp_embed", "stack_enabled", "burst_seconds",
 }
 MAX_IDS = 5000
 
@@ -201,6 +201,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     # ---- 時間軸 ----
     def scope_sql(params: dict) -> tuple[str, list]:
         where, args = ["i.status = 'ok'"], []
+        if params.get("album") is None:
+            where.append("i.stack_top = 1")  # 疊放只顯示封面
         if params.get("fav") == "1":
             where.append("i.favorite = 1")
         if params.get("type") in ("photo", "video"):
@@ -235,10 +237,10 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         c = conn()
         try:
             if month == "0000-00":
-                rows = c.execute(f"SELECT i.* FROM images i WHERE {where} AND i.sort_at IS NULL", args).fetchall()
+                rows = c.execute(f"SELECT i.*, {STACK_COUNT_SQL} FROM images i WHERE {where} AND i.sort_at IS NULL", args).fetchall()
             else:
                 rows = c.execute(
-                    f"SELECT i.* FROM images i WHERE {where} AND substr(i.sort_at, 1, 7) = ? ORDER BY i.sort_at DESC, i.id DESC",
+                    f"SELECT i.*, {STACK_COUNT_SQL} FROM images i WHERE {where} AND substr(i.sort_at, 1, 7) = ? ORDER BY i.sort_at DESC, i.id DESC",
                     args + [month],
                 ).fetchall()
             return [summarize(r) for r in rows]
@@ -267,8 +269,10 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             "WHERE f.image_id = ? AND f.excluded = 0 ORDER BY f.x1",
             (image["id"],),
         ).fetchall()
+        from .organize import stack_members
         from .places import country_names
 
+        data["stack"] = [summarize(m) for m in stack_members(c, image["stack_id"])] if image["stack_id"] else []
         data["country_name"] = country_names(image["country"])[0] if image["country"] else ""
         data.update(
             faces=[{"id": f["id"], "person_id": f["person_id"], "name": f["name"],
@@ -305,6 +309,27 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     def _render(image, path: Path, max_side: int):
         return load_image(path, image["media_type"], bool(image["is_raw"]), max_side, image["duration"], image["orientation"])
+
+    @app.post("/api/assets/{image_id:int}/xmp")
+    def set_xmp(image_id: int, body: dict = Body(...)):
+        """星等（-1 拒絕～5）、顏色標籤、關鍵字；依設定寫回 Lightroom 的 .xmp。"""
+        from .xmp import write
+
+        c = conn()
+        try:
+            get_image_or_404(c, image_id)
+            kws = body.get("keywords")
+            if isinstance(kws, str):
+                kws = kws.replace("，", ",").replace("、", ",").split(",")
+            try:
+                where = write(c, cfg, image_id, rating=body.get("rating"), label=body.get("label"), keywords=kws)
+            except (RuntimeError, MediaError) as exc:
+                raise HTTPException(500, f"已更新圖庫，但寫回檔案失敗：{exc}")
+            data = detail(c, db.get_image(c, image_id))
+            data["written_to"] = where
+            return data
+        finally:
+            c.close()
 
     @app.get("/api/assets/{image_id:int}/thumb")
     def thumb(image_id: int):
@@ -395,6 +420,21 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             if action == "move":
                 res = fileops.move_images(c, ids, int(body["root_id"]), str(body.get("folder", "")))
                 return {"done": len(res.done), "ids": res.done, "errors": res.errors}
+            if action in ("rating", "label"):
+                from .xmp import write
+
+                value = body.get("value")
+                errors = []
+                for i in ids:
+                    try:
+                        write(c, cfg, i, **({"rating": int(value or 0)} if action == "rating" else {"label": value or ""}))
+                    except Exception as exc:  # 個別檔案寫回失敗不影響其他
+                        errors.append(str(exc))
+                return {"done": len(ids), "errors": errors[:5]}
+            if action == "stack":
+                from .organize import make_stack
+
+                return {"stack_id": make_stack(c, ids)}
             if action == "add_to_album":
                 album_id = body.get("album_id")
                 if not album_id:
@@ -407,6 +447,121 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             if action == "analyze":
                 return {"jobs": jobs().submit("analyze", ids=ids, redo=bool(body.get("redo")))}
             raise HTTPException(400, f"未知的動作：{action}")
+        finally:
+            c.close()
+
+    # ---- 疊放 ----
+    @app.post("/api/assets/{image_id:int}/stack")
+    def stack_action(image_id: int, body: dict = Body(...)):
+        from .organize import set_cover, unstack
+
+        c = conn()
+        try:
+            image = get_image_or_404(c, image_id)
+            if body.get("action") == "unstack" and image["stack_id"]:
+                unstack(c, image["stack_id"])
+            elif body.get("action") == "cover":
+                set_cover(c, image_id)
+            return detail(c, db.get_image(c, image_id))
+        finally:
+            c.close()
+
+    # ---- 重複與相似 ----
+    @app.get("/api/duplicates")
+    def duplicates():
+        from .organize import load_duplicates, suggest_keep
+
+        c = conn()
+        try:
+            data = load_duplicates(c, cfg)
+            if data is None:
+                return {"computed_at": None, "exact": [], "similar": []}
+
+            def expand(group):
+                rows = c.execute(f"SELECT * FROM images WHERE id IN ({','.join('?' * len(group))})", group).fetchall()
+                keep = suggest_keep(rows)
+                return {
+                    "keep": keep,
+                    "items": [{**summarize(r), "path": str(db.absolute_path(c, r)), "size": r["size"],
+                               "width": r["width"], "height": r["height"], "folder": r["folder"]} for r in rows],
+                }
+
+            return {
+                "computed_at": data["computed_at"],
+                "exact": [expand(g) for g in data["exact"][:300]],
+                "similar": [expand(g) for g in data["similar"][:300]],
+                "total_exact": len(data["exact"]),
+                "total_similar": len(data["similar"]),
+            }
+        finally:
+            c.close()
+
+    @app.post("/api/duplicates/ignore")
+    def ignore_duplicates(body: dict = Body(...)):
+        from .organize import ignore_group
+
+        c = conn()
+        try:
+            ignore_group(c, [int(i) for i in body.get("ids") or []])
+            return {"ok": True}
+        finally:
+            c.close()
+
+    # ---- 智慧相簿 ----
+    @app.get("/api/smart-albums")
+    def smart_albums():
+        from .organize import list_smart
+
+        c = conn()
+        try:
+            return list_smart(c)
+        finally:
+            c.close()
+
+    @app.post("/api/smart-albums")
+    def save_smart_album(body: dict = Body(...)):
+        from .organize import save_smart
+
+        c = conn()
+        try:
+            return {"id": save_smart(c, str(body.get("name", "")), str(body.get("query", "")), body.get("id"))}
+        finally:
+            c.close()
+
+    @app.get("/api/smart-albums/{smart_id:int}")
+    def smart_album(smart_id: int):
+        c = conn()
+        try:
+            row = c.execute("SELECT * FROM smart_albums WHERE id = ?", (smart_id,)).fetchone()
+            if row is None:
+                raise HTTPException(404, "找不到智慧相簿")
+            res = search(c, row["query"], limit=2000)
+            return {**dict(row), "count": res["total"], "assets": res["results"]}
+        finally:
+            c.close()
+
+    @app.delete("/api/smart-albums/{smart_id:int}")
+    def delete_smart_album(smart_id: int):
+        c = conn()
+        try:
+            c.execute("DELETE FROM smart_albums WHERE id = ?", (smart_id,))
+            c.commit()
+            return {"ok": True}
+        finally:
+            c.close()
+
+    # ---- 那年今日 ----
+    @app.get("/api/memories")
+    def get_memories():
+        from .organize import memories
+
+        c = conn()
+        try:
+            return [
+                {"year": m["year"], "years_ago": m["years_ago"], "count": m["count"],
+                 "assets": [summarize(r) for r in m["rows"]]}
+                for m in memories(c)
+            ]
         finally:
             c.close()
 
@@ -686,7 +841,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 if (row["latest"] or "") >= child["latest"]:
                     child["latest"], child["cover"] = row["latest"] or "", row["id"]
             assets = c.execute(
-                "SELECT * FROM images WHERE root_id = ? AND folder = ? AND status = 'ok' ORDER BY sort_at DESC, id DESC",
+                f"SELECT i.*, {STACK_COUNT_SQL} FROM images i WHERE i.root_id = ? AND i.folder = ? AND i.status = 'ok' "
+                "AND i.stack_top = 1 ORDER BY i.sort_at DESC, i.id DESC",
                 (r["id"], path),
             ).fetchall()
             crumbs, acc = [], []

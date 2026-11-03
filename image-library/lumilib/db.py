@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -85,6 +85,19 @@ CREATE TABLE IF NOT EXISTS faces (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS settings_kv (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+
+CREATE TABLE IF NOT EXISTS smart_albums (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    query TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS album_items (
     album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
     image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
@@ -126,6 +139,12 @@ V2_COLUMNS = [
     ("place", "TEXT"),
     ("place_en", "TEXT"),
     ("country", "TEXT"),
+    ("label", "TEXT"),
+    ("label_text", "TEXT"),
+    ("xmp_mtime", "REAL"),
+    ("stack_id", "INTEGER"),
+    ("stack_top", "INTEGER NOT NULL DEFAULT 1"),
+    ("phash", "TEXT"),
 ]
 
 INDEXES = """
@@ -137,13 +156,14 @@ CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite);
 CREATE INDEX IF NOT EXISTS idx_album_items_image ON album_items(image_id);
 CREATE INDEX IF NOT EXISTS idx_faces_image ON faces(image_id);
 CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id);
+CREATE INDEX IF NOT EXISTS idx_images_stack ON images(stack_id);
 """
 
 # 由掃描時的中繼資料寫入的欄位
 META_FIELDS = (
     "width", "height", "taken_at", "tz_offset", "camera", "lens", "lat", "lon", "altitude",
     "orientation", "duration", "fps", "codec", "aperture", "exposure_time", "iso", "focal_length",
-    "focal_35", "rating", "keywords", "title", "caption", "artist", "copyright", "software",
+    "focal_35", "rating", "keywords", "title", "caption", "artist", "copyright", "software", "label", "label_text",
 )
 
 

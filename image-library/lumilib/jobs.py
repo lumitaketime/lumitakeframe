@@ -17,6 +17,7 @@ LABELS = {
     "scan": "掃描", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
     "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
+    "dups": "尋找重複與相似照片", "stacks": "重新計算疊放",
 }
 
 
@@ -198,6 +199,16 @@ class JobRunner:
                     stop=stop,
                 )
                 parts.append(f"分析 {res.analyzed} 個、失敗 {res.failed} 個" + (f"、向量 {res.embedded} 個" if res.embedded else ""))
+            if kind == "dups":
+                from .organize import find_duplicates
+
+                res = find_duplicates(conn, self.cfg, stop=stop,
+                                      progress=lambda i, n, m: self._update(done=i, total=n, message=f"{m} {i}/{n}"))
+                parts.append(f"完全相同 {len(res['exact'])} 組、幾乎一樣 {len(res['similar'])} 組")
+            if kind == "stacks":
+                from .organize import rebuild_stacks
+
+                parts.append(f"疊放 {rebuild_stacks(conn, self.cfg)} 組")
             if kind == "embed":
                 n = embed_images(conn, self.cfg, self.client_factory(), stop=stop)
                 parts.append(f"建立語意向量 {n} 個")

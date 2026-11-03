@@ -14,6 +14,8 @@
     type:video / type:photo / type:raw
     person:媽媽          人物（人臉辨識後命名的人）
     place:恆春           地點（依 GPS 換算的城鎮）
+    rating:4            四星以上；is:rejected 被拒絕（Lightroom 的 X）
+    label:red / label:紅 顏色標籤
     is:favorite / is:pending / is:failed / is:analyzed / is:missing
 """
 
@@ -26,7 +28,7 @@ from dataclasses import dataclass, field
 
 from . import db
 
-FILTER_KEYS = {"tag", "folder", "camera", "lens", "ext", "year", "after", "before", "root", "is", "type", "album", "person", "place"}
+FILTER_KEYS = {"tag", "folder", "camera", "lens", "ext", "year", "after", "before", "root", "is", "type", "album", "person", "place", "rating", "label"}
 
 
 @dataclass
@@ -88,6 +90,14 @@ def _filter_sql(query: Query, include_terms: bool, groups: list[list[str]] | Non
                 where.append("i.media_type = 'photo'")
             elif low == "raw":
                 where.append("i.is_raw = 1")
+        elif key == "rating" and value.lstrip("-").isdigit():
+            where.append("i.rating >= ?")
+            params.append(int(value))
+        elif key == "label":
+            from .xmp import normalize_label
+
+            where.append("i.label = ?")
+            params.append(normalize_label(value) or {"紅": "red", "黃": "yellow", "綠": "green", "藍": "blue", "紫": "purple"}.get(value, low))
         elif key == "place":
             where.append("(lower(i.place) LIKE ? ESCAPE '\\' OR lower(i.place_en) LIKE ? ESCAPE '\\' OR lower(i.country) = ?)")
             params += [_like(low), _like(low), low]
@@ -130,6 +140,8 @@ def _filter_sql(query: Query, include_terms: bool, groups: list[list[str]] | Non
                 where.append("i.analyzed_at IS NULL AND i.error IS NOT NULL")
             elif low == "analyzed":
                 where.append("i.analyzed_at IS NOT NULL")
+            elif low in ("rejected", "reject"):
+                where.append("i.rating = -1")
             elif low in ("favorite", "fav"):
                 where.append("i.favorite = 1")
     where.insert(0, "i.status IN (%s)" % ",".join("?" * len(statuses)))
@@ -174,6 +186,12 @@ def keyword_score(row: sqlite3.Row, terms: list[str], groups: list[list[str]] | 
     return score
 
 
+STACK_COUNT_SQL = (
+    "CASE WHEN i.stack_id IS NULL OR i.stack_id = 0 THEN 0 ELSE "
+    "(SELECT COUNT(*) FROM images s WHERE s.stack_id = i.stack_id AND s.status = 'ok') END AS stack_count"
+)
+
+
 def summarize(row) -> dict:
     """網格顯示用的精簡資料（時間軸、資料夾、相簿、搜尋共用）。"""
     return {
@@ -185,6 +203,9 @@ def summarize(row) -> dict:
         "duration": row["duration"],
         "at": row["sort_at"],
         "fav": bool(row["favorite"]),
+        "rating": row["rating"] or 0,
+        "stack": row["stack_count"] if "stack_count" in row.keys() else 0,
+        "label": row["label"],
         "fp": row["fingerprint"][:10],
         "name": row["rel_path"].rsplit("/", 1)[-1],
         "missing": row["status"] != "ok",
