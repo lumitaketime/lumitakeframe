@@ -13,7 +13,7 @@ from pathlib import Path
 DEFAULTS = {
     "ollama_url": "http://127.0.0.1:11434",
     # 視覺模型：負責描述圖片、產生關鍵字、辨識圖中文字
-    "vision_model": "qwen2.5vl:7b",
+    "vision_model": "gemma4:e4b",
     # 向量模型：選用，用於語意搜尋（輸入「海邊夕陽」也能找到描述為「黃昏的沙灘」的照片）
     "embed_model": "",
     # 文字模型：搜尋詞翻譯、描述翻譯用（空白＝使用視覺模型）
@@ -38,6 +38,10 @@ DEFAULTS = {
     "viewer_rating_bar": 1,
     # 左側選單隱藏的功能（逗號分隔的路徑，例如 /map,/duplicates）
     "nav_hidden": "",
+    # 照片格呈現方式：aspect＝依照片比例（等高列）、square＝正方形裁切
+    "grid_style": "aspect",
+    # 第一次開啟的設定引導是否已完成
+    "onboarded": 0,
     # 圖庫開著時避免 Mac 閒置睡眠（接電源時），手機才能持續連線
     "keep_awake": 1,
     # Lightroom 同步：星等、顏色標籤、關鍵字寫回 .xmp（RAW）
@@ -86,6 +90,8 @@ class Config:
     auto_analyze: int = DEFAULTS["auto_analyze"]
     viewer_rating_bar: int = DEFAULTS["viewer_rating_bar"]
     nav_hidden: str = DEFAULTS["nav_hidden"]
+    grid_style: str = DEFAULTS["grid_style"]
+    onboarded: int = DEFAULTS["onboarded"]
     keep_awake: int = DEFAULTS["keep_awake"]
     xmp_sync: int = DEFAULTS["xmp_sync"]
     xmp_embed: int = DEFAULTS["xmp_embed"]

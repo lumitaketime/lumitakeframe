@@ -45,11 +45,17 @@ export function squares(assets, width, cols, gap = 2) {
   return rows;
 }
 
+/** 正方形模式的欄數：手機 3–4 欄，桌機依目標列高 */
+export function squareCols(width, target) {
+  if (width < 640) return width < 420 ? 3 : 4;
+  return Math.max(3, Math.round(width / (target * 1.05)));
+}
+
 /** 依列寬估計高度（尚未載入的月份用） */
-export function estimateHeight(count, width, target, gap = 4) {
+export function estimateHeight(count, width, target, gap = 4, square = false) {
   if (!width) return count * 40;
-  if (width < 640) {
-    const cols = width < 420 ? 3 : 4;
+  if (width < 640 || square) {
+    const cols = squareCols(width, target);
     return Math.ceil(count / cols) * (width / cols);
   }
   const perRow = Math.max(1, width / (target * 1.35));

@@ -63,3 +63,10 @@ export const LABEL_COLORS = {
 };
 export const LABEL_NAMES = { red: "紅", yellow: "黃", green: "綠", blue: "藍", purple: "紫" };
 export const LABEL_KEYS = ["red", "yellow", "green", "blue", "purple"];
+
+/** 完整日期（浮出的日期提示用）：2024年6月25日 週二 */
+export function fullDayLabel(iso) {
+  const d = parseLocal(iso);
+  if (!d) return "日期不明";
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 週${WEEK[d.getDay()]}`;
+}

@@ -126,6 +126,8 @@ class JobRunner:
                 message = f"已停止。{message}"
             elif job["kind"] == "scan" and not error:
                 message = self._follow_up(message)
+            elif job["kind"] == "pull" and not error:
+                message = self._after_pull(job["options"].get("model"), message)
             with self.lock:
                 self.last = {
                     "kind": job["kind"], "label": job["label"], "message": message, "error": error,
@@ -156,6 +158,25 @@ class JobRunner:
         except Exception as exc:  # noqa: BLE001  後續工作失敗不影響掃描結果
             traceback.print_exc()
             message += f"；無法排入後續工作：{exc}"
+        return message
+
+    def _after_pull(self, model: str | None, message: str) -> str:
+        """剛下載好的就是目前選用的視覺模型：有待分析的照片就直接開始。"""
+        from .models import same_model
+
+        if not (model and same_model(model, self.cfg.vision_model) and self.cfg.auto_analyze):
+            return message
+        try:
+            conn = db.connect(self.cfg.db_path)
+            try:
+                pending = db.stats(conn)["pending"]
+            finally:
+                conn.close()
+            if pending:
+                self.submit("analyze")
+                message += f"；開始分析 {pending} 個項目"
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
         return message
 
     def _faces_ready(self, kind: str) -> bool:

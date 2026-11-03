@@ -33,12 +33,12 @@ from .search import STACK_COUNT_SQL, search, summarize, tag_covers, top_tags
 
 WEB_DIR = Path(__file__).parent / "web"
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
-LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url"}
+LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url", "/api/ollama/start"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces", "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "xmp_sync", "xmp_embed", "stack_enabled", "burst_seconds",
-    "auto_analyze", "viewer_rating_bar", "nav_hidden",
+    "auto_analyze", "viewer_rating_bar", "nav_hidden", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -184,7 +184,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "tools": tool_status(),
                 "ssl_ca": bool(ca_file()),
                 "ai": cached_ai_status(),
-                "ui": {"viewer_rating_bar": cfg.viewer_rating_bar, "nav_hidden": cfg.nav_hidden},
+                "ui": {"viewer_rating_bar": cfg.viewer_rating_bar, "nav_hidden": cfg.nav_hidden,
+                       "grid_style": cfg.grid_style, "onboarded": cfg.onboarded},
                 "local": request.state.local,
                 "platform": sys.platform,
                 "home": str(cfg.home) if request.state.local else None,
@@ -683,6 +684,27 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             return out
         finally:
             c.close()
+
+    @app.post("/api/ollama/start")
+    def ollama_start(body: dict = Body(default={})):
+        """設定引導用：打開已安裝的 Ollama（Mac 上就是開啟 Ollama App）。"""
+        from .analyzer import ollama_installed
+
+        info = ollama_installed()
+        if not info["installed"]:
+            raise HTTPException(400, "還沒有安裝 Ollama")
+        import subprocess
+
+        try:
+            if sys.platform == "darwin" and info.get("app"):
+                subprocess.Popen(["open", "-a", info["app"]])
+            else:
+                subprocess.Popen([info["cli"], "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+        except OSError as exc:
+            raise HTTPException(500, f"無法啟動 Ollama：{exc}") from exc
+        ai_cache["at"] = 0.0
+        return {"ok": True}
 
     @app.post("/api/ollama/test")
     def ollama_test(body: dict = Body(...)):

@@ -6,6 +6,7 @@
   import Toasts from "./components/Toasts.svelte";
   import Dialogs from "./components/Dialogs.svelte";
   import JobIndicator from "./components/JobIndicator.svelte";
+  import Onboarding from "./components/Onboarding.svelte";
   import Timeline from "./pages/Timeline.svelte";
   import Explore from "./pages/Explore.svelte";
   import Search from "./pages/Search.svelte";
@@ -27,21 +28,54 @@
   import {
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
     mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiAccountBoxOutline, mdiContentDuplicate, mdiCameraOutline, mdiTagMultipleOutline,
+    mdiChevronRight, mdiChevronDown,
   } from "./lib/icons.js";
 
-  const NAV = [
-    { href: "/", label: "照片", icon: mdiImageMultipleOutline, mobile: true },
-    { href: "/explore", label: "探索", icon: mdiCompassOutline, mobile: true },
-    { href: "/people", label: "人物", icon: mdiAccountBoxOutline },
-    { href: "/map", label: "地圖", icon: mdiMapOutline },
-    { href: "/gear", label: "器材", icon: mdiCameraOutline },
-    { href: "/keywords", label: "關鍵字", icon: mdiTagMultipleOutline },
-    { href: "/folders", label: "資料夾", icon: mdiFolderOutline, mobile: true },
-    { href: "/albums", label: "相簿", icon: mdiImageAlbum, mobile: true },
-    { href: "/favorites", label: "我的最愛", icon: mdiHeartOutline },
-    { href: "/videos", label: "影片", icon: mdiVideoOutline },
-    { href: "/duplicates", label: "重複照片", icon: mdiContentDuplicate },
+  // 左側選單分組；fixed＝一定顯示，其他可在「設定 → 功能與選單」關掉
+  const NAV_GROUPS = [
+    { id: "library", label: "圖庫", items: [
+      { href: "/", label: "照片", icon: mdiImageMultipleOutline, mobile: true, fixed: true },
+      { href: "/explore", label: "探索", icon: mdiCompassOutline, mobile: true },
+      { href: "/map", label: "地圖", icon: mdiMapOutline },
+    ] },
+    { id: "organize", label: "整理", items: [
+      { href: "/folders", label: "資料夾", icon: mdiFolderOutline, mobile: true, fixed: true },
+      { href: "/albums", label: "相簿", icon: mdiImageAlbum, mobile: true, fixed: true },
+      { href: "/favorites", label: "我的最愛", icon: mdiHeartOutline },
+      { href: "/videos", label: "影片", icon: mdiVideoOutline },
+    ] },
+    { id: "browse", label: "分類", items: [
+      { href: "/people", label: "人物", icon: mdiAccountBoxOutline },
+      { href: "/gear", label: "器材", icon: mdiCameraOutline },
+      { href: "/keywords", label: "關鍵字", icon: mdiTagMultipleOutline },
+    ] },
+    { id: "tools", label: "工具", items: [
+      { href: "/duplicates", label: "重複照片", icon: mdiContentDuplicate },
+    ] },
   ];
+  const NAV = NAV_GROUPS.flatMap((g) => g.items);
+
+  const hidden = $derived(new Set((app.server?.ui?.nav_hidden || "").split(",").filter(Boolean)));
+  const visible = (n) => n.fixed || !hidden.has(n.href);
+  let collapsed = $state(readCollapsed());
+
+  function readCollapsed() {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("navCollapsed") || "[]"));
+    } catch {
+      return new Set();
+    }
+  }
+  function toggleGroup(id) {
+    const next = new Set(collapsed);
+    next.has(id) ? next.delete(id) : next.add(id);
+    collapsed = next;
+    try {
+      localStorage.setItem("navCollapsed", JSON.stringify([...next]));
+    } catch {
+      /* 只影響這次 */
+    }
+  }
 
   let q = $state(route.query.q || "");
   let lastFinished = null;
@@ -52,6 +86,8 @@
 
   const seg = $derived(route.path.split("/").filter(Boolean));
   const page = $derived(seg[0] || "");
+  // 第一次在這台 Mac 上開啟時顯示設定引導（手機、平板不顯示）
+  const welcome = $derived(page === "welcome" || (app.server?.local && app.server?.ui?.onboarded === 0 && page !== "settings"));
 
   function active(href) {
     if (href === "/") return page === "";
@@ -146,17 +182,26 @@
     </header>
 
     <nav class="sidebar" aria-label="主選單">
-      {#each NAV as n (n.href)}
-        <a href={n.href} use:link class:active={active(n.href)}><Icon path={n.icon} /><span>{n.label}</span></a>
+      {#each NAV_GROUPS as g (g.id)}
+        {@const items = g.items.filter(visible)}
+        {#if items.length}
+          <button class="group" onclick={() => toggleGroup(g.id)} aria-expanded={!collapsed.has(g.id)}>
+            <span>{g.label}</span><Icon path={collapsed.has(g.id) ? mdiChevronRight : mdiChevronDown} size={16} />
+          </button>
+          {#each items.filter((n) => !collapsed.has(g.id) || active(n.href)) as n (n.href)}
+            <a href={n.href} use:link class:active={active(n.href)}><Icon path={n.icon} /><span>{n.label}</span></a>
+          {/each}
+        {/if}
       {/each}
-      <div class="divider"></div>
-      <p class="side-title">圖庫</p>
-      {#each app.server?.roots || [] as r (r.id)}
+      <button class="group" onclick={() => toggleGroup("roots")} aria-expanded={!collapsed.has("roots")}>
+        <span>資料夾來源</span><Icon path={collapsed.has("roots") ? mdiChevronRight : mdiChevronDown} size={16} />
+      </button>
+      {#each collapsed.has("roots") ? [] : app.server?.roots || [] as r (r.id)}
         <a href={`/folders/${r.id}`} use:link class:active={route.path === `/folders/${r.id}`} class="root" title={r.path}>
           <Icon path={mdiHarddisk} /><span>{r.name}</span>{#if !r.online}<em>未連接</em>{/if}
         </a>
       {/each}
-      <a href="/settings" use:link class="add-root">+ 加入資料夾</a>
+      {#if !collapsed.has("roots")}<a href="/settings/library" use:link class="add-root">+ 加入資料夾</a>{/if}
       {#if app.server}
         <p class="stats">{app.server.stats.photos.toLocaleString()} 張照片 · {app.server.stats.videos.toLocaleString()} 部影片</p>
       {/if}
@@ -164,7 +209,7 @@
 
     <main class="scroll-area">
       {#key route.path}
-        {#if page === ""}
+        {#if page === "" || page === "welcome"}
           <Timeline />
         {:else if page === "favorites"}
           <Timeline scope={{ fav: "1" }} title="我的最愛" emptyText="點照片右上角的愛心，作品就會出現在這裡。" />
@@ -195,7 +240,7 @@
         {:else if page === "map"}
           <MapPage />
         {:else if page === "settings"}
-          <Settings />
+          <Settings section={seg[1] || ""} />
         {:else}
           <div class="empty"><h2>找不到頁面</h2><a href="/" use:link>回到照片</a></div>
         {/if}
@@ -203,12 +248,13 @@
     </main>
 
     <nav class="bottom" aria-label="主選單">
-      {#each NAV.filter((n) => n.mobile) as n (n.href)}
+      {#each NAV.filter((n) => n.mobile && visible(n)) as n (n.href)}
         <a href={n.href} use:link class:active={active(n.href)}><Icon path={n.icon} /><span>{n.label}</span></a>
       {/each}
     </nav>
   </div>
 
+  {#if welcome}<Onboarding startStep={route.query.step || ""} />{/if}
   {#if selection.size}<SelectionBar />{/if}
   {#if viewer.open}<Viewer />{/if}
   <Dialogs />
@@ -250,8 +296,13 @@
   .sidebar .root span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sidebar .root em { font-style: normal; font-size: 11px; color: var(--danger); }
   .add-root { color: var(--muted) !important; font-size: 14px !important; }
-  .divider { height: 1px; background: var(--line); margin: 12px 0 8px 22px; }
-  .side-title { margin: 6px 22px; font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .05em; }
+  .group {
+    display: flex; align-items: center; justify-content: space-between; border: 0; background: none; cursor: pointer;
+    margin: 10px 0 2px; padding: 4px 12px 4px 22px; font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .05em;
+    border-radius: 0 999px 999px 0;
+  }
+  .group:first-child { margin-top: 0; }
+  .group:hover { background: var(--bg-2); color: var(--text); }
   .stats { margin: 12px 22px 0; font-size: 12px; color: var(--muted); }
 
   main { grid-area: main; position: relative; }

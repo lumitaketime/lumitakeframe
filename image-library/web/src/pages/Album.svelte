@@ -1,5 +1,5 @@
 <script>
-  import Grid from "../components/Grid.svelte";
+  import DateGroups from "../components/DateGroups.svelte";
   import Icon from "../components/Icon.svelte";
   import { api } from "../lib/api.js";
   import { navigate, link } from "../lib/router.svelte.js";
@@ -54,7 +54,7 @@
     </div>
     <p class="muted small sub">{album.count} 個項目</p>
     {#if album.assets.length}
-      <Grid assets={album.assets} />
+      <DateGroups assets={album.assets} storeKey={`album:${id}`} />
     {:else}
       <div class="empty"><p>相簿是空的。到「照片」或「資料夾」選取項目，按上方的「加到相簿」。</p></div>
     {/if}

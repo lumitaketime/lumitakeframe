@@ -253,13 +253,16 @@ def _str_list(value, limit: int) -> list[str]:
     seen: set[str] = set()
     for item in value:
         text = str(item).strip().lstrip("#").strip()
-        key = text.lower()
-        if text and key not in seen and len(text) <= 60:
-            seen.add(key)
-            out.append(text)
+        # 「峽灣 (Fjord)」這種中英合寫拆成兩個關鍵字
+        pair = re.fullmatch(r"(.+?)\s*[（(]\s*(.+?)\s*[)）]", text)
+        for part in ([pair.group(1).strip(), pair.group(2).strip()] if pair else [text]):
+            key = part.lower()
+            if part and key not in seen and len(part) <= 60:
+                seen.add(key)
+                out.append(part)
         if len(out) >= limit:
             break
-    return out
+    return out[:limit]
 
 
 def normalize_result(raw: dict) -> dict:
@@ -520,20 +523,45 @@ def translate_analysis(client, model: str, description: str, tags: list[str], la
 
 # ---- AI 是否準備好 -------------------------------------------------------------------------
 
+def ollama_installed() -> dict:
+    """這台電腦是否裝了 Ollama（沒有在執行也算）。{"installed", "app", "cli"}"""
+    import shutil
+    import sys
+    from pathlib import Path
+
+    app = None
+    if sys.platform == "darwin":
+        for cand in (Path("/Applications/Ollama.app"), Path.home() / "Applications" / "Ollama.app"):
+            if cand.exists():
+                app = str(cand)
+                break
+    cli = shutil.which("ollama")
+    if cli is None:
+        for cand in ("/usr/local/bin/ollama", "/opt/homebrew/bin/ollama"):
+            if Path(cand).exists():
+                cli = cand
+                break
+    return {"installed": bool(app or cli), "app": app, "cli": cli}
+
+
 def ai_status(client, cfg: Config) -> dict:
     """{"ready", "ollama", "model_installed", "model", "message"}：讓介面說清楚為什麼還沒開始分析。"""
     from .models import same_model
 
-    out = {"ready": False, "ollama": False, "model_installed": False, "model": cfg.vision_model, "message": ""}
+    out = {"ready": False, "ollama": False, "model_installed": False, "model": cfg.vision_model, "message": "",
+           "installed": False}
     try:
         names = client.list_models()
     except OllamaUnavailable:
-        out["message"] = "Ollama 沒有在執行。請安裝並打開 Ollama（https://ollama.com/download）。"
+        out["installed"] = ollama_installed()["installed"]
+        out["message"] = ("Ollama 已安裝但沒有在執行，請打開 Ollama。" if out["installed"] else
+                          "還沒有安裝 Ollama。請到設定 → AI 分析，照著步驟安裝（約 3 分鐘）。")
         return out
     except Exception as exc:  # noqa: BLE001
         out["message"] = f"無法讀取 Ollama 狀態：{exc}"
         return out
     out["ollama"] = True
+    out["installed"] = True
     if not cfg.vision_model:
         out["message"] = "尚未選擇視覺模型。"
         return out

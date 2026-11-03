@@ -1,5 +1,5 @@
 <script>
-  import Grid from "../components/Grid.svelte";
+  import DateGroups from "../components/DateGroups.svelte";
   import Icon from "../components/Icon.svelte";
   import { api, thumbUrl } from "../lib/api.js";
   import { route, navigate, link } from "../lib/router.svelte.js";
@@ -63,9 +63,9 @@
   {:else if !data}
     <p class="muted"><span class="spinner"></span></p>
   {:else if !rootId}
-    <div class="page-head"><h1>資料夾</h1><a class="btn ghost small" href="/settings" use:link>+ 加入資料夾</a></div>
+    <div class="page-head"><h1>資料夾</h1><a class="btn ghost small" href="/settings/library" use:link>+ 加入資料夾</a></div>
     {#if !data.roots.length}
-      <div class="empty"><h2>還沒有加入任何資料夾</h2><p><a class="btn" href="/settings" use:link>加入照片資料夾</a></p></div>
+      <div class="empty"><h2>還沒有加入任何資料夾</h2><p><a class="btn" href="/settings/library" use:link>加入照片資料夾</a></p></div>
     {/if}
     <div class="card-grid">
       {#each data.roots as r (r.id)}
@@ -116,7 +116,7 @@
     {/if}
     {#if data.assets.length}
       {#if data.folders.length}<h2 class="section-title">這個資料夾中的檔案（{data.assets.length}）</h2>{/if}
-      <Grid assets={data.assets} />
+      {#key `${rootId}:${path}`}<DateGroups assets={data.assets} storeKey={`folder:${rootId}:${path}`} />{/key}
     {:else if !data.folders.length}
       <div class="empty"><p>這個資料夾裡沒有照片或影片。</p></div>
     {/if}

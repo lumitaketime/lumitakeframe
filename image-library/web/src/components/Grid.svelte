@@ -1,17 +1,20 @@
 <script>
   import Thumb from "./Thumb.svelte";
-  import { justify, squares } from "../lib/layout.js";
-  import { selection, openViewer } from "../lib/state.svelte.js";
+  import { justify, squares, squareCols } from "../lib/layout.js";
+  import { app, selection, openViewer } from "../lib/state.svelte.js";
 
   /** list：開啟檢視器時可左右切換的完整清單（預設等於 assets） */
   let { assets = [], list = null, offset = 0, target = 0, layoutWidth = 0 } = $props();
   let width = $state(0);
 
-  const narrow = $derived((layoutWidth || width) > 0 && (layoutWidth || width) < 640);
-  const rowTarget = $derived(target || (width > 1600 ? 260 : width > 1000 ? 230 : 190));
+  const lw = $derived(layoutWidth || width);
+  const narrow = $derived(lw > 0 && lw < 640);
+  // 設定 → 外觀：照片依比例（等高列）或正方形裁切；手機一律正方形
+  const square = $derived(narrow || app.server?.ui?.grid_style === "square");
+  const rowTarget = $derived(target || (lw > 1600 ? 260 : lw > 1000 ? 230 : 190));
   const rows = $derived(
-    narrow
-      ? squares(assets, layoutWidth || width, (layoutWidth || width) < 420 ? 3 : 4, 2)
+    square
+      ? squares(assets, lw, squareCols(lw, rowTarget), narrow ? 2 : 4)
       : justify(assets, width, rowTarget, 4)
   );
   const gap = $derived(narrow ? 2 : 4);

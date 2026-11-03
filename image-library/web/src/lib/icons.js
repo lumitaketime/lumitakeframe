@@ -1,6 +1,6 @@
 export {
   mdiAlertCircleOutline, mdiArrowLeft, mdiCameraIris, mdiCamera, mdiCellphone, mdiCheck, mdiCheckCircle,
-  mdiChevronLeft, mdiChevronRight, mdiClose, mdiCogOutline, mdiCompassOutline, mdiContentCopy, mdiCreation,
+  mdiChevronLeft, mdiChevronRight, mdiChevronDown, mdiClose, mdiCogOutline, mdiCompassOutline, mdiContentCopy, mdiCreation,
   mdiDeleteOutline, mdiDotsVertical, mdiDownload, mdiFolderMoveOutline, mdiFolderOpenOutline, mdiFolderOutline,
   mdiFolderPlusOutline, mdiHarddisk, mdiHeart, mdiHeartOutline, mdiImageAlbum, mdiImageMultipleOutline,
   mdiImageOutline, mdiInformationOutline, mdiLogout, mdiMagnify, mdiMapMarkerOutline, mdiMapOutline, mdiMenu,
@@ -9,6 +9,6 @@ export {
   mdiMagnifyPlusOutline, mdiMagnifyMinusOutline, mdiAlbum, mdiStarFourPoints, mdiServerNetwork, mdiLockOutline,
   mdiCheckboxMarkedCircle, mdiCheckboxBlankCircleOutline, mdiPlayCircle, mdiArrowUp, mdiFolderHome,
   mdiAccountBoxOutline, mdiAccountMultiplePlusOutline, mdiAccountRemoveOutline, mdiEyeOffOutline, mdiEyeOutline,
-  mdiFaceRecognition, mdiTranslate, mdiImageSearchOutline,
+  mdiFaceRecognition, mdiTranslate, mdiImageSearchOutline, mdiViewDashboardOutline,
   mdiStar, mdiStarOutline, mdiCameraOutline, mdiTagMultipleOutline, mdiAccountGroupOutline, mdiTuneVariant, mdiCloseCircle, mdiFlagRemove, mdiLayers, mdiLayersOff, mdiContentDuplicate, mdiAutoFix, mdiHistory, mdiImageFilterCenterFocus,
 } from "@mdi/js";

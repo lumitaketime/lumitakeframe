@@ -53,7 +53,8 @@
    xattr -cr "/Applications/Lumitake Library.app"
    ```
 
-3. AI 分析需要 [Ollama](https://ollama.com/download)：下載安裝後打開一次，再到 App 的「設定 → AI 模型」下載模型。
+3. 第一次打開會出現「設定引導」：加入照片資料夾 → 安裝 [Ollama](https://ollama.com/download)（畫面會一步一步說明並自動偵測）
+   → 依你的 Mac 下載推薦的模型。模型下載完會自動開始分析。之後可在「設定 → 外觀與系統」重新執行引導。
    exiftool、ffmpeg 已經內建在 App 裡，不用另外安裝。
 4. 關閉視窗後 App 會留在上方選單列（手機才能繼續連線）；要完全結束請按選單列圖示 →「結束」。
    選單裡也可以勾選「登入時自動啟動」。
@@ -84,18 +85,20 @@ bash ~/Downloads/lumitakeframe-claude-kind-dijkstra-7t80hs/image-library/install
 
 會用 Homebrew 安裝 Python、exiftool、ffmpeg、Ollama，並在桌面建立 `Lumitake Library.command`。
 
-### 推薦模型（M1 Pro 16GB）
+### 推薦模型
 
-| 模型 | 大小 | 速度 | 用途 |
+App 會偵測 Mac 的記憶體，在「設定 → AI 分析」標出「品質優先」與「速度優先」的模型。
+下表是在 4 核心 CPU 測試機上用真的 Ollama 實測的結果（Apple Silicon 用 GPU 會快很多）：
+
+| 模型 | 下載大小 | 測試機每張 | 結果 |
 | --- | --- | --- | --- |
-| `qwen2.5vl:7b` | 約 6 GB | 每張 6–12 秒 | 預設，中文描述與文字辨識最好 |
-| `qwen2.5vl:3b` | 約 3 GB | 每張 3–5 秒 | 十萬張先快速掃一輪 |
-| `qwen3-vl:8b` / `qwen3-vl:4b` | 3–6 GB | 中／快 | 新一代，需要較新版 Ollama |
-| `gemma3:12b` | 約 8 GB | 每張 12–25 秒 | 描述細膩，16GB 會比較吃緊 |
-| `bge-m3` | 約 1.2 GB | 很快 | 語意搜尋（選用） |
+| `gemma4:e4b` | 6.6 GB | 約 90 秒 | 16GB Mac 預設。描述自然、關鍵字中英對照、圖中文字正確 |
+| `gemma4:e2b` | 4.6 GB | 約 40 秒 | 速度優先、8GB Mac。品質略簡單但正確 |
+| `gemma4:26b` / `gemma4:31b` | 18–20 GB | 未實測 | 32GB／48GB 以上的 Mac |
+| `qwen3-vl:4b` | 3.3 GB | 超過 10 分鐘 | 實測很慢，暫不建議 |
+| `bge-m3` | 1.2 GB | 很快 | 語意搜尋（選用） |
 
-十萬張照片用 7B 模型大約需要一到兩週的累積時間。建議：先用 3B 掃一輪，
-重要作品再到資料夾或相簿頁按「AI 分析」用 7B 重跑。分析可以隨時停止，下次會接著做。
+分析可以隨時停止，下次會接著做。也可以到資料夾或相簿頁只分析特定作品。
 
 ### 與 Lightroom Classic 同步
 

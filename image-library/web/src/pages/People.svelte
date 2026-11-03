@@ -79,7 +79,7 @@
   {#if people && !people.length}
     <div class="empty">
       <h2>還沒有人物</h2>
-      <p>到 <a href="/settings#faces" use:link>設定 → 人臉辨識</a> 下載模型並開始偵測。<br />同一個人出現 3 次以上就會自動成為一個人物，點進去即可命名與分類。</p>
+      <p>到 <a href="/settings/faces" use:link>設定 → 人臉辨識</a> 下載模型並開始偵測。<br />同一個人出現 3 次以上就會自動成為一個人物，點進去即可命名與分類。</p>
     </div>
   {/if}
   {#each [["已命名", named], [`尚未命名（${unnamed.length}）`, unnamed]] as [title, list] (title)}

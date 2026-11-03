@@ -22,13 +22,13 @@
 </script>
 
 {#if cur}
-  <button class="job" onclick={() => navigate("/settings#jobs")} title={cur.message}>
+  <button class="job" onclick={() => navigate("/settings/ai")} title={cur.message}>
     <span class="spinner"></span>
     <span class="txt"><b>{cur.label}</b>{pct !== null ? ` ${pct}%` : ""}{jobs.queued.length ? `（另有 ${jobs.queued.length} 項）` : ""}</span>
     {#if pct !== null}<span class="bar" style:width="{pct}%"></span>{/if}
   </button>
 {:else if app.server && app.server.stats.pending > 0 && ai && !ai.ready}
-  <button class="job warn" onclick={() => navigate("/settings#jobs")} title={ai.message}>
+  <button class="job warn" onclick={() => navigate("/settings/ai")} title={ai.message}>
     <Icon path={mdiAlertCircleOutline} size={18} /><span class="txt">AI 未就緒 · {app.server.stats.pending} 待分析</span>
   </button>
 {:else if app.server && app.server.stats.pending > 0}

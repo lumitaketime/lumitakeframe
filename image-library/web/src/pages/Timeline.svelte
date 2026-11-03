@@ -3,11 +3,13 @@
   import Grid from "../components/Grid.svelte";
   import Icon from "../components/Icon.svelte";
   import Memories from "../components/Memories.svelte";
+  import Scrubber from "../components/Scrubber.svelte";
+  import DatePill from "../components/DatePill.svelte";
   import { api } from "../lib/api.js";
   import { app, selection } from "../lib/state.svelte.js";
   import { link } from "../lib/router.svelte.js";
-  import { dayLabel, monthLabel, count } from "../lib/format.js";
-  import { estimateHeight, naturalWidth } from "../lib/layout.js";
+  import { dayLabel, fullDayLabel, monthLabel, count } from "../lib/format.js";
+  import { estimateHeight, naturalWidth, squareCols } from "../lib/layout.js";
   import { mdiCheckCircle, mdiCheckboxBlankCircleOutline } from "../lib/icons.js";
 
   let { scope = {}, title = "", emptyText = "" } = $props();
@@ -18,11 +20,8 @@
   let root;
   let scroller;
   let observer;
-  let scrubHover = $state(null);
   let scrubActive = $state(-1);
   let dragging = $state(false);
-  let scrubEl = $state();
-  let scrubHeight = $state(0);
 
   const rowTarget = $derived(width > 1600 ? 260 : width > 1000 ? 230 : 190);
   const total = $derived(buckets.reduce((s, b) => s + b.count, 0));
@@ -38,14 +37,16 @@
     return { out, bases };
   });
 
-  // 手機：正方形網格，幾張照片的日期並排但仍對齊欄位；桌機：等高列，小群組並排
-  const cols = $derived(width < 420 ? 3 : 4);
+  // 正方形（手機一律、桌機可在設定選）：幾張照片的日期並排但仍對齊欄位；依比例：等高列，小群組並排
+  const square = $derived(width < 640 || app.server?.ui?.grid_style === "square");
+  const cols = $derived(squareCols(width, rowTarget));
   function dayWidth(items) {
     if (!width) return "100%";
-    if (width < 640) {
+    if (square) {
       if (items.length >= cols) return "100%";
-      const sq = (width - 2 * (cols - 1)) / cols;
-      return `${items.length * sq + (items.length - 1) * 2}px`;
+      const gap = width < 640 ? 2 : 4;
+      const sq = (width - gap * (cols - 1)) / cols;
+      return `${items.length * sq + (items.length - 1) * gap}px`;
     }
     const nat = naturalWidth(items, rowTarget);
     return nat <= width - 2 ? `${Math.max(Math.ceil(nat), 150)}px` : "100%";
@@ -138,35 +139,12 @@
     return buckets.map((b) => {
       const top = total ? acc / total : 0;
       acc += b.count;
-      return { month: b.month, year: b.month.slice(0, 4), top, size: total ? b.count / total : 0 };
+      return { label: monthLabel(b.month), year: b.month.slice(0, 4), top, size: total ? b.count / total : 0, count: b.count };
     });
   });
 
-  const years = $derived.by(() => {
-    const out = [];
-    let lastPx = -100;
-    for (const m of marks) {
-      if (out.length && out[out.length - 1].year === m.year) continue;
-      const px = m.top * scrubHeight;
-      if (px - lastPx < 22) {
-        out.push({ year: m.year, top: m.top, hidden: true });
-        continue;
-      }
-      lastPx = px;
-      out.push({ year: m.year, top: m.top, hidden: false });
-    }
-    return out;
-  });
-
-  function indexAt(clientY) {
-    const r = scrubEl.getBoundingClientRect();
-    const f = Math.min(Math.max((clientY - r.top) / r.height, 0), 0.9999);
-    let i = marks.findIndex((m) => f >= m.top && f < m.top + m.size);
-    if (i === -1) i = marks.length - 1;
-    return i;
-  }
-
   function jump(i) {
+    scrubActive = i;
     const el = root.querySelector(`[data-month="${buckets[i]?.month}"]`);
     if (el && scroller) scroller.scrollTop = el.offsetTop - 8;
   }
@@ -181,25 +159,6 @@
       else break;
     }
     scrubActive = idx;
-  }
-
-  function scrubDown(e) {
-    dragging = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    const i = indexAt(e.clientY);
-    scrubActive = i;
-    jump(i);
-  }
-  function scrubMove(e) {
-    const i = indexAt(e.clientY);
-    scrubHover = { i, y: e.clientY - scrubEl.getBoundingClientRect().top };
-    if (dragging && i !== scrubActive) {
-      scrubActive = i;
-      jump(i);
-    }
-  }
-  function scrubUp() {
-    dragging = false;
   }
 
   function toggleDay(items) {
@@ -223,7 +182,7 @@
         {:else}
           <h2>歡迎使用 Lumitake Library</h2>
           <p>加入電腦或外接 SSD 上的照片資料夾，就會自動掃描並依時間排列。<br />原始檔案留在原位，不會被複製。</p>
-          <p><a class="btn" href="/settings" use:link>加入照片資料夾</a></p>
+          <p><a class="btn" href="/settings/library" use:link>加入照片資料夾</a></p>
         {/if}
       </div>
     {/if}
@@ -232,14 +191,14 @@
       <section
         data-month={b.month}
         class="month"
-        style:min-height={b.assets ? null : `${estimateHeight(b.count, width, rowTarget) + 56}px`}
+        style:min-height={b.assets ? null : `${estimateHeight(b.count, width, rowTarget, 4, square) + 56}px`}
       >
         <h2 class="month-title">{monthLabel(b.month)}</h2>
         {#if b.assets}
           <div class="days">
           {#each days(b.assets) as d (d.day)}
             {@const allSel = d.items.every((a) => selection.has(a.id))}
-            <div class="day" style:width={dayWidth(d.items)}>
+            <div class="day" style:width={dayWidth(d.items)} data-label={fullDayLabel(d.items[0].at)}>
               <div class="day-head">
                 <button class="day-check" class:on={allSel || selection.size} onclick={() => toggleDay(d.items)} aria-label="選取這一天">
                   <Icon path={allSel ? mdiCheckCircle : mdiCheckboxBlankCircleOutline} size={20} />
@@ -256,32 +215,9 @@
   </div></div>
 
   {#if buckets.length > 1}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="scrubber"
-      class:dragging
-      bind:this={scrubEl}
-      bind:clientHeight={scrubHeight}
-      onpointerdown={scrubDown}
-      onpointermove={scrubMove}
-      onpointerup={scrubUp}
-      onpointercancel={scrubUp}
-      onpointerleave={() => (scrubHover = null)}
-    >
-      {#each years as y (y.year)}
-        {#if !y.hidden}<span class="year" style:top="{y.top * 100}%">{y.year}</span>{/if}
-        <span class="dot" style:top="{y.top * 100}%"></span>
-      {/each}
-      {#if scrubActive >= 0 && marks[scrubActive]}
-        <span class="indicator" style:top="{marks[scrubActive].top * 100}%"></span>
-      {/if}
-      {#if scrubHover && marks[scrubHover.i]}
-        <span class="hover-label" style:top="{scrubHover.y}px">{monthLabel(marks[scrubHover.i].month)}</span>
-      {:else if dragging && marks[scrubActive]}
-        <span class="hover-label" style:top="{marks[scrubActive].top * scrubHeight}px">{monthLabel(marks[scrubActive].month)}</span>
-      {/if}
-    </div>
+    <Scrubber {marks} active={scrubActive} onjump={jump} bind:dragging />
   {/if}
+  <DatePill />
 </div>
 
 <style>
@@ -300,36 +236,9 @@
   .day:hover .day-check, .day-check.on { width: 24px; }
   .day-check.on { color: var(--primary); }
 
-  .scrubber {
-    position: sticky; top: 0; height: calc(100vh - var(--topbar)); height: calc(100dvh - var(--topbar));
-    width: 64px; flex-shrink: 0; cursor: row-resize; user-select: none; touch-action: none;
-    padding: 12px 0;
-  }
-  .year {
-    position: absolute; right: 14px; transform: translateY(-50%); font-size: 11px; color: var(--muted);
-    pointer-events: none; margin-top: 12px;
-  }
-  .dot {
-    position: absolute; right: 6px; width: 4px; height: 4px; border-radius: 50%; background: var(--line);
-    margin-top: 12px; pointer-events: none;
-  }
-  .indicator {
-    position: absolute; right: 0; width: 22px; height: 2px; background: var(--primary); margin-top: 12px;
-    transition: top .12s; pointer-events: none;
-  }
-  .hover-label {
-    position: absolute; right: 58px; transform: translateY(-50%); background: var(--panel); color: var(--text);
-    box-shadow: var(--shadow); border-radius: 8px; padding: 4px 10px; font-size: 13px; white-space: nowrap;
-    pointer-events: none; z-index: 5;
-  }
   @media (max-width: 760px) {
     .content { padding: 0 4px 100px; }
     .month-title { font-size: 17px; margin: 16px 6px 2px; }
     .day-head { padding: 0 6px; height: 34px; font-size: 13px; }
-    .scrubber { width: 26px; position: fixed; right: 0; top: var(--topbar); bottom: 64px; height: auto; z-index: 10; }
-    .year, .dot { display: none; }
-    .scrubber.dragging .year { display: block; }
-    .indicator { width: 6px; height: 36px; border-radius: 3px; right: 3px; transform: translateY(-50%); opacity: .6; }
-    .hover-label { right: 30px; }
   }
 </style>

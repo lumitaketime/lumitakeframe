@@ -16,34 +16,34 @@ import sys
 RECOMMENDED = [
     # ---- 視覺模型（描述照片、產生關鍵字、辨識圖中文字）----
     {
-        "name": "gemma4:e2b", "kind": "vision", "family": "Gemma 4", "size_gb": 7.2, "min_ram": 8,
-        "quality": 2, "speed": 5, "speed_text": "很快",
-        "note": "Google Gemma 4 最小版，多模態、多語言，適合記憶體 8GB 的 Mac 或十萬張先快速掃一輪。",
+        "name": "gemma4:e2b", "kind": "vision", "family": "Gemma 4", "size_gb": 4.6, "min_ram": 8,
+        "quality": 3, "speed": 5, "speed_text": "很快",
+        "note": "Gemma 4 輕量版，實測中文描述與圖中文字都正確，速度約 e4b 的兩倍。適合 8GB 的 Mac 或照片很多時先掃一輪。",
     },
     {
-        "name": "gemma4:e4b", "kind": "vision", "family": "Gemma 4", "size_gb": 9.6, "min_ram": 16,
-        "quality": 4, "speed": 4, "speed_text": "快",
-        "note": "Gemma 4 主力版本，描述細膩、多語言好，16GB 的 Mac 可以順跑。",
+        "name": "gemma4:e4b", "kind": "vision", "family": "Gemma 4", "size_gb": 6.6, "min_ram": 16,
+        "quality": 5, "speed": 4, "speed_text": "快",
+        "note": "實測描述最自然、關鍵字中英對照、圖中文字辨識正確。16GB 的 Mac 首選。",
     },
     {
         "name": "gemma4:26b", "kind": "vision", "family": "Gemma 4", "size_gb": 18, "min_ram": 32,
-        "quality": 5, "speed": 3, "speed_text": "中",
+        "quality": 6, "speed": 3, "speed_text": "中",
         "note": "混合專家（MoE）架構，品質高、速度不錯，需要 32GB 以上記憶體。",
     },
     {
         "name": "gemma4:31b", "kind": "vision", "family": "Gemma 4", "size_gb": 20, "min_ram": 48,
-        "quality": 5, "speed": 2, "speed_text": "慢",
+        "quality": 6, "speed": 2, "speed_text": "慢",
         "note": "Gemma 4 最大版，最細緻，適合 48GB 以上的 Mac Studio／MacBook Pro。",
     },
     {
         "name": "qwen3-vl:4b", "kind": "vision", "family": "Qwen3-VL", "size_gb": 3.3, "min_ram": 8,
-        "quality": 3, "speed": 5, "speed_text": "很快",
-        "note": "中文與圖中文字辨識很強，又小又快。",
+        "quality": 3, "speed": 2, "speed_text": "慢",
+        "note": "檔案小，但實測分析每張照片比 Gemma 4 慢很多，暫不建議大量使用。",
     },
     {
         "name": "qwen3-vl:8b", "kind": "vision", "family": "Qwen3-VL", "size_gb": 6.1, "min_ram": 16,
-        "quality": 4, "speed": 4, "speed_text": "快",
-        "note": "中文描述自然、文字辨識強，作品整理的好選擇。",
+        "quality": 4, "speed": 2, "speed_text": "慢",
+        "note": "中文與文字辨識強，但同系列的 4b 實測很慢，建議先用 Gemma 4。",
     },
     {
         "name": "qwen3-vl:30b", "kind": "vision", "family": "Qwen3-VL", "size_gb": 19, "min_ram": 32,

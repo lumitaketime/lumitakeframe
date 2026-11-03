@@ -43,7 +43,7 @@
     {:else}
       <div class="empty small">
         <h2>AI 分析後，這裡會整理出照片中的事物與場景</h2>
-        <p>到 <a href="/settings" use:link>設定</a> 選擇模型並開始分析。</p>
+        <p>到 <a href="/settings/ai" use:link>設定 → AI 分析</a> 選擇模型並開始分析。</p>
       </div>
     {/if}
 

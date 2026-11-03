@@ -96,7 +96,7 @@ class OllamaClientTests(unittest.TestCase):
         self.assertIn("還沒下載", st["message"])
         st = ai_status(OllamaClient("http://127.0.0.1:9", 2), cfg)
         self.assertFalse(st["ollama"])
-        self.assertIn("Ollama", st["message"])
+        self.assertTrue("Ollama" in st["message"])
 
 
 class ReadyClient(FakeClient):
@@ -140,6 +140,20 @@ class AutoAnalyzeTests(unittest.TestCase):
         last = self.run_scan(Missing)
         self.assertEqual(last["kind"], "scan")
         self.assertIn("尚未開始 AI 分析", last["message"])
+
+    def test_pull_of_selected_model_starts_analysis(self):
+        from lumilib.scanner import scan_all
+
+        conn = db.connect(self.cfg.db_path)
+        scan_all(conn, self.cfg)
+        conn.close()
+        runner = JobRunner(self.cfg, ReadyClient)
+        try:
+            runner.submit("pull", model="qwen2.5vl:7b")
+            self.assertTrue(runner.wait_idle(30))
+            self.assertEqual(runner.last["kind"], "analyze")
+        finally:
+            runner.close()
 
     def test_auto_analyze_off(self):
         self.cfg.auto_analyze = 0
