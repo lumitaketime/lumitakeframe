@@ -69,6 +69,8 @@ DEFAULTS = {
     "dup_threshold": 6,  # 重複照片的相似度門檻（越小越嚴格）
     "screen_png_rule": 1,  # 沒有相機資訊的 PNG 視為截圖
     "large_files_limit": 200,  # 大檔案列出幾個
+    "album_sort": "updated",  # 相簿排序：updated／name／created／count／custom（拖曳排的順序）
+    "folder_sort": "name",  # 資料夾排序：name／updated／count／custom
     "stack_enabled": 1,
     "burst_seconds": 2,
     # 人臉辨識
@@ -136,6 +138,8 @@ class Config:
     dup_threshold: int = DEFAULTS["dup_threshold"]
     screen_png_rule: int = DEFAULTS["screen_png_rule"]
     large_files_limit: int = DEFAULTS["large_files_limit"]
+    album_sort: str = DEFAULTS["album_sort"]
+    folder_sort: str = DEFAULTS["folder_sort"]
     stack_enabled: int = DEFAULTS["stack_enabled"]
     burst_seconds: int = DEFAULTS["burst_seconds"]
     pet_enabled: int = DEFAULTS["pet_enabled"]

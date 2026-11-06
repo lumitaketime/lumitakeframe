@@ -276,3 +276,36 @@ class PeopleCorrectionTests(unittest.TestCase):
         self.assertEqual((rows[10], rows[12]), (3, 3))  # 合併的結果保留
         self.assertEqual(rows[11], 4)  # 隱藏的人物保留
         conn.close()
+
+
+class SortFavoriteTests(unittest.TestCase):
+    def test_album_and_folder_order_and_favorites(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib.config import load_config
+        from lumilib.server import create_app
+
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "p").mkdir()
+        cfg = load_config(tmp / "home")
+        conn = db.connect(cfg.db_path)
+        root = db.add_root(conn, tmp / "p")["id"]
+        imgs = [_add(conn, root, f"{d}/x.jpg", d) for d in ("a", "b", "c")]
+        conn.close()
+        with TestClient(create_app(cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8765", client=("127.0.0.1", 1)) as c:
+            ids = [c.post("/api/albums", json={"name": n, "ids": imgs[:1]}).json()["id"] for n in ("甲", "乙", "丙")]
+            c.post("/api/albums/order", json={"ids": [ids[2], ids[0], ids[1]]})
+            c.post(f"/api/albums/{ids[1]}", json={"favorite": True})
+            albums = {a["id"]: a for a in c.get("/api/albums").json()}
+            self.assertEqual([albums[i]["position"] for i in ids], [1, 2, 0])
+            self.assertEqual([albums[i]["favorite"] for i in ids], [0, 1, 0])
+            # 資料夾：收藏與順序只存在圖庫裡，不會動到硬碟
+            c.post("/api/folders/prefs", json={"root_id": root, "path": "b", "favorite": True})
+            c.post("/api/folders/order", json={"items": [{"root_id": root, "path": p} for p in ("c", "a", "b")]})
+            folders = {f["name"]: f for f in c.get("/api/folders", params={"root": root}).json()["folders"]}
+            self.assertEqual({k: (v["favorite"], v["position"]) for k, v in folders.items()}, {"a": (False, 1), "b": (True, 2), "c": (False, 0)})
+            self.assertTrue((tmp / "p").exists() and sorted(x.name for x in (tmp / "p").iterdir()) == [])  # 硬碟上沒有被建立或搬動任何東西
+            fav = c.get("/api/server").json()["favorites"]
+            self.assertEqual([(f["kind"], f["name"]) for f in fav], [("album", "乙"), ("folder", "b")])
+            c.post("/api/settings", json={"album_sort": "custom"})
+            self.assertEqual(c.get("/api/server").json()["ui"]["album_sort"], "custom")

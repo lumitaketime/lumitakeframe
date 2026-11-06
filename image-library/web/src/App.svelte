@@ -1,5 +1,4 @@
 <script>
-  import { slider } from "./lib/slider.js";
   import { onMount, tick } from "svelte";
   import { fade, fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
@@ -45,6 +44,7 @@
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
     mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiContentDuplicate,
     mdiChevronRight, mdiChevronDown, mdiToolboxOutline, mdiMenu, mdiPinOutline, mdiArrowLeft,
+    filled,
   } from "./lib/icons.js";
 
   // 左側選單分組；fixed＝一定顯示，其他可在「設定 → 功能與選單」關掉
@@ -343,7 +343,7 @@
             </button>
             {#each items.filter((n) => !shut || active(n.href)) as n (n.href)}
               <a href={n.href} use:link class:active={active(n.href)} class:pinned={n.pinned} title={isRail ? n.label : undefined}>
-                <span class="ind"><Icon path={n.icon} /></span><span class="lbl">{n.label}</span>
+                <span class="ind"><Icon path={active(n.href) ? filled(n.icon) : n.icon} /></span><span class="lbl">{n.label}</span>
                 {#if n.pinned}
                   <button class="unpin" onclick={(e) => { e.preventDefault(); e.stopPropagation(); unpin(n.key); }} aria-label="從側邊欄移除{n.label}" title="從側邊欄移除"><Icon path={mdiClose} size={16} /></button>
                 {/if}
@@ -355,6 +355,19 @@
           </div>
         {/if}
       {/each}
+      {#if app.server?.favorites?.length}
+        <div class="roots-group">
+          <button class="group" onclick={() => toggleGroup("favs")} aria-expanded={!collapsed.has("favs")}>
+            <span>收藏</span><Icon path={collapsed.has("favs") ? mdiChevronRight : mdiChevronDown} size={16} />
+          </button>
+          {#each collapsed.has("favs") ? [] : app.server.favorites as f (f.href)}
+            {@const on = route.path + (route.query.path ? `?path=${encodeURIComponent(route.query.path)}` : "") === f.href}
+            <a href={f.href} use:link class:active={on} title={isRail ? f.name : undefined}>
+              <span class="ind"><Icon path={f.kind === "album" ? mdiImageAlbum : on ? filled(mdiFolderOutline) : mdiFolderOutline} /></span><span class="lbl">{f.name}</span>
+            </a>
+          {/each}
+        </div>
+      {/if}
       <div class="roots-group">
         <button class="group" onclick={() => toggleGroup("roots")} aria-expanded={!collapsed.has("roots")}>
           <span>資料夾來源</span><Icon path={collapsed.has("roots") ? mdiChevronRight : mdiChevronDown} size={16} />
@@ -370,12 +383,12 @@
         {/if}
       </div>
     {/snippet}
-    <nav class="sidebar" class:rail={showRail} aria-label="主選單" aria-hidden={narrow} use:slider={{ selector: "a.active", items: "a:not(.add-root)" }} use:rubberBand={{ targets: (n) => [...n.children] }}>
+    <nav class="sidebar" class:rail={showRail} aria-label="主選單" aria-hidden={narrow} use:rubberBand={{ targets: (n) => [...n.children] }}>
       {@render navContent(showRail)}
     </nav>
     {#if drawer}
       <button class="scrim" onclick={() => (drawer = false)} aria-label="關閉選單"></button>
-      <nav class="sidebar drawer" aria-label="主選單" use:slider={{ selector: "a.active", items: "a:not(.add-root)" }} use:rubberBand={{ targets: (n) => [...n.children] }} transition:fly={{ x: -300, duration: 240, opacity: 1, easing: cubicOut }}>
+      <nav class="sidebar drawer" aria-label="主選單" use:rubberBand={{ targets: (n) => [...n.children] }} transition:fly={{ x: -300, duration: 240, opacity: 1, easing: cubicOut }}>
         {@render navContent(false)}
       </nav>
     {/if}
@@ -437,9 +450,9 @@
       {/key}
     </main>
 
-    <nav class="bottom" aria-label="主選單" use:slider>
+    <nav class="bottom" aria-label="主選單">
       {#each NAV.filter((n) => n.mobile && visible(n)) as n (n.href)}
-        <a href={n.href} use:link class:active={active(n.href)}><span class="ind"><Icon path={n.icon} /></span><span>{n.label}</span></a>
+        <a href={n.href} use:link class:active={active(n.href)}><span class="ind"><Icon path={active(n.href) ? filled(n.icon) : n.icon} /></span><span>{n.label}</span></a>
       {/each}
     </nav>
   </div>
@@ -496,8 +509,6 @@
     animation: nav-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
   }
   @keyframes nav-pill { from { transform: scaleX(0.3); opacity: 0.4; } }
-  /* 有滑動指示時，膠囊由 slider 畫（會從上一個項目滑過來），這裡的就不畫了 */
-  .sidebar:global(.has-slider) a.active::after { display: none; }
   .unpin { border: 0; background: none; color: inherit; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; margin-right: -6px; }
   .sidebar a:hover .unpin, .unpin:focus-visible { opacity: .8; }
   .unpin:hover { background: color-mix(in srgb, currentColor 12%, transparent); opacity: 1; }
@@ -604,7 +615,13 @@
     transition: background-color var(--spring-effects-fast-duration) var(--spring-effects-fast), color var(--spring-effects-fast-duration) var(--spring-effects-fast);
   }
   .shell.mode-phone .bottom .ind { display: flex; align-items: center; justify-content: center; }
-  .shell.mode-phone .bottom a.active { background: var(--secondary-container); color: var(--on-secondary-container); }
+  /* M3：選取的膠囊在新項目上由中間展開，圖示換成實心 */
+  .shell.mode-phone .bottom a { position: relative; isolation: isolate; }
+  .shell.mode-phone .bottom a.active { color: var(--on-secondary-container); }
+  .shell.mode-phone .bottom a.active::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--secondary-container); z-index: -1;
+    animation: nav-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
+  }
   .shell.mode-phone .bottom a:active { background: color-mix(in srgb, var(--on-surface) 10%, transparent); }
   @media (max-width: 600px) {
     .topbar { gap: 4px; padding: 0 4px; padding-top: env(safe-area-inset-top); }

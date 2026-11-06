@@ -19,7 +19,7 @@
   import {
     mdiHarddisk, mdiRefresh, mdiPencilOutline, mdiDeleteOutline, mdiPlus, mdiCreation, mdiCheck, mdiDownload,
     mdiCellphone, mdiStop, mdiThemeLightDark, mdiServerNetwork, mdiAlertCircleOutline, mdiFaceRecognition,
-    mdiImageSearchOutline, mdiStar, mdiTuneVariant, mdiArrowLeft, mdiPaw, mdiViewDashboardOutline, mdiDatabaseOutline, mdiToolboxOutline,
+    mdiImageSearchOutline, mdiStar, mdiTuneVariant, mdiArrowLeft, mdiPaw, mdiViewDashboardOutline, mdiDatabaseOutline, mdiToolboxOutline, filled,
   } from "../lib/icons.js";
 
 
@@ -411,10 +411,10 @@
 <svelte:window bind:innerWidth={winWidth} />
 
 <div class="page settings" class:has-section={!!section}>
-  <aside class="cats" aria-label="設定分類" use:slider={{ key: "settings-cats" }}>
+  <aside class="cats" aria-label="設定分類">
     <div class="cats-head"><BackButton to="/" label="離開設定" /><h1>設定</h1></div>
     {#each SECTIONS as c (c.id)}
-      <a href={`/settings/${c.id}`} use:link class:on={current === c.id}><Icon path={c.icon} size={20} /><span class="cl"><span>{c.label}</span><span class="csub">{c.sub}</span></span></a>
+      <a href={`/settings/${c.id}`} use:link class:on={current === c.id}><Icon path={current === c.id ? filled(c.icon) : c.icon} size={20} /><span class="cl"><span>{c.label}</span><span class="csub">{c.sub}</span></span></a>
     {/each}
     <a class="ver" class:on={current === "about"} href="/settings/about" use:link title="關於 Lumitake Library">Lumitake Library {app.server?.version || ""}</a>
   </aside>
@@ -1200,7 +1200,14 @@
     color: var(--on-surface); font-size: 16px;
   }
   .cats a:hover { background: var(--surface-container); }
-  .cats a.on { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 500; }
+  .cats a { position: relative; isolation: isolate; }
+  .cats a.on { color: var(--on-secondary-container); font-weight: 500; background: none; }
+  /* M3：選取的膠囊在新項目上由中間展開 */
+  .cats a.on:not(.ver)::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--secondary-container); z-index: -1;
+    animation: cat-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
+  }
+  @keyframes cat-pill { from { transform: scaleX(0.3); opacity: 0.4; } }
   .cl { display: flex; flex-direction: column; min-width: 0; }
   .tool-h { font-size: 14px; font-weight: 500; margin: 20px 0 8px; }
   .csub { display: none; font-size: 12px; font-weight: 400; color: var(--on-surface-variant); }

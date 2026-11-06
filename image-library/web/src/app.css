@@ -351,3 +351,19 @@ input[type="range"]:disabled { opacity: .38; cursor: default; }
 @media (hover: hover) and (pointer: fine) {
   .hs:hover.can-prev .hs-nav.prev, .hs:hover.can-next .hs-nav.next { opacity: 1; pointer-events: auto; transform: none; }
 }
+
+/* ---- 卡片長按拖曳排序（lib/reorder.js） ---- */
+.reorder-src { opacity: .25; }
+.reorder-ghost { transform: scale(1.04); opacity: .95; cursor: grabbing; transition: none !important; }
+body.reordering, body.reordering * { cursor: grabbing !important; user-select: none !important; -webkit-user-select: none !important; }
+/* 卡片上的收藏星號：收藏的一直顯示，其他的滑過才出現 */
+.fav-btn {
+  position: absolute; top: 8px; right: 8px; z-index: 2; width: 36px; height: 36px; border-radius: 50%; border: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  background: color-mix(in srgb, var(--surface-container-high) 88%, transparent); color: var(--on-surface-variant);
+  opacity: 0; transform: scale(.85);
+  transition: opacity var(--duration-short4, .2s), transform var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
+}
+.fav-btn.on { opacity: 1; transform: none; color: var(--primary); }
+.cover-card:hover .fav-btn, .fav-btn:focus-visible { opacity: 1; transform: none; }
+@media (hover: none) { .fav-btn { opacity: 1; transform: none; } }

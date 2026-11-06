@@ -531,9 +531,10 @@
   .viewer.opening .top, .viewer.closing .top, .viewer.closing .nav, .viewer.closing .side { opacity: 0; transition: opacity .15s; }
   .viewer .top { transition: opacity .2s; }
   .stage-wrap { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  /* 工具列自己一條，照片從它下面開始：不在照片上加任何漸層或遮罩 */
   .top {
-    position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 2px;
-    padding: max(8px, env(safe-area-inset-top)) 8px 24px; background: linear-gradient(rgba(0,0,0,.55), transparent);
+    position: relative; flex-shrink: 0; z-index: 3; display: flex; align-items: center; gap: 2px;
+    padding: max(8px, env(safe-area-inset-top)) 8px 8px; background: none;
     transition: opacity .2s;
   }
   .top .icon-btn { color: #fff; text-decoration: none; }

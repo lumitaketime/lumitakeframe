@@ -1,3 +1,16 @@
+import {
+  mdiImageMultiple, mdiImageMultipleOutline as _imo, mdiCompass, mdiCompassOutline as _co, mdiMap, mdiMapOutline as _mo,
+  mdiFolder, mdiFolderOutline as _fo, mdiHeart as _h, mdiHeartOutline as _ho, mdiVideo, mdiVideoOutline as _vo,
+  mdiToolbox, mdiToolboxOutline as _to, mdiChartBox, mdiChartBoxOutline as _cbo, mdiImageSearch, mdiImageSearchOutline as _iso,
+} from "@mdi/js";
+
+// 選取中的導覽項目用實心圖示（M3 導覽列／抽屜）：outline → filled
+const FILLED = new Map([
+  [_imo, mdiImageMultiple], [_co, mdiCompass], [_mo, mdiMap], [_fo, mdiFolder], [_ho, _h], [_vo, mdiVideo],
+  [_to, mdiToolbox], [_cbo, mdiChartBox], [_iso, mdiImageSearch],
+]);
+export const filled = (path) => FILLED.get(path) || path;
+
 export {
   mdiAlertCircleOutline, mdiArrowLeft, mdiCameraIris, mdiCamera, mdiCellphone, mdiCheck, mdiCheckCircle,
   mdiChevronLeft, mdiChevronRight, mdiChevronDown, mdiClose, mdiCogOutline, mdiCompassOutline, mdiContentCopy, mdiCreation,

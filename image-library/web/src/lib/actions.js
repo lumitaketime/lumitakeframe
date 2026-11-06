@@ -7,7 +7,8 @@ export function confirm(title, message, { ok = "確定", danger = false } = {}) 
 
 export async function setFavorite(ids, on) {
   await api("/api/assets/bulk", { body: { ids, action: on ? "favorite" : "unfavorite" } });
-  toast(on ? `已加入我的最愛（${ids.length}）` : `已從我的最愛移除（${ids.length}）`);
+  const n = ids.length > 1 ? ` ${ids.length} 個項目` : "";
+  toast(on ? `已將${n}加入我的最愛`.replace("已將加入", "已加入") : `已從我的最愛移除${n}`);
   refresh();
 }
 

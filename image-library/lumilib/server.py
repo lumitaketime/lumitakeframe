@@ -18,7 +18,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -41,7 +41,7 @@ SETTING_KEYS = {
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "pet_enabled", "pet_model", "pet_similarity", "pet_min_photos", "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "xmp_sync", "xmp_embed", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "blur_threshold", "under_luma", "over_percent", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "blur_threshold", "under_luma", "over_percent", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -276,7 +276,9 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "ssl_ca": bool(ca_file()),
                 "ai": cached_ai_status(),
                 "ui": {"viewer_rating_bar": cfg.viewer_rating_bar, "nav_hidden": cfg.nav_hidden, "pinned_tools": cfg.pinned_tools,
-                       "grid_style": cfg.grid_style, "onboarded": cfg.onboarded},
+                       "grid_style": cfg.grid_style, "onboarded": cfg.onboarded,
+                       "album_sort": cfg.album_sort, "folder_sort": cfg.folder_sort},
+                "favorites": favorites(c),
                 "local": request.state.local,
                 "platform": sys.platform,
                 "home": str(cfg.home) if request.state.local else None,
@@ -291,6 +293,21 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             "WHERE fc.root_id = ? AND fc.path = ? AND i.status = 'ok'", (root_id, path)).fetchone()
         return row[0] if row else None
 
+    def folder_pref(c, root_id: int, path: str) -> tuple[bool, int | None]:
+        row = c.execute("SELECT favorite, position FROM folder_prefs WHERE root_id = ? AND path = ?", (root_id, path)).fetchone()
+        return (bool(row["favorite"]), row["position"]) if row else (False, None)
+
+    def favorites(c) -> list[dict]:
+        """側邊欄的「收藏」：收藏的相簿與資料夾。"""
+        out = [{"kind": "album", "id": r["id"], "name": r["name"], "href": f"/albums/{r['id']}"}
+               for r in c.execute("SELECT id, name FROM albums WHERE favorite = 1 ORDER BY position IS NULL, position, name")]
+        for r in c.execute("SELECT p.root_id, p.path, r.name AS root_name FROM folder_prefs p JOIN roots r ON r.id = p.root_id "
+                           "WHERE p.favorite = 1 ORDER BY p.position IS NULL, p.position, p.path"):
+            name = r["path"].rsplit("/", 1)[-1] if r["path"] else r["root_name"]
+            href = f"/folders/{r['root_id']}" + (f"?path={quote(r['path'], safe='')}" if r["path"] else "")
+            out.append({"kind": "folder", "name": name, "href": href})
+        return out
+
     def _root_dict(c, r) -> dict:
         custom = folder_cover(c, r["id"], "")
         cover = {"id": custom} if custom else c.execute(
@@ -302,6 +319,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             "count": r["image_count"] if "image_count" in r.keys() else c.execute(
                 "SELECT COUNT(*) FROM images WHERE root_id = ? AND status = 'ok'", (r["id"],)).fetchone()[0],
             "last_scan": r["last_scan"], "cover": cover["id"] if cover else None, "cover_custom": bool(custom),
+            "favorite": folder_pref(c, r["id"], "")[0], "position": folder_pref(c, r["id"], "")[1],
         }
 
     # ---- 時間軸 ----
@@ -1351,6 +1369,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 custom = folder_cover(c, r["id"], child["path"])
                 if custom:
                     child["cover"], child["cover_custom"] = custom, True
+                child["favorite"], child["position"] = folder_pref(c, r["id"], child["path"])
             here_custom = folder_cover(c, r["id"], path) if path else None
             assets = c.execute(
                 f"SELECT i.*, {STACK_COUNT_SQL} FROM images i WHERE i.root_id = ? AND i.folder = ? AND i.status = 'ok' "
@@ -1372,6 +1391,36 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "cover": here_custom if path else root_info["cover"],
                 "cover_custom": bool(here_custom) if path else root_info["cover_custom"],
             }
+        finally:
+            c.close()
+
+    @app.post("/api/folders/prefs")
+    def set_folder_prefs(body: dict = Body(...)):
+        """收藏資料夾（只影響顯示）。"""
+        c = conn()
+        try:
+            root_id, path = int(body.get("root_id") or 0), str(body.get("path") or "").strip("/")
+            if db.get_root(c, root_id) is None:
+                raise HTTPException(404, "找不到資料夾")
+            c.execute("INSERT OR IGNORE INTO folder_prefs (root_id, path) VALUES (?, ?)", (root_id, path))
+            if "favorite" in body:
+                c.execute("UPDATE folder_prefs SET favorite = ? WHERE root_id = ? AND path = ?", (1 if body["favorite"] else 0, root_id, path))
+            c.commit()
+            return {"ok": True}
+        finally:
+            c.close()
+
+    @app.post("/api/folders/order")
+    def set_folder_order(body: dict = Body(...)):
+        """拖曳排好的顯示順序：items 是 [{root_id, path}]，依序存成 0、1、2…（不會動到硬碟上的檔案）。"""
+        c = conn()
+        try:
+            for pos, it in enumerate(body.get("items") or []):
+                root_id, path = int(it.get("root_id") or 0), str(it.get("path") or "").strip("/")
+                c.execute("INSERT OR IGNORE INTO folder_prefs (root_id, path) VALUES (?, ?)", (root_id, path))
+                c.execute("UPDATE folder_prefs SET position = ? WHERE root_id = ? AND path = ?", (pos, root_id, path))
+            c.commit()
+            return {"ok": True}
         finally:
             c.close()
 
@@ -1476,8 +1525,19 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             if db.get_album(c, album_id) is None:
                 raise HTTPException(404, "找不到相簿")
             db.update_album(c, album_id, name=body.get("name"), description=body.get("description"),
-                            cover_id=body.get("cover_id"))
+                            cover_id=body.get("cover_id"), favorite=body.get("favorite"))
             return db.get_album(c, album_id)
+        finally:
+            c.close()
+
+    @app.post("/api/albums/order")
+    def set_album_order(body: dict = Body(...)):
+        """拖曳排好的相簿順序：ids 依序存成 0、1、2…"""
+        c = conn()
+        try:
+            c.executemany("UPDATE albums SET position = ? WHERE id = ?", [(i, int(a)) for i, a in enumerate(body.get("ids") or [])])
+            c.commit()
+            return {"ok": True}
         finally:
             c.close()
 

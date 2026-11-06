@@ -55,6 +55,12 @@ export function navigate(to, { replace = false } = {}) {
 export function link(node) {
   const handler = (e) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    // 卡片裡的按鈕（例如收藏星號）自己處理，不要換頁
+    const inner = e.target.closest?.("button, input, select, textarea");
+    if (inner && node.contains(inner)) {
+      e.preventDefault();
+      return;
+    }
     e.preventDefault();
     navigate(node.getAttribute("href"));
   };

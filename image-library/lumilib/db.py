@@ -11,7 +11,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 13  # v13：AI 向量搬到獨立的表、全文索引（FTS5）、資料夾自訂封面
+SCHEMA_VERSION = 14  # v14：相簿、資料夾的收藏與自訂順序
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -147,6 +147,15 @@ CREATE TABLE IF NOT EXISTS image_vectors (
     vec BLOB NOT NULL,
     PRIMARY KEY (image_id, kind)
 ) WITHOUT ROWID;
+
+-- v14：資料夾（和資料夾來源本身，path 為空）的收藏與拖曳排的順序；只影響顯示，不會動到硬碟
+CREATE TABLE IF NOT EXISTS folder_prefs (
+    root_id INTEGER NOT NULL REFERENCES roots(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    favorite INTEGER NOT NULL DEFAULT 0,
+    position INTEGER,
+    PRIMARY KEY (root_id, path)
+);
 
 -- v13：資料夾自訂封面（path 空字串＝資料夾來源本身）
 CREATE TABLE IF NOT EXISTS folder_covers (
@@ -317,6 +326,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if name not in existing:
             conn.execute(f"ALTER TABLE images ADD COLUMN {name} {ddl}")
     conn.executescript(INDEXES)
+    album_cols = {row[1] for row in conn.execute("PRAGMA table_info(albums)")}
+    if "favorite" not in album_cols:
+        conn.execute("ALTER TABLE albums ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
+    if "position" not in album_cols:
+        conn.execute("ALTER TABLE albums ADD COLUMN position INTEGER")
     person_cols = {row[1] for row in conn.execute("PRAGMA table_info(persons)")}
     if "groups" not in person_cols:
         conn.execute("ALTER TABLE persons ADD COLUMN groups TEXT")
@@ -621,7 +635,9 @@ def get_album(conn: sqlite3.Connection, album_id: int) -> dict | None:
     return None
 
 
-def update_album(conn: sqlite3.Connection, album_id: int, name=None, description=None, cover_id=None) -> None:
+def update_album(conn: sqlite3.Connection, album_id: int, name=None, description=None, cover_id=None, favorite=None) -> None:
+    if favorite is not None:
+        conn.execute("UPDATE albums SET favorite = ? WHERE id = ?", (1 if favorite else 0, album_id))
     if name is not None:
         conn.execute("UPDATE albums SET name = ? WHERE id = ?", (name.strip() or "未命名相簿", album_id))
     if description is not None:
