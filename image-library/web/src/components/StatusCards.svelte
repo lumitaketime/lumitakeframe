@@ -7,7 +7,7 @@
   import { api } from "../lib/api.js";
   import { app, refresh, toast } from "../lib/state.svelte.js";
   import { navigate } from "../lib/router.svelte.js";
-  import { count } from "../lib/format.js";
+  import { count, eta } from "../lib/format.js";
   import { mdiCreation, mdiFaceRecognition, mdiImageMultipleOutline, mdiHarddisk, mdiAlertOutline } from "../lib/icons.js";
 
   let pets = $state(null);
@@ -63,7 +63,7 @@
       <span class="ic"><Icon path={ai?.ready ? mdiCreation : mdiAlertOutline} size={20} /></span>
       <div class="txt">
         <b>{ai?.ready ? (aiJob ? "AI 分析中" : "AI 已就緒") : "AI 還不能用"}</b>
-        <span>{ai?.ready ? (aiJob?.total ? `${count(aiJob.done)} / ${count(aiJob.total)} · ${ai.model}` : `已分析 ${count(st.analyzed || 0)} 張 · 待分析 ${count(st.pending || 0)}`) : ai?.message || ""}</span>
+        <span>{ai?.ready ? (aiJob?.total ? `${count(aiJob.done)} / ${count(aiJob.total)}${eta(aiJob.eta) ? ` · 剩 ${eta(aiJob.eta)}` : ` · ${ai.model}`}` : `已分析 ${count(st.analyzed || 0)} 張 · 待分析 ${count(st.pending || 0)}`) : ai?.message || ""}</span>
       </div>
       {#if ai?.ready && aiPct !== null}
         <div class="bar" class:live={!!aiJob} role="progressbar" aria-valuenow={aiPct} aria-valuemin="0" aria-valuemax="100" aria-label="AI 分析進度"><span style:width="{aiPct}%"></span></div>
@@ -75,7 +75,7 @@
       <span class="ic"><Icon path={mdiFaceRecognition} size={20} /></span>
       <div class="txt">
         <b>{count(st.people || 0)} 位人物{pets?.pets?.length ? ` · ${count(pets.pets.length)} 隻寵物` : ""}</b>
-        <span>{recogJob ? `${recogJob.label}：${recogJob.message || ""}` : pets && !pets.installed ? "寵物辨識模型還沒下載（約 124 MB）" : st.faces_pending ? `${count(st.faces_pending)} 張還沒找人臉` : "人臉與寵物都已整理"}</span>
+        <span>{recogJob ? `${recogJob.label}${eta(recogJob.eta) ? `（剩 ${eta(recogJob.eta)}）` : ""}：${recogJob.message || ""}` : pets && !pets.installed ? "寵物辨識模型還沒下載（約 124 MB）" : st.faces_pending ? `${count(st.faces_pending)} 張還沒找人臉` : "人臉與寵物都已整理"}</span>
       </div>
       {#if facePct !== null}
         <div class="bar" class:live={!!recogJob} role="progressbar" aria-valuenow={facePct} aria-valuemin="0" aria-valuemax="100" aria-label="辨識進度"><span style:width="{facePct}%"></span></div>
@@ -88,7 +88,7 @@
       <span class="ic"><Icon path={mdiImageMultipleOutline} size={20} /></span>
       <div class="txt">
         <b>{count(st.photos || 0)} 張照片 · {count(st.videos || 0)} 部影片</b>
-        <span>{scanJob ? scanJob.message || "掃描中…" : `${count(st.roots || 0)} 個資料夾來源${st.missing ? ` · ${count(st.missing)} 個檔案遺失` : ""}`}</span>
+        <span>{scanJob ? `${eta(scanJob.eta) ? `剩 ${eta(scanJob.eta)} · ` : ""}${scanJob.message || "掃描中…"}` : `${count(st.roots || 0)} 個資料夾來源${st.missing ? ` · ${count(st.missing)} 個檔案遺失` : ""}`}</span>
       </div>
       {#if scanJob}
         <div class="bar live" class:indeterminate={!scanJob.total} role="progressbar" aria-label="掃描進度"><span style:width="{scanJob.total ? pct(scanJob.done, scanJob.total) : 40}%"></span></div>

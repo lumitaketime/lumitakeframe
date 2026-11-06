@@ -1,5 +1,4 @@
 <script>
-  import { slider } from "../lib/slider.js";
   /**
    * 頂欄搜尋框＋建議面板（參考 Google 相簿）：
    * - 還沒輸入：最近的搜尋、我的最愛／影片捷徑、常出現的人物頭像
@@ -208,7 +207,7 @@
     {#if open && (items.length || people.length || here)}
       <div class="panel" id="search-suggestions" role="listbox" aria-label="搜尋建議">
         {#if here}
-          <div class="scope" role="radiogroup" aria-label="搜尋範圍" use:slider>
+          <div class="scope" role="radiogroup" aria-label="搜尋範圍">
             <span>搜尋範圍</span>
             <button type="button" class="chip" class:on={!wholeLibrary} role="radio" aria-checked={!wholeLibrary} onclick={() => { wholeLibrary = false; input?.focus(); }}>{here.label}</button>
             <button type="button" class="chip" class:on={wholeLibrary} role="radio" aria-checked={wholeLibrary} onclick={() => { wholeLibrary = true; input?.focus(); }}>全部圖庫</button>

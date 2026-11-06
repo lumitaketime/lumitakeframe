@@ -368,12 +368,12 @@
         {/if}
       </div>
     {/snippet}
-    <nav class="sidebar" class:rail={showRail} aria-label="主選單" aria-hidden={narrow} use:slider={{ selector: "a.active" }}>
+    <nav class="sidebar" class:rail={showRail} aria-label="主選單" aria-hidden={narrow} use:slider={{ selector: "a.active", items: "a:not(.add-root)" }} use:rubberBand={{ targets: (n) => [...n.children] }}>
       {@render navContent(showRail)}
     </nav>
     {#if drawer}
       <button class="scrim" onclick={() => (drawer = false)} aria-label="關閉選單"></button>
-      <nav class="sidebar drawer" aria-label="主選單" use:slider={{ selector: "a.active" }} transition:fly={{ x: -300, duration: 240, opacity: 1, easing: cubicOut }}>
+      <nav class="sidebar drawer" aria-label="主選單" use:slider={{ selector: "a.active", items: "a:not(.add-root)" }} use:rubberBand={{ targets: (n) => [...n.children] }} transition:fly={{ x: -300, duration: 240, opacity: 1, easing: cubicOut }}>
         {@render navContent(false)}
       </nav>
     {/if}
@@ -479,7 +479,7 @@
   .right .icon-btn { color: var(--on-surface-variant); }
 
   /* 導覽抽屜：膠囊形指示器從中心展開 */
-  .sidebar { grid-area: side; padding: 0 12px 24px; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
+  .sidebar { grid-area: side; padding: 0 12px 24px; overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: none; display: flex; flex-direction: column; }
   .nav-group, .roots-group { display: flex; flex-direction: column; border-radius: var(--corner-large); }
   .sidebar a {
     position: relative; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px; border-radius: var(--corner-full);

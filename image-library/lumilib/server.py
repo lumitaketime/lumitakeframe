@@ -898,6 +898,20 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    @app.get("/api/people/{person_id:int}/faces")
+    def person_faces(person_id: int, limit: int = 600):
+        """選封面用：這個人物的每一張臉（清楚的排前面）。"""
+        c = conn()
+        try:
+            rows = c.execute(
+                "SELECT f.id, f.image_id, f.score, i.sort_at FROM faces f JOIN images i ON i.id = f.image_id "
+                "WHERE f.person_id = ? AND i.status = 'ok' ORDER BY f.score DESC, i.sort_at DESC LIMIT ?",
+                (person_id, max(1, min(limit, 3000))),
+            ).fetchall()
+            return [{"id": r["id"], "image_id": r["image_id"], "score": r["score"], "at": r["sort_at"]} for r in rows]
+        finally:
+            c.close()
+
     @app.post("/api/people/{person_id:int}")
     def edit_person(person_id: int, body: dict = Body(...)):
         from .faces import rename_person
@@ -915,6 +929,9 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
                 set_groups(c, [person_id], replace=[str(g) for g in body["groups"]])
             if body.get("cover_face_id"):
+                face = c.execute("SELECT 1 FROM faces WHERE id = ? AND person_id = ?", (int(body["cover_face_id"]), person_id)).fetchone()
+                if face is None:
+                    raise HTTPException(400, "這張臉不屬於這個人物")
                 c.execute("UPDATE persons SET cover_face_id = ? WHERE id = ?", (int(body["cover_face_id"]), person_id))
             c.commit()
             return {"ok": True}
@@ -1679,6 +1696,20 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    @app.get("/api/petid/{pet_id:int}/faces")
+    def pet_faces(pet_id: int, limit: int = 600):
+        """選封面用：這隻寵物每一次被偵測到的樣子。"""
+        c = conn()
+        try:
+            rows = c.execute(
+                "SELECT d.id, d.image_id, d.score, i.sort_at FROM pet_detections d JOIN images i ON i.id = d.image_id "
+                "WHERE d.pet_id = ? AND i.status = 'ok' ORDER BY d.score DESC, i.sort_at DESC LIMIT ?",
+                (pet_id, max(1, min(limit, 3000))),
+            ).fetchall()
+            return [{"id": r["id"], "image_id": r["image_id"], "score": r["score"], "at": r["sort_at"]} for r in rows]
+        finally:
+            c.close()
+
     @app.post("/api/petid/{pet_id:int}")
     def edit_pet(pet_id: int, body: dict = Body(...)):
         """改名（同名的另一隻會合併）、隱藏、把照片移出。"""
@@ -1703,6 +1734,12 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                     rename_pet(c, pet_id, name)
             if "hidden" in body:
                 set_hidden(c, pet_id, bool(body["hidden"]))
+            if body.get("cover_id"):
+                det = c.execute("SELECT 1 FROM pet_detections WHERE id = ? AND pet_id = ?", (int(body["cover_id"]), pet_id)).fetchone()
+                if det is None:
+                    raise HTTPException(400, "這張不屬於這隻寵物")
+                c.execute("UPDATE pets SET cover_id = ? WHERE id = ?", (int(body["cover_id"]), pet_id))
+                c.commit()
             if body.get("remove"):
                 out["removed"] = remove_images(c, pet_id, [int(i) for i in body["remove"]][:MAX_IDS])
             return out

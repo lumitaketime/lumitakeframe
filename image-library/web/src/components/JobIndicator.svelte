@@ -4,6 +4,7 @@
   import { navigate } from "../lib/router.svelte.js";
   import { api } from "../lib/api.js";
   import { mdiCreation, mdiAlertCircleOutline } from "../lib/icons.js";
+  import { eta } from "../lib/format.js";
 
   const jobs = $derived(app.server?.jobs);
   const cur = $derived(jobs?.current);
@@ -23,9 +24,9 @@
 </script>
 
 {#if cur}
-  <button class="job" onclick={() => navigate("/settings/ai")} title={cur.message}>
+  <button class="job" onclick={() => navigate("/settings/ai")} title={eta(cur.eta) ? `${cur.message}（剩 ${eta(cur.eta)}）` : cur.message}>
     <span class="spinner"></span>
-    <span class="txt"><b>{cur.label}</b>{pct !== null ? ` ${pct}%` : ""}{more ? `（另有 ${more} 項）` : ""}</span>
+    <span class="txt"><b>{cur.label}</b>{pct !== null ? ` ${pct}%` : ""}{eta(cur.eta) ? ` · 剩 ${eta(cur.eta)}` : ""}{more ? `（另有 ${more} 項）` : ""}</span>
     {#if pct !== null}<span class="bar" style:width="{pct}%"></span>{/if}
   </button>
 {:else if app.server && app.server.stats.pending > 0 && ai && !ai.ready}

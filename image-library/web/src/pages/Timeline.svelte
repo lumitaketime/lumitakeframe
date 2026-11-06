@@ -225,7 +225,7 @@
           {/each}
           </div>
         {:else}
-          <Loading kind="grid" count={Math.min(b.count, 18)} delay={0} />
+          <Loading kind="grid" height={estimateHeight(b.count, width, rowTarget, 4, square)} />
         {/if}
       </section>
     {/each}

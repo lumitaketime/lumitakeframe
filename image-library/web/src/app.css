@@ -316,7 +316,7 @@ input[type="range"]:disabled { opacity: .38; cursor: default; }
 
 /* ---- 滑動的選取指示（lib/slider.js）：分段按鈕、單選膠囊、分頁底線、側邊欄 ---- */
 .has-slider > .slider-ind {
-  position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; opacity: 0;
+  position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; opacity: 0; will-change: transform;
   background: var(--slider-bg, var(--secondary-container)); border-radius: var(--corner-full);
   transition:
     transform var(--spring-expressive-default-spatial-duration) var(--spring-expressive-default-spatial),

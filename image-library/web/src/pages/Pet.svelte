@@ -5,19 +5,27 @@
    * 選取照片後可以「不是牠」把照片移出。
    */
   import DateGroups from "../components/DateGroups.svelte";
+  import FaceCoverPicker from "../components/FaceCoverPicker.svelte";
   import { api } from "../lib/api.js";
   import { navigate, link } from "../lib/router.svelte.js";
   import { app, selection, toast, refresh } from "../lib/state.svelte.js";
   import { confirm } from "../lib/actions.js";
   import { undoable } from "../lib/undo.svelte.js";
   import { count } from "../lib/format.js";
-  import { mdiEyeOffOutline, mdiEyeOutline, mdiImageRemoveOutline, mdiPencilOutline } from "../lib/icons.js";
+  import { mdiEyeOffOutline, mdiEyeOutline, mdiImageRemoveOutline, mdiPencilOutline, mdiImageOutline } from "../lib/icons.js";
 
   let { id } = $props();
   let pet = $state(null);
   let error = $state("");
   let draft = $state("");
   let saving = $state(false);
+  let picking = $state(false);
+
+  async function saveCover(detId) {
+    await api(`/api/petid/${id}`, { body: { cover_id: detId } });
+    toast("已更換封面");
+    refresh();
+  }
   let input = $state();
 
   $effect(() => {
@@ -99,7 +107,9 @@
   {:else if pet}
     {#snippet nameField()}
       <div class="name-wrap">
-        <img class="avatar" src={`/api/pet-thumbs/${pet.cover}`} alt="" />
+        <button class="avatar-btn" onclick={() => (picking = true)} title="更換封面" aria-label="更換封面">
+          <img class="avatar" src={`/api/pet-thumbs/${pet.cover}`} alt="" />
+        </button>
         <input
           class="name-input"
           bind:this={input}
@@ -124,6 +134,7 @@
         crumbs={[{ label: "寵物", href: "/pets" }]}
         menu={[
           { label: "改名字", icon: mdiPencilOutline, run: () => input?.focus() },
+          { label: "更換封面…", icon: mdiImageOutline, run: () => (picking = true) },
           { label: "選取的照片不是牠", icon: mdiImageRemoveOutline, run: notThisPet },
           { label: pet.hidden ? "取消隱藏" : "隱藏這隻", icon: pet.hidden ? mdiEyeOutline : mdiEyeOffOutline, run: toggleHidden },
         ]}
@@ -133,10 +144,17 @@
   {:else}
     <Loading kind="grid" />
   {/if}
+  {#if picking && pet}
+    <FaceCoverPicker kind="pet" {id} name={pet.name} current={pet.cover} onsave={saveCover} onclose={() => (picking = false)} />
+  {/if}
 </div>
 
 <style>
   .name-wrap { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .avatar-btn { border: 0; padding: 0; background: none; border-radius: 50%; cursor: pointer; flex-shrink: 0; display: flex;
+    transition: transform var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial); }
+  .avatar-btn:hover { transform: scale(1.08); }
+  .avatar-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
   .avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; background: var(--surface-container-high); flex-shrink: 0; }
   .name-input {
     font-size: 24px; line-height: 32px; font-weight: 400; color: var(--on-surface); background: none; border: 0;

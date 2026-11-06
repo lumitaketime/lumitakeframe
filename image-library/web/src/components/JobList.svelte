@@ -1,4 +1,5 @@
 <script>
+  import { eta } from "../lib/format.js";
   /** 進行中與排隊中的背景工作，每項都有進度條與停止按鈕。 */
   import Icon from "./Icon.svelte";
   import { api } from "../lib/api.js";
@@ -27,7 +28,7 @@
       <div class="job" class:paused={j.paused}>
         <span class="lane">{LANE[j.lane] || ""}</span>
         <div class="grow">
-          <div class="head"><b>{j.label}{j.model ? `：${j.model}` : ""}</b>{#if p !== null}<span class="pct">{p}%</span>{/if}</div>
+          <div class="head"><b>{j.label}{j.model ? `：${j.model}` : ""}</b>{#if p !== null}<span class="pct">{p}%{#if eta(j.eta)} · 剩 {eta(j.eta)}{/if}</span>{/if}</div>
           <div class="bar" class:indeterminate={p === null}><span style:width="{p ?? 30}%"></span></div>
           <div class="msg tiny muted">{j.message}</div>
         </div>

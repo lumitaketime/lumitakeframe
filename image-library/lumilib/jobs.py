@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import itertools
 import threading
+import time
 import traceback
 from collections import deque
 from datetime import datetime
@@ -42,7 +43,26 @@ def _fmt_bytes(n: int) -> str:
 
 
 def _public(job: dict) -> dict:
-    return {k: v for k, v in job.items() if k not in ("options", "stop")}
+    return {k: v for k, v in job.items() if k not in ("options", "stop") and not k.startswith("_")}
+
+
+def _estimate(job: dict) -> None:
+    """依最近兩分鐘的速度估計還要多久（秒），寫在 job["eta"]；剛開始或沒有進度時不估。"""
+    done, total = job.get("done") or 0, job.get("total") or 0
+    now = time.monotonic()
+    hist = job.get("_hist")
+    if hist is None or job.get("_total") != total or (hist and done < hist[-1][1]):
+        hist = job["_hist"] = deque(maxlen=400)  # 換了階段（總數變了）就重新計算
+        job["_total"] = total
+    if not hist or now - hist[-1][0] >= 0.5:
+        hist.append((now, done))
+    while len(hist) > 2 and now - hist[0][0] > 120:
+        hist.popleft()
+    t0, d0 = hist[0]
+    if total <= 0 or done >= total or now - t0 < 6 or done - d0 < 2:
+        job["eta"] = None
+        return
+    job["eta"] = int((total - done) / ((done - d0) / (now - t0)))
 
 
 class JobRunner:
@@ -161,6 +181,8 @@ class JobRunner:
     def _update(self, job: dict, **kw) -> None:
         with self.lock:
             job.update(kw)
+            if "done" in kw or "total" in kw:
+                _estimate(job)
 
     def _worker(self, lane: str) -> None:
         while True:

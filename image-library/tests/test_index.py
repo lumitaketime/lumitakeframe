@@ -147,3 +147,63 @@ class FolderCoverTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EtaTests(unittest.TestCase):
+    def test_estimate_from_recent_speed(self):
+        from unittest import mock
+
+        from lumilib import jobs
+
+        job = {"done": 0, "total": 1000}
+        clock = [100.0]
+        with mock.patch.object(jobs.time, "monotonic", lambda: clock[0]):
+            jobs._estimate(job)
+            self.assertIsNone(job["eta"])  # 剛開始還不估
+            for step in range(1, 11):
+                clock[0] += 1.0
+                job["done"] = step * 10  # 每秒 10 張
+                jobs._estimate(job)
+            self.assertAlmostEqual(job["eta"], 90, delta=2)  # 還有 900 張
+            job.update(done=5, total=50)  # 換了階段：重新計算
+            jobs._estimate(job)
+            self.assertIsNone(job["eta"])
+        self.assertNotIn("_hist", jobs._public(job))
+
+
+class FaceCoverTests(unittest.TestCase):
+    def test_person_and_pet_cover(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib.config import load_config
+        from lumilib.server import create_app
+
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "p").mkdir()
+        cfg = load_config(tmp / "home")
+        conn = db.connect(cfg.db_path)
+        root = db.add_root(conn, tmp / "p")["id"]
+        a = _add(conn, root, "a.jpg", "a")
+        b = _add(conn, root, "b.jpg", "b")
+        now = db.now_iso()
+        conn.execute("INSERT INTO persons (id, name, created_at, updated_at) VALUES (1, '小明', ?, ?)", (now, now))
+        conn.execute("INSERT INTO persons (id, name, created_at, updated_at) VALUES (2, '小華', ?, ?)", (now, now))
+        for fid, img, pid, score in [(10, a, 1, .9), (11, b, 1, .95), (12, b, 2, .8)]:
+            conn.execute("INSERT INTO faces (id, image_id, person_id, score, embedding, model, created_at) VALUES (?, ?, ?, ?, x'00', 'm', ?)",
+                         (fid, img, pid, score, now))
+        conn.execute("INSERT INTO pets (id, name, kind, created_at, updated_at) VALUES (1, '豆豆', 'dog', ?, ?)", (now, now))
+        for did, img in [(20, a), (21, b)]:
+            conn.execute("INSERT INTO pet_detections (id, image_id, pet_id, kind, score, embedding, model, created_at) VALUES (?, ?, 1, 'dog', .9, x'00', 'm', ?)",
+                         (did, img, now))
+        conn.commit()
+        conn.close()
+        with TestClient(create_app(cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8765", client=("127.0.0.1", 1)) as c:
+            faces = c.get("/api/people/1/faces").json()
+            self.assertEqual([f["id"] for f in faces], [11, 10])  # 清楚的排前面
+            self.assertEqual(c.post("/api/people/1", json={"cover_face_id": 12}).status_code, 400)  # 別人的臉
+            c.post("/api/people/1", json={"cover_face_id": 10})
+            self.assertEqual(c.get("/api/people/1").json()["cover_face_id"], 10)
+            self.assertEqual({f["id"] for f in c.get("/api/petid/1/faces").json()}, {20, 21})
+            self.assertEqual(c.post("/api/petid/1", json={"cover_id": 12}).status_code, 400)
+            c.post("/api/petid/1", json={"cover_id": 21})
+            self.assertEqual(c.get("/api/petid/1").json()["cover"], 21)

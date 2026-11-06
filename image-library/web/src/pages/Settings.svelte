@@ -1094,7 +1094,7 @@
         <p class="tiny muted">手機螢幕較窄，一律用正方形顯示。</p>
       {:else}<Loading kind="rows" count={2} />{/if}
       <h3>主題</h3>
-      <div class="row wrap" use:slider>
+      <div class="row wrap">
         {#each [["auto", "跟隨系統"], ["light", "淺色"], ["dark", "深色"]] as [v, label] (v)}
           <button class="chip" class:on={theme === v} onclick={() => setTheme(v)}>{label}</button>
         {/each}

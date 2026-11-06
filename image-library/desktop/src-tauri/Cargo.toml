@@ -1,6 +1,6 @@
 [package]
 name = "lumitake-library"
-version = "0.16.0"
+version = "0.17.0"
 description = "Lumitake Library：離線 AI 照片與影片圖庫"
 edition = "2021"
 

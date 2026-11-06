@@ -7,6 +7,7 @@
    */
   import DateGroups from "../components/DateGroups.svelte";
   import Icon from "../components/Icon.svelte";
+  import FaceCoverPicker from "../components/FaceCoverPicker.svelte";
   import { api } from "../lib/api.js";
   import { navigate, link } from "../lib/router.svelte.js";
   import { app, showDialog, toast, refresh } from "../lib/state.svelte.js";
@@ -22,6 +23,13 @@
   let draft = $state("");
   let saving = $state(false);
   let input = $state();
+  let picking = $state(false);
+
+  async function saveCover(faceId) {
+    await api(`/api/people/${id}`, { body: { cover_face_id: faceId } });
+    toast("已更換封面");
+    refresh();
+  }
 
   $effect(() => {
     app.context = { person: id };
@@ -121,7 +129,9 @@
   {:else if person}
     <div class="name-row">
       <BackButton to="/people" label="回到人物" />
-      <img class="avatar" src={`/api/faces/${person.cover_face_id}/thumb`} alt="" />
+      <button class="avatar-btn" onclick={() => (picking = true)} title="更換封面" aria-label="更換封面">
+        <img class="avatar" src={`/api/faces/${person.cover_face_id}/thumb`} alt="" />
+      </button>
       <input
         class="name-input"
         bind:this={input}
@@ -158,9 +168,17 @@
   {/if}
 </div>
 
+{#if picking && person}
+  <FaceCoverPicker kind="person" {id} name={person.name} current={person.cover_face_id} onsave={saveCover} onclose={() => (picking = false)} />
+{/if}
+
 <style>
   .name-row { display: flex; align-items: center; gap: 10px; margin: 8px 0 10px; flex-wrap: wrap; }
   .back { color: var(--on-surface); }
+  .avatar-btn { border: 0; padding: 0; background: none; border-radius: 50%; cursor: pointer; flex-shrink: 0; display: flex;
+    transition: transform var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial); }
+  .avatar-btn:hover { transform: scale(1.08); }
+  .avatar-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
   .avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: var(--surface-container); flex-shrink: 0; }
   .name-input {
     font-size: 20px; font-weight: 500; color: var(--on-surface); background: none; border: 0; border-bottom: 2px solid var(--outline-variant);

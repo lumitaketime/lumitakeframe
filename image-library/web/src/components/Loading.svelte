@@ -2,7 +2,8 @@
   /**
    * 載入中的畫面，讓使用者知道系統正在跑，而不是一片空白：
    * - kind="spinner"：M3 圓形進度指示（弧線一邊轉一邊伸縮），可加文字
-   * - kind="grid"：照片網格的骨架（依設定是正方形或依比例的圓角色塊）
+   * - kind="grid"：照片網格的骨架（依設定是正方形或依比例的圓角色塊），鋪滿 height（預設一個畫面高）；
+   *   一道亮光不斷由上往下掃過，用 GPU 動畫，多高都不會變慢
    * - kind="cards"：相簿、人物等卡片的骨架；round 時是圓形頭像
    * - kind="rows"：設定、清單的骨架
    * 剛開始的 delay 毫秒內不顯示，很快就載入完的頁面不會閃一下。
@@ -10,7 +11,7 @@
   import { onMount } from "svelte";
   import { app } from "../lib/state.svelte.js";
 
-  let { kind = "spinner", label = "", count = 0, round = false, delay = 120, size = 40, inline = false } = $props();
+  let { kind = "spinner", label = "", count = 0, round = false, delay = kind === "spinner" ? 150 : 0, size = 40, inline = false, height = 0 } = $props();
   let show = $state(false);
   onMount(() => {
     const t = setTimeout(() => (show = true), delay);
@@ -19,16 +20,20 @@
 
   const square = $derived(app.server?.ui?.grid_style === "square" || (typeof innerWidth !== "undefined" && innerWidth < 640));
   // 依比例模式用幾種常見的長寬比，看起來像真的照片排列
-  const RATIOS = [1.5, 0.67, 1.33, 1.5, 1, 0.75, 1.78, 1.5, 0.67, 1.33, 1.5, 1.5, 0.75, 1, 1.5, 1.33, 0.67, 1.5];
+  // 網格的形狀用遮罩畫：兩列一組，依比例模式每列 4 張不同寬度，正方形模式一排排方塊
+  const svg = (body, w, h) => `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'>${body}</svg>`)}")`;
+  const rect = (x, y, w, h = 200) => `<rect x='${x}' y='${y}' width='${w}' height='${h}' rx='8'/>`;
+  const JUSTIFIED = svg(
+    [[0, 296], [300, 196], [500, 246], [750, 246]].map(([x, w]) => rect(x, 0, w)).join("") +
+    [[0, 180], [184, 300], [488, 220], [712, 284]].map(([x, w]) => rect(x, 204, w)).join(""), 1000, 408);
+  const SQUARES = (n) => svg([...Array(n)].map((_, i) => rect(i * 204, 0, 200)).join(""), n * 204, 204);
 </script>
 
 {#if show}
   {#if kind === "grid"}
-    <div class="skel-grid" class:square role="status" aria-label={label || "載入中"}>
-      {#each Array(count || (square ? 24 : 18)) as _, i (i)}
-        <span class="skel" style:--r={square ? 1 : RATIOS[i % RATIOS.length]} style:--wave={Math.floor(i / (square ? 6 : 4))}></span>
-      {/each}
-    </div>
+    <div class="skel-fill" class:square role="status" aria-label={label || "載入中"}
+      style:height={height ? `${height}px` : count ? `${Math.ceil(count / 4) * 204}px` : null}
+      style:--mask={square ? SQUARES(10) : JUSTIFIED}></div>
   {:else if kind === "cards"}
     <div class="skel-cards" role="status" aria-label={label || "載入中"}>
       {#each Array(count || 8) as _, i (i)}
@@ -86,13 +91,25 @@
     animation-delay: calc(var(--wave, 0) * 110ms);
   }
 
-  .skel-grid { display: flex; flex-wrap: wrap; gap: 4px; }
-  .skel-grid .skel { height: 200px; flex: var(--r) 1 calc(200px * var(--r)); }
-  .skel-grid.square { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-  .skel-grid.square .skel { height: auto; aspect-ratio: 1; }
+  /* 鋪滿的網格骨架：底色＋圓角方塊遮罩，裡面一道亮帶由上往下一直掃（只動 transform，交給 GPU） */
+  .skel-fill {
+    position: relative; overflow: hidden; height: calc(100vh - 160px); min-height: 204px;
+    background: var(--surface-container-highest);
+    -webkit-mask-image: var(--mask); mask-image: var(--mask);
+    -webkit-mask-size: auto 408px; mask-size: auto 408px;
+    -webkit-mask-repeat: repeat; mask-repeat: repeat;
+    animation: m3-fade var(--duration-medium2) var(--easing-standard) both;
+  }
+  .skel-fill.square { -webkit-mask-size: auto 204px; mask-size: auto 204px; }
+  .skel-fill::after {
+    content: ""; position: absolute; left: 0; right: 0; top: -720px; height: calc(100% + 720px); will-change: transform;
+    background: repeating-linear-gradient(to bottom,
+      transparent 0, color-mix(in srgb, var(--surface) 75%, transparent) 180px, transparent 360px, transparent 720px);
+    animation: skel-band 1.5s linear infinite;
+  }
+  @keyframes skel-band { from { transform: translateY(0); } to { transform: translateY(720px); } }
   @media (max-width: 640px) {
-    .skel-grid { gap: 2px; }
-    .skel-grid.square { grid-template-columns: repeat(3, 1fr); }
+    .skel-fill.square { -webkit-mask-size: auto 136px; mask-size: auto 136px; }
   }
 
   .skel-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 24px 16px; }
@@ -111,6 +128,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .skel { animation: none; opacity: .7; }
+    .skel-fill::after { animation: none; }
     .m3-spin, .m3-spin circle { animation-duration: 1.568s !important; animation-iteration-count: infinite !important; }
   }
 </style>

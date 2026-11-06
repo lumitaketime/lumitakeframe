@@ -70,3 +70,15 @@ export function fullDayLabel(iso) {
   if (!d) return "日期不明";
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 週${WEEK[d.getDay()]}`;
 }
+
+/** 估計剩餘時間（秒）→「約 3 分鐘」「約 1 小時 20 分」；不知道時回傳空字串 */
+export function eta(sec) {
+  if (sec === null || sec === undefined || !isFinite(sec) || sec < 0) return "";
+  if (sec < 50) return "不到 1 分鐘";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `約 ${min} 分鐘`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h >= 24) return `約 ${Math.round(h / 24 * 10) / 10} 天`;
+  return m && h < 10 ? `約 ${h} 小時 ${m} 分` : `約 ${h} 小時`;
+}

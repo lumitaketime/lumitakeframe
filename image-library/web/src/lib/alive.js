@@ -25,38 +25,39 @@ function innerCanScroll(target, root, dy) {
   return false;
 }
 
-export function rubberBand(node) {
+/**
+ * targets：要被拉動的元素（預設是主畫面的 .route）。側邊欄傳入所有子元素（含選取膠囊）。
+ * 用 CSS 的 translate 屬性而不是 transform，才不會蓋掉元素本身的 transform（例如側邊欄的選取膠囊）。
+ */
+export function rubberBand(node, opts = {}) {
   let pull = 0; // 正值＝在頂端往下拉，負值＝在底部往上拉
   let raw = 0;
   let idle = 0;
-  let anim = null;
+  let anims = [];
   let touchY = null;
   let touchStartTop = false;
   let touchStartBottom = false;
 
-  const content = () => node.querySelector(":scope > .route");
+  const targets = () => (opts.targets ? opts.targets(node) : [node.querySelector(":scope > .route")]).filter(Boolean);
   const atTop = () => node.scrollTop <= 0;
   const atBottom = () => node.scrollTop + node.clientHeight >= node.scrollHeight - 1;
   // 越拉越緊：一開始跟手，接近上限時幾乎拉不動
   const resist = (d) => Math.sign(d) * MAX * (1 - Math.exp(-Math.abs(d) / (MAX * 2.2)));
 
   function apply() {
-    const el = content();
-    if (!el) return;
-    anim?.cancel();
-    anim = null;
-    el.style.transform = pull ? `translate3d(0, ${pull}px, 0)` : "";
+    anims.forEach((a) => a.cancel());
+    anims = [];
+    for (const el of targets()) el.style.translate = pull ? `0 ${pull}px` : "";
   }
   function release() {
     clearTimeout(idle);
-    const el = content();
     const from = pull;
     pull = 0;
     raw = 0;
-    if (!el || !from) return;
-    el.style.transform = "";
-    anim = el.animate([{ transform: `translate3d(0, ${from}px, 0)` }, { transform: "translate3d(0, 0, 0)" }], {
-      duration: 520, easing: SPRING,
+    if (!from) return;
+    anims = targets().map((el) => {
+      el.style.translate = "";
+      return el.animate([{ translate: `0 ${from}px` }, { translate: "0 0" }], { duration: 520, easing: SPRING });
     });
   }
 

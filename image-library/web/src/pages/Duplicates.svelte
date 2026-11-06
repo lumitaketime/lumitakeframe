@@ -1,5 +1,4 @@
 <script>
-  import { slider } from "../lib/slider.js";
   import Loading from "../components/Loading.svelte";
   import BackButton from "../components/BackButton.svelte";
   import Icon from "../components/Icon.svelte";
@@ -65,7 +64,7 @@
   </div>
   {#if data?.computed_at}
     <p class="muted small">上次比對：{data.computed_at.slice(0, 16).replace("T", " ")}。藍框是建議保留的（星等、最愛、RAW、解析度優先），點照片可切換保留；按右下角的放大鏡看大圖。</p>
-    <div class="chips tabs" use:slider>
+    <div class="chips tabs">
       <button class="chip" class:on={tab === "similar"} onclick={() => (tab = "similar")}>幾乎一樣（{data.total_similar}）</button>
       <button class="chip" class:on={tab === "exact"} onclick={() => (tab = "exact")}>完全相同的檔案（{data.total_exact}）</button>
     </div>

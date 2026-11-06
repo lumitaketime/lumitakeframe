@@ -1,5 +1,4 @@
 <script>
-  import { slider } from "../lib/slider.js";
   import Loading from "../components/Loading.svelte";
   import ExploreTabs from "../components/ExploreTabs.svelte";
   import Icon from "../components/Icon.svelte";
@@ -71,7 +70,7 @@
   {/if}
 
   {#if groups.some((g) => g.count)}
-    <div class="chips groups" use:slider>
+    <div class="chips groups">
       <button class="chip" class:on={!filter} onclick={() => (filter = "")}>全部</button>
       {#each groups.filter((g) => g.count) as g (g.name)}
         <button class="chip" class:on={filter === g.name} onclick={() => (filter = filter === g.name ? "" : g.name)}>{g.name}<span class="muted">{g.count}</span></button>

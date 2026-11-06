@@ -1,5 +1,4 @@
 <script>
-  import { slider } from "../lib/slider.js";
   import Loading from "../components/Loading.svelte";
   import ExploreTabs from "../components/ExploreTabs.svelte";
   import { api } from "../lib/api.js";
@@ -44,13 +43,13 @@
   </div>
   <ExploreTabs />
   <div class="chips bar">
-    <div class="chips" use:slider>
+    <div class="chips">
       <button class="chip" class:on={source === "all"} onclick={() => (source = "all")}>全部</button>
       <button class="chip" class:on={source === "mine"} onclick={() => (source = "mine")}>我的與 Lightroom</button>
       <button class="chip" class:on={source === "ai"} onclick={() => (source = "ai")}>AI 關鍵字</button>
     </div>
     <span class="spacer"></span>
-    <div class="chips" use:slider>
+    <div class="chips">
       <button class="chip" class:on={view === "cloud"} onclick={() => (view = "cloud")}>文字雲</button>
       <button class="chip" class:on={view === "list"} onclick={() => (view = "list")}>排行</button>
     </div>
