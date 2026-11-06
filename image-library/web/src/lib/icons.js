@@ -11,6 +11,6 @@ export {
   mdiAccountBoxOutline, mdiAccountMultiplePlusOutline, mdiAccountRemoveOutline, mdiEyeOffOutline, mdiEyeOutline,
   mdiFaceRecognition, mdiTranslate, mdiImageSearchOutline, mdiViewDashboardOutline, mdiDatabaseOutline, mdiBroom,
   mdiPound, mdiBlur, mdiBrightness6, mdiCellphoneScreenshot, mdiFileExportOutline, mdiToolboxOutline, mdiCheckAll, mdiChartBoxOutline,
-  mdiArrowRight, mdiPinOutline, mdiPinOffOutline, mdiFilterVariant, mdiSort, mdiViewGridOutline, mdiCheckBold, mdiLinkVariant, mdiDragVariant, mdiSortDescending, mdiPaw, mdiDog, mdiCat, mdiMenuOpen,
+  mdiArrowRight, mdiFileDocumentEditOutline, mdiPinOutline, mdiPinOffOutline, mdiFilterVariant, mdiSort, mdiViewGridOutline, mdiCheckBold, mdiLinkVariant, mdiDragVariant, mdiSortDescending, mdiPaw, mdiDog, mdiCat, mdiMenuOpen,
   mdiStar, mdiStarOutline, mdiCameraOutline, mdiTagMultipleOutline, mdiAccountGroupOutline, mdiTuneVariant, mdiCloseCircle, mdiFlagRemove, mdiLayers, mdiLayersOff, mdiContentDuplicate, mdiAutoFix, mdiHistory, mdiImageFilterCenterFocus,
 } from "@mdi/js";

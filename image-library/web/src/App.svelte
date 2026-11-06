@@ -35,7 +35,7 @@
   import { route, navigate, link } from "./lib/router.svelte.js";
   import { TOOLS, pinnedKeys, toolByKey } from "./lib/toolkit.js";
   import { drag, unpin } from "./lib/pin.svelte.js";
-  import { undoLast } from "./lib/undo.svelte.js";
+  import { undoLast, undoable } from "./lib/undo.svelte.js";
   import { fadeThrough } from "./lib/motion.js";
   import {
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
@@ -179,7 +179,7 @@
   });
 
   // 完成通知：使用者自己啟動、會跑一陣子的工作，結束時跳出 Snackbar
-  const NOTIFY = new Set(["export", "pull", "face_model", "clip_model", "quality", "dups", "cluster"]);
+  const NOTIFY = new Set(["export", "pull", "face_model", "clip_model", "quality", "dups", "cluster", "exif_undo", "pet_model"]);
   let seenJob = null;
   function notifyFinished(recent) {
     const ids = recent.map((j) => j.id);
@@ -190,7 +190,10 @@
     for (const j of [...recent].reverse()) {
       if (j.id <= seenJob) continue;
       if (j.error) toast(`${j.label}失敗：${j.error}`, "error");
-      else if (j.kind === "export" && j.result?.dest && app.server?.local) {
+      else if (j.kind === "exif" && j.result?.batch) {
+        const batch = j.result.batch;
+        undoable(`${j.label}完成：${j.message}`, () => api("/api/jobs", { body: { kind: "exif_undo", batch } }));
+      } else if (j.kind === "export" && j.result?.dest && app.server?.local) {
         const dest = j.result.dest;
         toast(j.message, "info", 10000, { label: "在 Finder 中顯示", run: () => api("/api/reveal-path", { body: { path: dest } }).catch((e) => toast(e.message, "error")) });
       } else if (NOTIFY.has(j.kind)) toast(`${j.label}完成：${j.message}`, "info", 6000);

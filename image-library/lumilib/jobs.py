@@ -26,6 +26,7 @@ LABELS = {
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放",
     "quality": "品質檢查（模糊、曝光）", "export": "匯出照片",
+    "exif": "修改照片資訊", "exif_undo": "復原照片資訊",
 }
 LANES = {"analyze": "ai", "embed": "ai", "pull": "download", "face_model": "download", "clip_model": "download", "pet_model": "download"}
 QUEUED_LANES = ("main", "ai")
@@ -398,6 +399,22 @@ class JobRunner:
                     wait=lambda: self._wait_schedule(job),
                 )
                 parts.append(f"分析 {res.analyzed} 個、失敗 {res.failed} 個" + (f"、向量 {res.embedded} 個" if res.embedded else ""))
+            if kind == "exif":
+                from .exifedit import apply_edits
+
+                res = apply_edits(conn, self.cfg, opts["ids"], opts["changes"], stop=stop,
+                                  progress=lambda i, n, m: upd(done=i, total=n, message=f"{i}/{n}　{m}"))
+                job["result"] = res
+                parts.append(f"已修改 {res['done']} 張" + (f"、{len(res['errors'])} 張失敗" if res["errors"] else "")
+                             + (f"、{res['skipped']} 張不用改" if res["skipped"] else ""))
+                if res["errors"]:
+                    parts.append("；".join(res["errors"][:3]))
+            if kind == "exif_undo":
+                from .exifedit import undo_batch
+
+                res = undo_batch(conn, self.cfg, int(opts["batch"]), stop=stop,
+                                 progress=lambda i, n, m: upd(done=i, total=n, message=f"{i}/{n}"))
+                parts.append(f"已復原 {res['done']} 張" + (f"、{len(res['errors'])} 張失敗" if res["errors"] else ""))
             if kind == "dups":
                 from .organize import find_duplicates
 

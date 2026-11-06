@@ -1555,6 +1555,75 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
         return {"dest": str(default_dest().parent)}
 
+    @app.post("/api/exif/inspect")
+    def exif_inspect(body: dict = Body(...)):
+        """EXIF 編輯器：選取的照片目前的值（不同的欄位標「多個值」）。"""
+        from .exifedit import inspect
+
+        ids = [int(i) for i in body.get("ids") or []][:MAX_IDS]
+        c = conn()
+        try:
+            return inspect(c, ids)
+        finally:
+            c.close()
+
+    @app.post("/api/exif/preview")
+    def exif_preview(body: dict = Body(...)):
+        """套用前預覽：哪些照片、哪些欄位會從什麼改成什麼。"""
+        from .exifedit import preview
+
+        ids = [int(i) for i in body.get("ids") or []][:MAX_IDS]
+        c = conn()
+        try:
+            return preview(c, ids, dict(body.get("changes") or {}))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        finally:
+            c.close()
+
+    @app.get("/api/places/search")
+    def places_search(q: str = ""):
+        """地點搜尋：先找圖庫裡去過的地方，再找離線地名資料。"""
+        from .places import search_places
+
+        c = conn()
+        try:
+            found = search_places(c, q[:40])
+        finally:
+            c.close()
+        if len(found) < 5 and len(q.strip()) >= 2:
+            found += online_places(q.strip()[:80], {(round(p["lat"], 2), round(p["lon"], 2)) for p in found})
+        return found[:10]
+
+    def online_places(q: str, seen: set) -> list[dict]:
+        """離線地名找不到的地標（車站、景點）用 OpenStreetMap 搜尋；連不上就只用離線結果。"""
+        import json as _json
+        import urllib.parse
+        import urllib.request
+
+        from . import net
+
+        url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
+            {"q": q, "format": "jsonv2", "limit": 6, "accept-language": "zh-TW,zh,en"})
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": f"Lumitake-Library/{__version__} (photo library)"})
+            with net.urlopen(req, timeout=6) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+        except Exception:  # noqa: BLE001
+            return []
+        out = []
+        for d in data:
+            try:
+                lat, lon = float(d["lat"]), float(d["lon"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if (round(lat, 2), round(lon, 2)) in seen:
+                continue
+            parts = [x.strip() for x in str(d.get("display_name") or "").split(",") if x.strip()]
+            out.append({"name": d.get("name") or (parts[0] if parts else q), "country": "、".join(parts[1:3]),
+                        "lat": lat, "lon": lon, "photos": 0, "online": True})
+        return out
+
     @app.post("/api/export/inspect")
     def export_inspect(body: dict = Body(...)):
         """匯出前先看選了什麼：幾張 RAW、幾張一般照片、幾部影片（影片不匯出）。"""
@@ -1665,6 +1734,13 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             if not ids:
                 raise HTTPException(400, "沒有選取照片")
             opts = {"ids": ids, "export": dict(body.get("options") or {})}
+        if kind == "exif":
+            ids = [int(i) for i in body.get("ids") or []][:MAX_IDS]
+            if not ids:
+                raise HTTPException(400, "沒有選取照片")
+            opts = {"ids": ids, "changes": dict(body.get("changes") or {})}
+        if kind == "exif_undo":
+            opts = {"batch": int(body.get("batch") or 0)}
         if kind == "quality" and body.get("redo"):
             opts = {"redo": True}
         return jobs().submit(kind, **opts)

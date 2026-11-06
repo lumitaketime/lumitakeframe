@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lumilib"
-version = "0.12.1"
+version = "0.13.0"
 description = "Lumitake Library：用地端 AI 分析並管理硬碟／SSD 上的照片與影片"
 readme = "README.md"
 requires-python = ">=3.10"

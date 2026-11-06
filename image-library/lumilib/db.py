@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 10  # v10：重建有人名、寵物名的照片的搜尋索引
+SCHEMA_VERSION = 11  # v11：EXIF 編輯紀錄（可復原）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -107,6 +107,14 @@ CREATE TABLE IF NOT EXISTS pet_detections (
     manual INTEGER NOT NULL DEFAULT 0,
     excluded INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS edit_batches (
+    id INTEGER PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    label TEXT,
+    items TEXT NOT NULL,
+    undone INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS settings_kv (

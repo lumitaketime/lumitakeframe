@@ -21,7 +21,7 @@
   import {
    
     mdiFileExportOutline, mdiFlagRemove, mdiCheckAll, mdiFolderMoveOutline, mdiDeleteOutline, mdiFolderOpenOutline,
-    mdiChevronRight, mdiVideoOutline, mdiPinOutline, mdiPinOffOutline, mdiSortDescending,
+    mdiChevronRight, mdiVideoOutline, mdiPinOutline, mdiPinOffOutline, mdiSortDescending, mdiFileDocumentEditOutline,
   } from "../lib/icons.js";
 
   let { sub = "" } = $props();
@@ -207,6 +207,12 @@
             <span class="count">{countText(t.key)}</span>
           </a>
         {/each}
+        <div class="tool">
+          <span class="ic"><Icon path={mdiFileDocumentEditOutline} /></span>
+          <b>EXIF 編輯器</b>
+          <span class="muted small">一次修改多張的檔名、拍攝時間、相機、鏡頭、GPS 地點、標題、作者與版權。RAW 寫進 .xmp，JPEG 直接寫入。</span>
+          <span class="count">選取照片後按上方的 <Icon path={mdiFileDocumentEditOutline} size={16} /></span>
+        </div>
         <div class="tool">
           <span class="ic"><Icon path={mdiFileExportOutline} /></span>
           <b>批次匯出交件</b>
