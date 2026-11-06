@@ -216,6 +216,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let browser = MenuItem::with_id(app, "browser", "在瀏覽器中開啟", true, None::<&str>)?;
     let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
     let autostart = CheckMenuItem::with_id(app, "autostart", "登入時自動啟動", true, autostart_enabled, None::<&str>)?;
+    let about = MenuItem::with_id(app, "about", "關於 Lumitake Library", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "結束 Lumitake Library", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -225,6 +226,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &autostart,
             &PredefinedMenuItem::separator(app)?,
+            &about,
             &quit,
         ],
     )?;
@@ -238,6 +240,15 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "open" => show_main(app),
+            "about" => {
+                show_main(app);
+                if let Some(window) = app.get_webview_window("main") {
+                    // 網頁裡的路由會跟著 popstate 換頁
+                    let _ = window.eval(
+                        "history.pushState({idx:(history.state&&history.state.idx||0)+1},'','/settings/about');dispatchEvent(new PopStateEvent('popstate'))",
+                    );
+                }
+            }
             "browser" => {
                 let _ = Command::new("open").arg(library_url()).spawn();
             }

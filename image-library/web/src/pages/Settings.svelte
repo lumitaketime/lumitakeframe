@@ -1,4 +1,5 @@
 <script>
+  import { ABOUT, THIRD_PARTY } from "../lib/about.js";
   import BackButton from "../components/BackButton.svelte";
   import { onMount } from "svelte";
   import Icon from "../components/Icon.svelte";
@@ -8,7 +9,7 @@
   import { api } from "../lib/api.js";
   import { app, refresh, showDialog, toast } from "../lib/state.svelte.js";
   import { link } from "../lib/router.svelte.js";
-  import { confirm } from "../lib/actions.js";
+  import { confirm, copyText } from "../lib/actions.js";
   import { bytes, count } from "../lib/format.js";
   import {
     mdiHarddisk, mdiRefresh, mdiPencilOutline, mdiDeleteOutline, mdiPlus, mdiCreation, mdiCheck, mdiDownload,
@@ -34,7 +35,7 @@
     { id: "advanced", label: "進階", icon: mdiTuneVariant },
   ];
   // 桌機沒有指定分類時顯示第一個；手機先顯示分類清單
-  const current = $derived(SECTIONS.some((c) => c.id === section) ? section : winWidth > 760 ? "library" : "");
+  const current = $derived(SECTIONS.some((c) => c.id === section) || section === "about" ? section : winWidth > 760 ? "library" : "");
 
   const FEATURES = [
     { href: "/explore", label: "探索", hint: "依地點、物品、場景瀏覽" },
@@ -407,9 +408,36 @@
     {#each SECTIONS as c (c.id)}
       <a href={`/settings/${c.id}`} use:link class:on={current === c.id}><Icon path={c.icon} size={20} /><span>{c.label}</span></a>
     {/each}
+    <a class="ver" class:on={current === "about"} href="/settings/about" use:link title="關於 Lumitake Library">Lumitake Library {app.server?.version || ""}</a>
   </aside>
   <div class="pane">
     <a class="back" href="/settings" use:link><Icon path={mdiArrowLeft} size={20} />設定</a>
+    {#if current === "about"}
+    <!-- 關於 -->
+    <section class="card about">
+      <div class="about-head">
+        <img src="/icon.svg" alt="" width="56" height="56" />
+        <div>
+          <h2 class="plain">{ABOUT.name}</h2>
+          <span class="muted small">版本 {app.server?.version || ""}</span>
+        </div>
+      </div>
+      <p class="small">© {ABOUT.year} {ABOUT.author}</p>
+      <div class="row wrap contact">
+        <span class="small">聯絡：<span class="sel">{ABOUT.email}</span></span>
+        <button class="btn text small" onclick={() => copyText(ABOUT.email)}>複製</button>
+      </div>
+      <h3>使用條款</h3>
+      <p class="small">本軟體以{ABOUT.license.name}授權。</p>
+      <ul class="small terms">{#each ABOUT.license.summary as line (line)}<li>{line}</li>{/each}</ul>
+      <p class="small"><a href={ABOUT.license.url} target="_blank" rel="noopener">閱讀完整授權條款</a></p>
+      <details class="more">
+        <summary>第三方元件與資料</summary>
+        <p class="muted tiny">以下元件與資料各自依原本的授權使用，不受上方條款影響。</p>
+        <ul class="tp">{#each THIRD_PARTY as [name, lic] (name)}<li><span>{name}</span><span class="muted">{lic}</span></li>{/each}</ul>
+      </details>
+    </section>
+    {/if}
     {#if current === "library"}
     <!-- 圖庫資料夾 -->
     <section class="card">
@@ -1132,6 +1160,15 @@
   }
   .cats a:hover { background: var(--bg-2); }
   .cats a.on { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 500; }
+  .cats a.ver { margin-top: 12px; padding: 6px 14px; font-size: 12px; color: var(--on-surface-variant); font-weight: 400; background: none; }
+  .cats a.ver:hover { color: var(--on-surface); background: none; text-decoration: underline; }
+  .about-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .about-head h2.plain { margin: 0; font-size: 22px; font-weight: 400; }
+  .about h3 { font-size: 14px; font-weight: 500; margin: 18px 0 4px; }
+  .about .sel { user-select: text; font-weight: 500; }
+  .about .terms { margin: 4px 0 8px; padding-left: 20px; display: flex; flex-direction: column; gap: 2px; color: var(--on-surface-variant); }
+  .about .tp { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; font-size: 13px; }
+  .about .tp li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--outline-variant); flex-wrap: wrap; }
   .back { display: none; }
   .pane { min-width: 0; }
   details.more { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
