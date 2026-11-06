@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   mac:
-    runs-on: macos-14 # Apple Silicon
+    runs-on: macos-15 # Apple Silicon（macos-14 已停用）
     steps:
       - uses: actions/checkout@v4
 
