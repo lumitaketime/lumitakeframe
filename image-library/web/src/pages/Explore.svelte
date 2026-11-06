@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import ExploreTabs from "../components/ExploreTabs.svelte";
   import { api, thumbUrl } from "../lib/api.js";
   import { navigate, link } from "../lib/router.svelte.js";
@@ -18,7 +19,7 @@
   <div class="page-head"><h1>探索</h1></div>
   <ExploreTabs />
   {#if !data}
-    <p class="muted"><span class="spinner"></span></p>
+    <Loading kind="cards" />
   {:else}
     {#if data.people?.length}
       <h2 class="section-title"><a href="/people" use:link class="more">人物 →</a></h2>

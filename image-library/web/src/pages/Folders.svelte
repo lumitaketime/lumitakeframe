@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import DateGroups from "../components/DateGroups.svelte";
   import Icon from "../components/Icon.svelte";
   import { api, thumbUrl } from "../lib/api.js";
@@ -71,7 +72,7 @@
   {#if error}
     <div class="empty"><h2>無法開啟</h2><p>{error}</p></div>
   {:else if !data}
-    <p class="muted"><span class="spinner"></span></p>
+    <Loading kind="grid" />
   {:else if !rootId}
     <div class="page-head"><h1>資料夾</h1><a class="btn ghost small" href="/settings/library" use:link>+ 加入資料夾</a></div>
     {#if !data.roots.length}

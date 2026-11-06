@@ -483,6 +483,41 @@ class ServerTests(LibraryTestCase):
         kw = self.client.get(f"/api/assets/{ids[0]}").json()["keywords"]
         self.assertEqual(kw, ["交件"])
 
+    def test_search_scope(self):
+        rid = self.client.get("/api/folders").json()["roots"][0]["id"]
+        every = self.client.get("/api/search", params={"q": "type:photo"}).json()
+        self.assertEqual((every["total"], every["scope"]), (3, None))
+        here = self.client.get("/api/search", params={"q": "type:photo", "scope": f"folder:{rid}:2023 旅行"}).json()
+        self.assertEqual(sorted(a["name"] for a in here["results"]), ["car.jpg", "sea.jpg"])
+        self.assertEqual(here["scope"]["label"], "資料夾「2023 旅行」")
+        whole = self.client.get("/api/search", params={"q": "type:photo", "scope": f"folder:{rid}:"}).json()
+        self.assertEqual(whole["total"], 3)
+        sea = self.client.get("/api/search", params={"q": "海邊", "scope": f"folder:{rid}:hiking"}).json()
+        self.assertEqual(sea["total"], 0)
+        car = next(a for a in every["results"] if a["name"] == "car.jpg")
+        res = self.post("/api/assets/bulk", {"ids": [car["id"]], "action": "add_to_album", "name": "車"}).json()
+        album = self.client.get("/api/search", params={"q": "type:photo", "scope": f"album:{res['album_id']}"}).json()
+        self.assertEqual([a["name"] for a in album["results"]], ["car.jpg"])
+        # 收藏後快取要失效，我的最愛範圍立刻看得到
+        self.assertEqual(self.client.get("/api/search", params={"q": "type:photo", "scope": "favorites"}).json()["total"], 0)
+        self.post(f"/api/assets/{car['id']}", {"favorite": True})
+        self.assertEqual(self.client.get("/api/search", params={"q": "type:photo", "scope": "favorites"}).json()["total"], 1)
+        # 看不懂的範圍就當作全部圖庫
+        self.assertEqual(self.client.get("/api/search", params={"q": "type:photo", "scope": "nope:1"}).json()["total"], 3)
+
+    def test_background_warm(self):
+        import io
+        from contextlib import redirect_stdout
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.client.app.state.warm_now()  # 預先計算所有統計頁，不應該有任何一頁失敗
+        self.assertNotIn("預先計算", out.getvalue())
+        before = self.client.get("/api/explore").json()
+        self.post(f"/api/assets/{self.image('car.jpg')['id']}", {"user_tags": "暖機測試"})
+        after = self.client.get("/api/explore").json()
+        self.assertNotEqual(before, after)  # 修改後快取已清掉
+
     def test_search_explore_models_jobs(self):
         data = self.client.get("/api/search", params={"q": "海邊"}).json()
         self.assertEqual((data["total"], data["results"][0]["type"]), (1, "photo"))

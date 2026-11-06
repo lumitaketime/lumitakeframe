@@ -145,7 +145,7 @@ def usage(conn: sqlite3.Connection, cfg: Config, ollama_models: list[dict] | Non
                 continue
             size, _ = dir_size(d)
             if size:
-                on = d.name == active and enabled
+                on = d.name == active  # 選用中的模型（自動偵測開關只影響新照片）
                 models.append({"kind": kind, "name": d.name, "bytes": size, "roles": [role] if on else [], "detail": ""})
 
     return {

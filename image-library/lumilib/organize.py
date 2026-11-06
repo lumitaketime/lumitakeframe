@@ -205,9 +205,11 @@ def _popcount(x: np.ndarray) -> np.ndarray:
     return table[x.view(np.uint8).reshape(*x.shape, 8)].sum(axis=-1)
 
 
-def find_duplicates(conn: sqlite3.Connection, cfg: Config, threshold: int = 6, color_tolerance: int = 22,
+def find_duplicates(conn: sqlite3.Connection, cfg: Config, threshold: int | None = None, color_tolerance: int = 22,
                     progress=None, stop=None) -> dict:
     """回傳 {"exact": [[id...]], "similar": [[id...]]} 並存到資料目錄。"""
+    if threshold is None:
+        threshold = int(getattr(cfg, "dup_threshold", 6) or 6)
     fill_hashes(conn, cfg, progress, stop)
     exact = [
         [int(x) for x in r[0].split(",")]

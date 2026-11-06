@@ -37,6 +37,7 @@
   import { drag, unpin } from "./lib/pin.svelte.js";
   import { undoLast, undoable } from "./lib/undo.svelte.js";
   import { fadeThrough } from "./lib/motion.js";
+  import { rubberBand, installShake } from "./lib/alive.js";
   import {
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
     mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiContentDuplicate,
@@ -217,29 +218,52 @@
     }
   }
 
+  // 這些工作結束時不會改變照片內容，不必重新載入頁面（四萬張以上時重新載入很有感）
+  const NO_RELOAD = new Set(["pull", "face_model", "clip_model", "pet_model", "export", "delete_model"]);
+  let lastSnap = "";
+  let seenFinish = null;
+
   async function poll() {
     clearTimeout(timer);
     try {
       const s = await api("/api/server");
-      app.server = s;
+      // 內容沒變就不要換掉整個物件，避免整個介面跟著重新計算
+      const snap = JSON.stringify(s);
+      if (snap !== lastSnap) {
+        lastSnap = snap;
+        app.server = s;
+      }
       notifyFinished(s.jobs.recent || []);
       const running = !!s.jobs.running;
       const fin = s.jobs.last?.finished_at;
       const total = s.stats.images;
-      if ((wasRunning && !running) || (fin && lastFinished && fin !== lastFinished)) {
+      // 新結束的工作裡，有會改變照片內容的才重新載入頁面
+      const recent = s.jobs.recent || [];
+      const newly = seenFinish === null ? [] : recent.filter((j) => j.id > seenFinish);
+      if (recent.length) seenFinish = Math.max(seenFinish ?? 0, ...recent.map((j) => j.id));
+      const contentChanged = newly.some((j) => !NO_RELOAD.has(j.kind));
+      if (contentChanged || (wasRunning && !running && !newly.length && fin !== lastFinished)) {
+        lastRefresh = Date.now();
         refresh();
-      } else if (running && lastTotal !== null && total !== lastTotal && Date.now() - lastRefresh > 5000) {
-        // 掃描途中照片數變了：讓新照片陸續出現
+      } else if (running && lastTotal !== null && total !== lastTotal && Date.now() - lastRefresh > 15000) {
+        // 掃描途中照片數變了：每 15 秒讓新照片陸續出現一次
         lastRefresh = Date.now();
         refresh();
       }
       lastTotal = total;
       wasRunning = running;
       lastFinished = fin || lastFinished;
-      timer = setTimeout(poll, running ? 1500 : 12000);
+      // 背景執行時慢一點；視窗不在前景時更慢
+      const hidden = typeof document !== "undefined" && document.hidden;
+      timer = setTimeout(poll, hidden ? 30000 : running ? 2500 : 12000);
     } catch {
       timer = setTimeout(poll, 5000);
     }
+  }
+
+  // 回到前景時立刻更新一次
+  function onVisible() {
+    if (!document.hidden && app.server && !app.needLogin) poll();
   }
 
   onMount(async () => {
@@ -251,7 +275,13 @@
     }
     app.authChecked = true;
     if (!app.needLogin) poll();
-    return () => clearTimeout(timer);
+    document.addEventListener("visibilitychange", onVisible);
+    const removeShake = installShake();
+    return () => {
+      removeShake();
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   });
 
   $effect(() => {
@@ -261,7 +291,10 @@
 
   // 頁面上的動作（例如換相簿）會呼叫 refresh()，順便更新統計
   $effect(() => {
-    if (app.refreshKey) api("/api/server").then((s) => (app.server = s)).catch(() => {});
+    if (app.refreshKey) api("/api/server").then((s) => {
+      lastSnap = JSON.stringify(s);
+      app.server = s;
+    }).catch(() => {});
   });
 </script>
 
@@ -352,7 +385,8 @@
       {/if}
     {/if}
 
-    <main class="scroll-area">
+    <main class="scroll-area" use:rubberBand>
+      <div class="load-bar" class:on={app.busy} aria-hidden="true"><span></span></div>
       {#key route.path}
         <div class="route" in:fadeThrough>
         {#if page === "" || page === "welcome"}
@@ -519,10 +553,24 @@
   .sidebar.rail .nav-group.drop { outline: 2px dashed var(--outline); outline-offset: 2px; border-radius: var(--corner-extra-large); }
 
   main {
-    grid-area: main; position: relative; background: var(--surface); border-radius: var(--corner-extra-large) var(--corner-extra-large) 0 0;
+    grid-area: main; position: relative; overscroll-behavior-y: none; /* 到底的回彈由 rubberBand 處理，避免和系統回彈疊在一起 */ background: var(--surface); border-radius: var(--corner-extra-large) var(--corner-extra-large) 0 0;
     margin-right: 12px;
   }
   .route { min-height: 100%; }
+  /* 頂端的 M3 線性載入條：請求超過一下子還沒回來才出現 */
+  .load-bar { position: sticky; top: 0; height: 0; z-index: 30; }
+  .load-bar span {
+    position: absolute; left: 0; right: 0; top: 0; height: 4px; overflow: hidden; opacity: 0;
+    background: var(--secondary-container); transition: opacity var(--duration-short4) var(--easing-standard);
+  }
+  .load-bar.on span { opacity: 1; }
+  .load-bar span::before, .load-bar span::after {
+    content: ""; position: absolute; top: 0; bottom: 0; border-radius: 2px; background: var(--primary);
+  }
+  .load-bar.on span::before { animation: lb-a 2s cubic-bezier(.65, .815, .735, .395) infinite; }
+  .load-bar.on span::after { animation: lb-b 2s cubic-bezier(.165, .84, .44, 1) 1.15s infinite; }
+  @keyframes lb-a { 0% { left: -35%; right: 100%; } 60%, 100% { left: 100%; right: -90%; } }
+  @keyframes lb-b { 0% { left: -200%; right: 100%; } 60%, 100% { left: 107%; right: -8%; } }
   .bottom { display: none; }
   .spacer { flex: 1; }
 

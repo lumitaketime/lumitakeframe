@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import BackButton from "../components/BackButton.svelte";
   import Grid from "../components/Grid.svelte";
   import Icon from "../components/Icon.svelte";
@@ -51,7 +52,7 @@
       <div class="empty"><p>目前沒有符合條件的照片。</p></div>
     {/if}
   {:else}
-    <p class="muted"><span class="spinner"></span></p>
+    <Loading kind="grid" />
   {/if}
 </div>
 

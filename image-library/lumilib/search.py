@@ -303,8 +303,11 @@ def search(
     groups: list[list[str]] | None = None,
     clip_rank=None,
     clip_texts: list[str] | None = None,
+    scope: tuple[str, list] | None = None,
 ) -> dict:
     """回傳 {"total", "results", "mode", "expanded"}。
+
+    - scope：(SQL 條件, 參數)，只在某個資料夾、相簿、人物等範圍內搜尋（條件以 i 代表 images）。
 
     - groups：查詢改寫後的同義詞組（與 terms 一一對應），讓中文查詢也能找到英文標籤，反之亦然。
     - clip_rank(texts, allowed_ids) -> [(id, 相似度)]：多語言 CLIP 直接比對畫面。
@@ -318,7 +321,13 @@ def search(
     use_semantic = bool(semantic and embedder and embed_model and query.terms)
     use_clip = bool(clip_rank and query.terms)
 
-    where, params = _filter_sql(query, include_terms=True, groups=groups)
+    scope_sql, scope_params = scope if scope else ("1", [])
+
+    def scoped(include_terms: bool, g=None) -> tuple[str, list]:
+        w, p = _filter_sql(query, include_terms=include_terms, groups=g)
+        return f"({w}) AND ({scope_sql})", p + list(scope_params)
+
+    where, params = scoped(True, groups)
     rows = conn.execute(f"{base} WHERE {where}", params).fetchall()
     scored = {r["id"]: [keyword_score(r, query.terms, groups), r, "keyword"] for r in rows}
     modes = ["keyword"]
@@ -330,7 +339,7 @@ def search(
             scored[image_id][0] += 8
         missing = named - set(scored)
         if missing:
-            f_where, f_params = _filter_sql(query, include_terms=False)
+            f_where, f_params = scoped(False)
             ids = list(missing)[:5000]
             for r in conn.execute(
                 f"{base} WHERE {f_where} AND i.id IN ({','.join('?' * len(ids))})", f_params + ids
@@ -338,7 +347,7 @@ def search(
                 scored[r["id"]] = [8 + 0.5 * len(query.terms), r, "keyword"]
 
     if use_clip or use_semantic:
-        f_where, f_params = _filter_sql(query, include_terms=False)
+        f_where, f_params = scoped(False)
         allowed = {r[0] for r in conn.execute(f"SELECT i.id FROM images i JOIN roots r ON r.id = i.root_id WHERE {f_where}", f_params)}
 
     if use_clip:

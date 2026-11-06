@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import { tick } from "svelte";
   import StatusCards from "../components/StatusCards.svelte";
   import SectionTitle from "../components/SectionTitle.svelte";
@@ -592,7 +593,7 @@
         {/if}
       </div>
       <p class="muted tiny">不符合排程時，分析會自動暫停，時間到或條件符合後接著做；有人開始用電腦時也會暫停。</p>
-      {/if}
+      {:else}<Loading kind="rows" count={2} />{/if}
       <div class="row wrap">
         <button class="btn ghost" onclick={() => job("index")}>掃描並分析全部</button>
         <button class="btn ghost" onclick={() => job("scan")}>只掃描</button>
@@ -605,7 +606,7 @@
     <section class="card">
       <h2><Icon path={mdiCreation} />模型</h2>
       {#if !models}
-        <p class="muted"><span class="spinner"></span></p>
+        <Loading kind="rows" count={3} />
       {:else if !models.ollama_ok}
         <div class="warn">
           <Icon path={mdiAlertCircleOutline} />
@@ -651,7 +652,7 @@
           </div>
           <span class="tiny muted">{settings.analysis_detail === "fast" ? "描述 1–2 句、8–12 個關鍵字，每張約快一倍" : "描述 2–4 句、10–25 個關鍵字（中英對照）"}</span>
         </div>
-      {/if}
+      {:else}<Loading kind="rows" count={2} />{/if}
       {#if models}
         <details class="more">
         <summary>所有視覺模型（含 Gemma 4、Qwen3-VL 各種大小）</summary>
@@ -746,8 +747,8 @@
             </label>
           </div>
           </details>
-        {/if}
-      {/if}
+        {:else}<Loading kind="rows" count={2} />{/if}
+      {:else}<Loading kind="rows" count={2} />{/if}
     </section>
     {/if}
     {#if current === "recog"}
@@ -812,7 +813,7 @@
           <button class="btn ghost danger-text" onclick={clearFaces}>刪除所有人臉資料</button>
         </div>
         <p class="muted tiny">「重新分群」會保留已命名的人物與你手動更正的結果。InsightFace 預訓練模型授權僅限非商業用途。</p>
-      {/if}
+      {:else}<Loading kind="rows" count={2} />{/if}
     </section>
     {/if}
     {#if current === "recog"}
@@ -872,14 +873,14 @@
         <JobList kinds={["pets", "pet_cluster", "pet_model"]} compact />
         {#if petInfo}
           <p class="small">已認出 {count(petInfo.pets.length)} 隻寵物；尚未辨識 {count(petInfo.pending)} 張照片。</p>
-        {/if}
+        {:else}<Loading kind="rows" count={2} />{/if}
         <div class="row wrap">
           <button class="btn" disabled={!petModels.find((m) => m.active)?.installed} onclick={() => job("pets")}>辨識寵物</button>
           <button class="btn ghost" onclick={() => job("pet_cluster")}>重新分群</button>
           <button class="btn ghost danger-text" onclick={clearPets}>刪除所有寵物資料</button>
         </div>
         <p class="muted tiny">換了「辨識嚴格度」後按「重新分群」套用；已命名的寵物與你手動更正的結果會保留。模型：YOLOX（Apache-2.0）、DINOv2（Apache-2.0）。</p>
-      {/if}
+      {:else}<Loading kind="rows" count={2} />{/if}
     </section>
     {/if}
     {#if current === "search"}
@@ -935,7 +936,7 @@
           <button class="btn ghost" disabled={!clipModels.find((m) => m.active)?.installed} onclick={() => job("clip")}>建立圖像索引</button>
         </div>
         <p class="muted tiny">模型從 Hugging Face 下載（Immich 專案提供的 ONNX 版本），檔案約數百 MB 到 1 GB 以上。</p>
-      {/if}
+      {:else}<Loading kind="rows" count={2} />{/if}
     </section>
     {/if}
     {#if current === "organize"}
@@ -978,7 +979,7 @@
           </label>
         </div>
         <p class="muted tiny">連續 3 張以上、同一台相機才算連拍。手動解除或調整過的疊放不會被重新計算覆蓋。</p>
-      {/if}
+      {:else}<Loading kind="rows" count={2} />{/if}
     </section>
     {/if}
     {#if current === "library"}
@@ -1034,14 +1035,40 @@
             </div>
           </div>
         {/if}
-      {/if}
+      {:else}<Loading kind="rows" count={2} />{/if}
     </section>
     {/if}
     {#if current === "organize"}
     <div class="anchor" id="sec-tools"></div>
       <section class="card">
-        <SectionTitle icon={mdiToolboxOutline} title="整理工具的判定標準">模糊與曝光的偵測都在這台 Mac 上計算，不用 AI。調整後，「整理工具」的清單會立刻更新。</SectionTitle>
+        <SectionTitle icon={mdiToolboxOutline} title="整理工具的判定標準">每個整理工具的判斷方式都在這裡調整，全部在這台 Mac 上計算，不用 AI。調整後，「整理工具」的清單會立刻更新。</SectionTitle>
+        <h3 class="tool-h">模糊照片與曝光問題</h3>
         <QualitySettings />
+        {#if settings}
+          <h3 class="tool-h">重複照片</h3>
+          <div class="row wrap">
+            <label class="field">相似度判定
+              <select class="input" value={String(settings.dup_threshold)} onchange={(e) => saveSetting("dup_threshold", Number(e.currentTarget.value))}>
+                <option value="3">嚴格（只找幾乎一模一樣的）</option>
+                <option value="6">標準（建議）</option>
+                <option value="10">寬鬆（連拍、構圖相近也算）</option>
+              </select>
+            </label>
+          </div>
+          <p class="muted tiny">改了之後到「整理工具 → 重複照片」按「重新比對」套用。</p>
+          <h3 class="tool-h">截圖與文件</h3>
+          <label class="toggle"><input type="checkbox" checked={!!settings.screen_png_rule}
+            onchange={(e) => saveSetting("screen_png_rule", e.currentTarget.checked ? 1 : 0)} />沒有相機資訊的 PNG 也算截圖</label>
+          <p class="muted tiny">另外一定會列入：檔名含「螢幕截圖、Screenshot」的，以及 AI 判斷是截圖、文件、收據的照片。</p>
+          <h3 class="tool-h">大檔案</h3>
+          <div class="row wrap">
+            <label class="field">列出幾個
+              <select class="input" value={String(settings.large_files_limit)} onchange={(e) => saveSetting("large_files_limit", Number(e.currentTarget.value))}>
+                {#each [100, 200, 500, 1000] as n (n)}<option value={String(n)}>最大的 {n} 個</option>{/each}
+              </select>
+            </label>
+          </div>
+        {:else}<Loading kind="rows" count={2} />{/if}
       </section>
     {/if}
     {#if current === "system"}
@@ -1064,7 +1091,7 @@
           {/each}
         </div>
         <p class="tiny muted">手機螢幕較窄，一律用正方形顯示。</p>
-      {/if}
+      {:else}<Loading kind="rows" count={2} />{/if}
       <h3>主題</h3>
       <div class="row wrap">
         {#each [["auto", "跟隨系統"], ["light", "淺色"], ["dark", "深色"]] as [v, label] (v)}
@@ -1174,6 +1201,7 @@
   .cats a:hover { background: var(--bg-2); }
   .cats a.on { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 500; }
   .cl { display: flex; flex-direction: column; min-width: 0; }
+  .tool-h { font-size: 14px; font-weight: 500; margin: 20px 0 8px; }
   .csub { display: none; font-size: 12px; font-weight: 400; color: var(--on-surface-variant); }
   .anchor { scroll-margin-top: 16px; }
   .cats a.ver { margin-top: 12px; padding: 6px 14px; font-size: 12px; color: var(--on-surface-variant); font-weight: 400; background: none; }

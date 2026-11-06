@@ -10,7 +10,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 11  # v11：EXIF 編輯紀錄（可復原）
+SCHEMA_VERSION = 12  # v12：大圖庫用的索引（資料夾來源、時間軸、品質）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -200,6 +200,10 @@ CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id);
 CREATE INDEX IF NOT EXISTS idx_pet_det_image ON pet_detections(image_id);
 CREATE INDEX IF NOT EXISTS idx_pet_det_pet ON pet_detections(pet_id);
 CREATE INDEX IF NOT EXISTS idx_images_stack ON images(stack_id);
+CREATE INDEX IF NOT EXISTS idx_images_root_status_sort ON images(root_id, status, sort_at);
+CREATE INDEX IF NOT EXISTS idx_images_status_top_sort ON images(status, stack_top, sort_at);
+CREATE INDEX IF NOT EXISTS idx_images_status_media ON images(status, media_type);
+CREATE INDEX IF NOT EXISTS idx_images_status_size ON images(status, size);
 """
 
 # 由掃描時的中繼資料寫入的欄位
@@ -418,23 +422,32 @@ def set_user_fields(conn: sqlite3.Connection, image_id: int, user_tags=None, not
 
 
 def stats(conn: sqlite3.Connection) -> dict:
+    """圖庫的各種數量：images 表只掃一次（原本每個數字各掃一次，四萬張時每次要 0.2 秒）。"""
+    row = conn.execute(
+        """SELECT
+             SUM(status = 'ok'),
+             SUM(status = 'ok' AND media_type = 'photo'),
+             SUM(status = 'ok' AND media_type = 'video'),
+             SUM(status = 'missing'),
+             SUM(status = 'ok' AND analyzed_at IS NOT NULL),
+             SUM(status = 'ok' AND analyzed_at IS NULL AND error IS NULL),
+             SUM(status = 'ok' AND analyzed_at IS NULL AND error IS NOT NULL),
+             SUM(status = 'ok' AND embed_model IS NOT NULL),
+             SUM(status = 'ok' AND favorite = 1),
+             SUM(status = 'ok' AND media_type = 'photo' AND faces_at IS NULL),
+             SUM(status = 'ok' AND clip_model IS NOT NULL)
+           FROM images"""
+    ).fetchone()
+    v = [int(x or 0) for x in row]
     q = lambda sql: conn.execute(sql).fetchone()[0]  # noqa: E731
     return {
         "roots": q("SELECT COUNT(*) FROM roots"),
-        "images": q("SELECT COUNT(*) FROM images WHERE status = 'ok'"),
-        "photos": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND media_type = 'photo'"),
-        "videos": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND media_type = 'video'"),
-        "missing": q("SELECT COUNT(*) FROM images WHERE status = 'missing'"),
-        "analyzed": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND analyzed_at IS NOT NULL"),
-        "pending": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND analyzed_at IS NULL AND error IS NULL"),
-        "failed": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND analyzed_at IS NULL AND error IS NOT NULL"),
-        "embedded": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND embedding IS NOT NULL"),
-        "favorites": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND favorite = 1"),
+        "images": v[0], "photos": v[1], "videos": v[2], "missing": v[3],
+        "analyzed": v[4], "pending": v[5], "failed": v[6], "embedded": v[7], "favorites": v[8],
         "albums": q("SELECT COUNT(*) FROM albums"),
         "faces": q("SELECT COUNT(*) FROM faces"),
         "people": q("SELECT COUNT(*) FROM persons"),
-        "faces_pending": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND media_type = 'photo' AND faces_at IS NULL"),
-        "clip_done": q("SELECT COUNT(*) FROM images WHERE status = 'ok' AND clip IS NOT NULL"),
+        "faces_pending": v[9], "clip_done": v[10],
     }
 
 

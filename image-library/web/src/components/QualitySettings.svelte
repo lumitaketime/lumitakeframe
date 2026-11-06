@@ -1,4 +1,5 @@
 <script>
+  import Loading from "./Loading.svelte";
   /** 整理工具的判定標準：拖動就即時更新清單，不用每次請人改程式。 */
   import { api } from "../lib/api.js";
   import { refresh, toast } from "../lib/state.svelte.js";
@@ -59,6 +60,8 @@
     {/if}
     <button class="btn text small" onclick={reset}>恢復預設</button>
   </div>
+{:else}
+  <Loading kind="rows" count={2} />
 {/if}
 
 <style>

@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import BackButton from "../components/BackButton.svelte";
   /**
    * 人物頁（參考 Google 相簿）：上方直接輸入名字按「完成」，下方是分類與依日期分組的照片。
@@ -153,7 +154,7 @@
     {#key id}<DateGroups assets={person.assets} storeKey={`person:${id}`} defaultGroup="day" />{/key}
     <p class="muted tiny tip">認錯人？打開那張照片的資訊，在「人物」按鉛筆更正。名字和分類都可以直接搜尋，例如「客戶 海邊」。</p>
   {:else}
-    <p class="muted"><span class="spinner"></span></p>
+    <Loading kind="grid" />
   {/if}
 </div>
 

@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import ExploreTabs from "../components/ExploreTabs.svelte";
   import Icon from "../components/Icon.svelte";
   import { api } from "../lib/api.js";
@@ -78,6 +79,7 @@
     </div>
   {/if}
 
+  {#if !people}<Loading kind="cards" round count={12} />{/if}
   {#if people && !people.length}
     <div class="empty">
       <h2>還沒有人物</h2>

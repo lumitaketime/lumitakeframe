@@ -8,6 +8,8 @@
   import Icon from "./Icon.svelte";
   import { api, thumbUrl } from "../lib/api.js";
   import { navigate, route } from "../lib/router.svelte.js";
+  import { app } from "../lib/state.svelte.js";
+  import { routeScope, searchHref } from "../lib/scope.js";
   import {
     mdiMagnify, mdiClose, mdiArrowLeft, mdiHistory, mdiHeartOutline, mdiVideoOutline, mdiMapMarkerOutline, mdiPound,
     mdiFolderOutline, mdiImageAlbum, mdiArrowRight, mdiStarOutline,
@@ -29,6 +31,15 @@
   $effect(() => {
     q = page === "search" ? route.query.q || "" : "";
   });
+
+  // 搜尋範圍：在資料夾、相簿等頁面預設只搜尋這一頁，可切換成全部圖庫
+  const here = $derived(routeScope(route, app.server));
+  let wholeLibrary = $state(false);
+  $effect(() => {
+    route.path;
+    wholeLibrary = false;
+  });
+  const scope = $derived(here && !wholeLibrary ? here : null);
 
   function readRecent() {
     try {
@@ -107,7 +118,7 @@
   }
   function go(text) {
     remember(text);
-    navigate(`/search?q=${encodeURIComponent(text)}`);
+    navigate(searchHref(text, scope));
     close();
   }
   function to(href) {
@@ -164,7 +175,7 @@
 
 <svelte:window onpointerdown={outside} />
 
-<div class="sb" class:collapsed={narrow && !expanded} class:expanded={narrow && expanded} class:open={open && (items.length || people.length)} bind:this={root}>
+<div class="sb" class:collapsed={narrow && !expanded} class:expanded={narrow && expanded} class:open={open && (items.length || people.length || here)} bind:this={root}>
   {#if narrow && !expanded}
     <button type="button" class="icon-btn" onclick={openSearch} aria-label="搜尋"><Icon path={mdiMagnify} /></button>
   {:else}
@@ -181,7 +192,7 @@
         oninput={() => { open = true; load(); }}
         onkeydown={onkey}
         type="search"
-        placeholder="搜尋照片、人物、地點、物品、文字…"
+        placeholder={scope ? `在「${scope.label}」中搜尋…` : "搜尋照片、人物、地點、物品、文字…"}
         aria-label="搜尋"
         aria-expanded={open}
         aria-controls="search-suggestions"
@@ -193,8 +204,15 @@
       />
       {#if q}<button type="button" class="icon-btn clear" onclick={() => { q = ""; input?.focus(); load(); }} aria-label="清除"><Icon path={mdiClose} size={20} /></button>{/if}
     </form>
-    {#if open && (items.length || people.length)}
+    {#if open && (items.length || people.length || here)}
       <div class="panel" id="search-suggestions" role="listbox" aria-label="搜尋建議">
+        {#if here}
+          <div class="scope" role="radiogroup" aria-label="搜尋範圍">
+            <span>搜尋範圍</span>
+            <button type="button" class="chip" class:on={!wholeLibrary} role="radio" aria-checked={!wholeLibrary} onclick={() => { wholeLibrary = false; input?.focus(); }}>{here.label}</button>
+            <button type="button" class="chip" class:on={wholeLibrary} role="radio" aria-checked={wholeLibrary} onclick={() => { wholeLibrary = true; input?.focus(); }}>全部圖庫</button>
+          </div>
+        {/if}
         {#each items as it, i (it.kind + it.label + i)}
           {#if (i > 0 && items[i - 1].kind === "recent" && it.kind !== "recent") || (i > 0 && items[i - 1].kind === "query")}<div class="divider"></div>{/if}
           {@const [a, b, c] = parts(it.label)}
@@ -277,6 +295,9 @@
   .lbl b { font-weight: 700; }
   .sub { font-size: 12px; line-height: 16px; color: var(--on-surface-variant); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .x { width: 32px; height: 32px; color: var(--on-surface-variant); }
+  .scope { display: flex; align-items: center; gap: 8px; padding: 12px 20px 8px; flex-wrap: wrap; }
+  .scope > span { font-size: 12px; color: var(--on-surface-variant); margin-right: 4px; }
+  .scope .chip { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .divider { height: 1px; background: var(--outline-variant); margin: 4px 0; }
   .people { display: flex; gap: 12px; padding: 12px 20px 4px; overflow-x: auto; }
   .person { border: 0; background: none; padding: 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 72px; flex-shrink: 0; color: var(--on-surface); }

@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import ExploreTabs from "../components/ExploreTabs.svelte";
   import Grid from "../components/Grid.svelte";
   import Icon from "../components/Icon.svelte";
@@ -51,7 +52,7 @@
   <div class="page-head"><h1>探索</h1></div>
   <ExploreTabs />
   {#if !stats}
-    <p class="muted"><span class="spinner"></span></p>
+    <Loading kind="rows" count={5} />
   {:else if !stats.cameras.length}
     <div class="empty"><Icon path={mdiCameraOutline} size={56} /><h2>還沒有相機資訊</h2><p>照片的 EXIF 有相機與鏡頭資料時，這裡會依器材整理。</p></div>
   {:else}

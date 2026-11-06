@@ -8,12 +8,14 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import mimetypes
 import os
 import socket
 import sqlite3
 import sys
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
@@ -39,7 +41,7 @@ SETTING_KEYS = {
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "pet_enabled", "pet_model", "pet_similarity", "pet_min_photos", "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "xmp_sync", "xmp_embed", "stack_enabled", "burst_seconds",
-    "auto_analyze", "blur_threshold", "under_luma", "over_percent", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "blur_threshold", "under_luma", "over_percent", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -84,10 +86,12 @@ def qr_svg(text: str) -> str:
 
 
 def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, start_jobs_on_boot: bool = True,
-               trash=None) -> FastAPI:
+               trash=None, warm_background: bool | None = None) -> FastAPI:
     auth = Auth(cfg.auth_file)
     client_factory = client_factory or (lambda: OllamaClient(cfg.ollama_url, cfg.request_timeout))
     state: dict = {}
+    if warm_background is None:
+        warm_background = start_jobs_on_boot
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -98,9 +102,12 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         reset_server_errors(conn)  # 修正後重新開啟，之前因模型設定失敗的照片會重新分析
         conn.close()
         state["jobs"] = JobRunner(cfg, client_factory)
+        state["jobs"].on_finish.append(lambda _job: app.state.clear_memo())
         if start_jobs_on_boot and cfg.scan_on_start and has_roots:
             state["jobs"].submit("scan")
+        app.state.schedule_warm(4.0)  # 開機後在背景先把探索、整理工具等統計算好
         yield
+        app.state.stop_warm()
         state["jobs"].close()
         exiftool().close()
 
@@ -117,6 +124,84 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         return _is_loopback(client) and _is_loopback(_host_only(request.headers.get("host", "")))
 
     # ---- 保護 ----
+    # 較重的統計頁（探索、整理工具、器材、關鍵字、人物、寵物…）的結果暫存起來；
+    # 使用者做了任何修改（非 GET 請求）或背景工作完成時立刻清掉，畫面不會看到舊資料。
+    # 資料只會經由這兩條路改變，所以可以放心存久一點（10 分鐘，「回憶」也跟著日期換）。
+    import functools
+    import threading as _threading
+
+    memo_store: dict = {}
+    memo_lock = _threading.Lock()
+    key_locks: dict = {}
+    # 清掉快取後，在背景把使用者最近打開過的統計頁重新算好（stale 期間不必在點下去時才等）
+    warm_calls: dict = {}  # fn 名稱 → (wrapper, 最近一次的參數)
+    warm_timer = [None]
+
+    def memo(ttl: float = 30.0, warm: bool = False):
+        def deco(fn):
+            import inspect
+
+            @functools.wraps(fn)
+            def wrapper(*args, **kwargs):
+                key = (fn.__name__, tuple(sorted(kwargs.items())))
+                if warm:
+                    warm_calls[fn.__name__] = (wrapper, dict(kwargs))
+                with memo_lock:
+                    hit = memo_store.get(key)
+                    lock = key_locks.setdefault(key, _threading.Lock())
+                if hit and time.monotonic() - hit[0] < ttl:
+                    return hit[1]
+                # 同一個頁面同時被要兩次（例如背景預先計算時使用者剛好點進來）只算一次
+                with lock:
+                    with memo_lock:
+                        hit = memo_store.get(key)
+                    if hit and time.monotonic() - hit[0] < ttl:
+                        return hit[1]
+                    value = fn(*args, **kwargs)
+                    with memo_lock:
+                        memo_store[key] = (time.monotonic(), value)
+                    return value
+            if warm:
+                # 先用預設參數登記，開機後就能預先算好（FastAPI 呼叫時也會把預設值帶進來，快取的鍵一致）
+                defaults = {k: v.default for k, v in inspect.signature(fn).parameters.items() if v.default is not inspect.Parameter.empty}
+                warm_calls[fn.__name__] = (wrapper, defaults)
+            return wrapper
+        return deco
+
+    def warm_now() -> None:
+        for name, (wrapper, kwargs) in list(warm_calls.items()):
+            if warm_timer[0] is False:
+                return
+            try:
+                wrapper(**kwargs)
+            except Exception as exc:  # noqa: BLE001  預先計算失敗不影響使用者，下次打開時再算
+                print(f"預先計算 {name} 失敗：{exc}", flush=True)
+
+    def schedule_warm(delay: float = 1.5) -> None:
+        if not warm_background or warm_timer[0] is False:
+            return
+        if warm_timer[0]:
+            warm_timer[0].cancel()
+        t = _threading.Timer(delay, warm_now)  # 連續修改時只在停下來後算一次
+        t.daemon = True
+        warm_timer[0] = t
+        t.start()
+
+    def stop_warm() -> None:
+        if warm_timer[0]:
+            warm_timer[0].cancel()
+        warm_timer[0] = False
+
+    def clear_memo() -> None:
+        with memo_lock:
+            memo_store.clear()
+        schedule_warm()
+
+    app.state.warm_now = warm_now
+    app.state.schedule_warm = schedule_warm
+    app.state.stop_warm = stop_warm
+    app.state.clear_memo = clear_memo
+
     @app.middleware("http")
     async def guard(request: Request, call_next):
         path = request.url.path
@@ -136,6 +221,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             if path not in PUBLIC_API and not local and not auth.verify(request.cookies.get(COOKIE)):
                 return JSONResponse({"error": "請先登入"}, status_code=401)
         response = await call_next(request)
+        if request.method not in ("GET", "HEAD", "OPTIONS") and path.startswith("/api/"):
+            clear_memo()
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         return response
@@ -614,6 +701,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     # ---- 那年今日 ----
     @app.get("/api/memories")
+    @memo(600, warm=True)
     def get_memories():
         from .organize import memories
 
@@ -629,6 +717,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     # ---- 器材與關鍵字 ----
     @app.get("/api/gear")
+    @memo(600, warm=True)
     def gear_stats():
         from . import gear
 
@@ -651,6 +740,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             c.close()
 
     @app.get("/api/keywords")
+    @memo(600, warm=True)
     def keywords(source: str = "all", year: str | None = None, limit: int = 300):
         from . import gear
 
@@ -772,6 +862,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     # ---- 人物（人臉辨識） ----
     @app.get("/api/people")
+    @memo(600, warm=True)
     def people(all: int = 0):
         from .faces import list_persons
 
@@ -993,8 +1084,65 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    def resolve_scope(c, scope: str):
+        """搜尋範圍字串 → (SQL 條件, 參數, 顯示名稱, 附加查詢)。看不懂的範圍就當作全部圖庫。"""
+        kind, _, rest = (scope or "").partition(":")
+        try:
+            if kind == "album":
+                aid = int(rest)
+                row = c.execute("SELECT name FROM albums WHERE id = ?", (aid,)).fetchone()
+                if row:
+                    return ("i.id IN (SELECT image_id FROM album_items WHERE album_id = ?)", [aid], f"相簿「{row['name']}」", "")
+            elif kind == "smart":
+                row = c.execute("SELECT name, query FROM smart_albums WHERE id = ?", (int(rest),)).fetchone()
+                if row:
+                    return ("1", [], f"智慧相簿「{row['name']}」", row["query"] or "")
+            elif kind == "folder":
+                rid, _, path = rest.partition(":")
+                root = c.execute("SELECT name FROM roots WHERE id = ?", (int(rid),)).fetchone()
+                if root:
+                    path = path.strip("/")
+                    if not path:
+                        return ("i.root_id = ?", [int(rid)], f"資料夾「{root['name']}」", "")
+                    esc = path.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                    return ("i.root_id = ? AND i.rel_path LIKE ? ESCAPE '\\'", [int(rid), esc + "/%"],
+                            f"資料夾「{path.rsplit('/', 1)[-1]}」", "")
+            elif kind == "person":
+                pid = int(rest)
+                row = c.execute("SELECT name FROM persons WHERE id = ?", (pid,)).fetchone()
+                if row:
+                    return ("i.id IN (SELECT image_id FROM faces WHERE person_id = ?)", [pid], f"「{row['name'] or '未命名人物'}」的照片", "")
+            elif kind == "pet":
+                pid = int(rest)
+                row = c.execute("SELECT name FROM pets WHERE id = ?", (pid,)).fetchone()
+                if row:
+                    return ("i.id IN (SELECT image_id FROM pet_detections WHERE pet_id = ?)", [pid], f"「{row['name'] or '未命名寵物'}」的照片", "")
+            elif kind == "favorites":
+                return ("i.favorite = 1", [], "我的最愛", "")
+            elif kind == "videos":
+                return ("i.media_type = 'video'", [], "影片", "")
+            elif kind == "tool":
+                from .quality import blurry, exposure_problems
+                from .tools import screens_and_documents
+
+                if rest == "screens":
+                    ids, label = [r["id"] for r, _ in screens_and_documents(c, png_rule=bool(cfg.screen_png_rule))], "截圖與文件"
+                elif rest == "blurry":
+                    ids, label = [r["id"] for r in blurry(c, float(cfg.blur_threshold))], "模糊照片"
+                elif rest == "exposure":
+                    ids, label = [r["id"] for r, _ in exposure_problems(c, under_luma=cfg.under_luma, over_frac=cfg.over_percent / 100)], "曝光問題"
+                else:
+                    ids, label = None, ""
+                if ids is not None:
+                    # 用 json_each 帶入一大串 id，不受 SQL 參數數量上限影響
+                    return ("i.id IN (SELECT value FROM json_each(?))", [json.dumps(ids)], label, "")
+        except (ValueError, sqlite3.Error):
+            pass
+        return None
+
     @app.get("/api/search")
-    def do_search(q: str = "", limit: int = 200, offset: int = 0, semantic: int = 0, smart: int = 1):
+    @memo(20)
+    def do_search(q: str = "", limit: int = 200, offset: int = 0, semantic: int = 0, smart: int = 1, scope: str = ""):
         from .analyzer import rewrite_query
         from .search import parse_query
 
@@ -1002,6 +1150,13 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         c = conn()
         warnings = []
         try:
+            sc = resolve_scope(c, scope) if scope else None
+            scope_label = ""
+            if sc:
+                scope_sql, scope_params, scope_label, extra_q = sc
+                if extra_q:
+                    q = f"{extra_q} {q}".strip()
+                sc = (scope_sql, scope_params)
             terms = parse_query(q).terms
             groups, english = None, ""
             if smart and cfg.query_rewrite and terms:
@@ -1026,13 +1181,14 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             try:
                 result = search(c, q, limit=limit, offset=max(0, offset), semantic=use_sem,
                                 embedder=client_factory() if use_sem else None, embed_model=cfg.embed_model,
-                                groups=groups, clip_rank=clip_rank)
+                                groups=groups, clip_rank=clip_rank, scope=sc)
             except (OllamaUnavailable, MediaError) as exc:
                 warnings.append(str(exc))
-                result = search(c, q, limit=limit, offset=max(0, offset), groups=groups)
+                result = search(c, q, limit=limit, offset=max(0, offset), groups=groups, scope=sc)
             if warnings:
                 result["warning"] = "；".join(warnings)
             result["english"] = english
+            result["scope"] = {"key": scope, "label": scope_label} if scope_label else None
             return result
         finally:
             c.close()
@@ -1055,6 +1211,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             raise HTTPException(503, str(exc))
 
     @app.get("/api/explore")
+    @memo(600, warm=True)
     def explore():
         c = conn()
         try:
@@ -1107,6 +1264,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     # ---- 資料夾 ----
     @app.get("/api/folders")
+    @memo(20)
     def folders(root: int | None = None, path: str = ""):
         c = conn()
         try:
@@ -1292,6 +1450,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     # ---- 整理工具 ----
     @app.get("/api/tools/summary")
+    @memo(600, warm=True)
     def tools_summary():
         from .quality import blurry, exposure_problems
         from .tools import screens_and_documents
@@ -1308,7 +1467,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "photos": q[0] or 0, "quality_done": q[1] or 0,
                 "blurry": len(blurry(c, float(cfg.blur_threshold))),
                 "exposure": len(exposure_problems(c, under_luma=cfg.under_luma, over_frac=cfg.over_percent / 100)),
-                "screens": len(screens_and_documents(c)),
+                "screens": len(screens_and_documents(c, png_rule=bool(cfg.screen_png_rule))),
                 "biggest": c.execute("SELECT COALESCE(SUM(size), 0) FROM images WHERE status = 'ok'").fetchone()[0],
                 "videos_bytes": c.execute("SELECT COALESCE(SUM(size), 0) FROM images WHERE status = 'ok' AND media_type = 'video'").fetchone()[0],
                 "dups": (len(dups["exact"]) + len(dups["similar"])) if dups else None,
@@ -1339,12 +1498,13 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             c.close()
 
     @app.get("/api/tools/screens")
+    @memo(600, warm=True)
     def tools_screens():
         from .tools import screens_and_documents
 
         c = conn()
         try:
-            return [{**summarize(r), "reason": reason} for r, reason in screens_and_documents(c)]
+            return [{**summarize(r), "reason": reason} for r, reason in screens_and_documents(c, png_rule=bool(cfg.screen_png_rule))]
         finally:
             c.close()
 
@@ -1355,7 +1515,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         c = conn()
         try:
             return [{**summarize(r), "size": r["size"], "rel_path": r["rel_path"], "root_id": r["root_id"]}
-                    for r in large_files(c, kind, sort=sort)]
+                    for r in large_files(c, kind, limit=max(50, min(int(cfg.large_files_limit or 200), 2000)), sort=sort)]
         finally:
             c.close()
 
@@ -1394,6 +1554,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             c.close()
 
     @app.get("/api/pets")
+    @memo(600, warm=True)
     def pets_list():
         from .petid import list_pets, model_installed
         from .tools import pets

@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   /**
    * 一隻寵物的頁面（像人物頁）：上方直接輸入名字按「完成」；名字和另一隻相同時詢問是否合併。
    * 選取照片後可以「不是牠」把照片移出。
@@ -130,7 +131,7 @@
     {/key}
     <p class="muted tiny tip">名字可以直接搜尋，例如「豆豆 海邊」。認錯了？選取那些照片，在右上角「⋮」選「選取的照片不是牠」。</p>
   {:else}
-    <p class="muted"><span class="spinner"></span></p>
+    <Loading kind="grid" />
   {/if}
 </div>
 

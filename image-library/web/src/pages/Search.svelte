@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import BackButton from "../components/BackButton.svelte";
   import Grid from "../components/Grid.svelte";
   import { api } from "../lib/api.js";
@@ -10,6 +11,9 @@
   let semantic = $state(false);
   let more = $state(false);
   const q = $derived(route.query.q || "");
+  // 搜尋範圍（從資料夾、相簿等頁面搜尋時帶過來）；空字串＝全部圖庫
+  const scope = $derived(route.query.scope || "");
+  const scopeLabel = $derived(result?.scope?.label || route.query.in || "");
   const canSemantic = $derived(!!app.server?.models?.embed);
   const failedView = $derived(q.split(/\s+/).includes("is:failed"));
   let reasons = $state([]);
@@ -44,7 +48,7 @@
     if (append) {
       loading = true;
       try {
-        const data = await api("/api/search", { params: { q, limit: 300, offset: result.results.length, semantic: semantic ? 1 : 0 } });
+        const data = await api("/api/search", { params: { q, scope, limit: 300, offset: result.results.length, semantic: semantic ? 1 : 0 } });
         const known = new Set(result.results.map((r) => r.id));
         result = { ...result, results: [...result.results, ...data.results.filter((r) => !known.has(r.id))] };
         more = result.results.length < result.total;
@@ -58,7 +62,7 @@
     added = 0;
     smartWarning = "";
     try {
-      const quick = await api("/api/search", { params: { q, limit: 300, smart: 0 } });
+      const quick = await api("/api/search", { params: { q, scope, limit: 300, smart: 0 } });
       if (mine !== seq) return;
       result = quick;
       more = quick.results.length < quick.total;
@@ -68,7 +72,7 @@
     if (!result?.query?.terms?.length) return; // 只有篩選條件時不需要智慧搜尋
     enhancing = true;
     try {
-      const full = await api("/api/search", { params: { q, limit: 300, semantic: semantic ? 1 : 0, smart: 1 } });
+      const full = await api("/api/search", { params: { q, scope, limit: 300, semantic: semantic ? 1 : 0, smart: 1 } });
       if (mine !== seq) return;
       const known = new Set(result.results.map((r) => r.id));
       const extra = full.results.filter((r) => !known.has(r.id));
@@ -85,6 +89,7 @@
 
   $effect(() => {
     q;
+    scope;
     semantic;
     app.refreshKey;
     run();
@@ -101,7 +106,15 @@
   function toggle(token) {
     const parts = q.split(/\s+/).filter(Boolean);
     const next = parts.includes(token) ? parts.filter((p) => p !== token) : [...parts, token];
-    navigate(`/search?q=${encodeURIComponent(next.join(" "))}`, { replace: true });
+    navigate(searchUrl(next.join(" "), scope), { replace: true });
+  }
+  function searchUrl(text, sc) {
+    let href = `/search?q=${encodeURIComponent(text)}`;
+    if (sc) href += `&scope=${encodeURIComponent(sc)}&in=${encodeURIComponent(scopeLabel)}`;
+    return href;
+  }
+  function wholeLibrary() {
+    navigate(searchUrl(q, ""), { replace: true });
   }
 </script>
 
@@ -110,11 +123,17 @@
     <BackButton to="/" />
     <h1>{q ? `「${q}」` : "搜尋"}</h1>
     {#if result}<span class="muted small">{result.total.toLocaleString()} 個結果</span>{/if}
-    {#if q}<button class="btn small ghost" onclick={saveSmart}>存成智慧相簿</button>{/if}
+    {#if q && !scope}<button class="btn small ghost" onclick={saveSmart}>存成智慧相簿</button>{/if}
     {#if canSemantic}
       <label class="sem"><input type="checkbox" bind:checked={semantic} /> 語意搜尋</label>
     {/if}
   </div>
+  {#if scope}
+    <div class="scope-bar">
+      <span>只在 <b>{scopeLabel || "目前範圍"}</b> 中搜尋</span>
+      <button class="btn text small" onclick={wholeLibrary}>改搜全部圖庫</button>
+    </div>
+  {/if}
   <div class="chips quick">
     {#each QUICK as [token, label] (token)}
       <button class="chip" class:on={q.split(/\s+/).includes(token)} onclick={() => toggle(token)}>{label}</button>
@@ -169,7 +188,7 @@
     <Grid assets={result.results} />
     {#if more}<p class="center"><button class="btn ghost" disabled={loading} onclick={() => run(true)}>載入更多</button></p>{/if}
   {/if}
-  {#if loading && !result}<p class="muted"><span class="spinner"></span></p>{/if}
+  {#if loading && !result}<Loading kind="grid" />{/if}
 </div>
 
 <style>
@@ -180,6 +199,11 @@
   .reasons .why { word-break: break-all; color: var(--muted); }
   .reasons .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .quick { margin-bottom: 14px; }
+  .scope-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 8px 4px 16px; margin: 0 0 12px;
+    border-radius: var(--corner-medium); background: var(--surface-container-low); font-size: 14px; color: var(--on-surface-variant);
+  }
+  .scope-bar b { color: var(--on-surface); font-weight: 500; }
   .status-pill {
     display: inline-flex; align-items: center; gap: 12px; height: 48px; padding: 0 24px 0 16px; margin: 0 0 12px;
     border-radius: var(--corner-full); background: var(--secondary-container); color: var(--on-secondary-container); font-size: 15px;

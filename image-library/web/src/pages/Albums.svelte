@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import Icon from "../components/Icon.svelte";
   import { api, thumbUrl } from "../lib/api.js";
   import { navigate, link } from "../lib/router.svelte.js";
@@ -50,6 +51,7 @@
     </div>
     <h2 class="section-title">相簿</h2>
   {/if}
+  {#if !albums}<Loading kind="cards" />{/if}
   {#if albums && !albums.length}
     <div class="empty">
       <h2>用相簿整理作品</h2>

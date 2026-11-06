@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   /**
    * 寵物（像「人物」）：上方是認出來的每一隻毛孩，點進去可以命名；下方依 AI 描述分成狗、貓、鳥…
    * 還沒開啟寵物辨識時，先說明並提供一鍵下載。
@@ -60,7 +61,7 @@
     <div class="page-head"><h1>探索</h1></div>
     <ExploreTabs />
     {#if !data}
-      <p class="muted"><span class="spinner"></span></p>
+      <Loading kind="cards" round />
     {:else}
       <section class="sec">
         <div class="sec-head">
@@ -139,7 +140,7 @@
       {/key}
     {:else}
       <div class="page-head"><BackButton to="/pets" /></div>
-      <p class="muted"><span class="spinner"></span></p>
+      <Loading kind="grid" />
     {/if}
   {/if}
 </div>

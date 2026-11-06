@@ -37,6 +37,7 @@
   data-asset={asset.id}
   class:selected
   class:selecting
+  class:loading={!loaded && !failed}
   class:missing={asset.missing}
   class:rejected={asset.rating === -1}
   style:width="{width}px"
@@ -102,6 +103,16 @@
       border-radius var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
   }
   img.loaded { opacity: 1; }
+  /* 載入中：和縮圖同形狀的圓角色塊，一道柔和的光由左往右掃過（所有色塊共用同一道光，看起來像一片波浪） */
+  .thumb.loading { background: none; }
+  .thumb.loading::before {
+    content: ""; position: absolute; inset: 0; border-radius: var(--corner-small); pointer-events: none;
+    background: linear-gradient(105deg, var(--surface-container) 30%, var(--surface-container-highest) 50%, var(--surface-container) 70%);
+    background-size: 200vw 100%; background-attachment: fixed;
+    animation: skel-sweep 1.6s cubic-bezier(.4, 0, .6, 1) infinite;
+  }
+  @keyframes skel-sweep { from { background-position: 100vw 0; } to { background-position: -100vw 0; } }
+  @media (prefers-reduced-motion: reduce) { .thumb.loading::before { animation: none; } }
   .fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); }
   .shade {
     position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .15s;

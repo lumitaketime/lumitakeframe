@@ -7,7 +7,35 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(path, { method, body, params, signal } = {}) {
+// 背景輪詢與打字建議不算「正在載入」，其他請求超過 250 毫秒就在頂端顯示載入條
+const QUIET = ["/api/server", "/api/search/suggest", "/api/auth/status", "/api/jobs"];
+let inflight = 0;
+let busyTimer = 0;
+function begin() {
+  inflight += 1;
+  if (inflight === 1) busyTimer = setTimeout(() => (app.busy = true), 250);
+}
+function end() {
+  inflight = Math.max(0, inflight - 1);
+  if (!inflight) {
+    clearTimeout(busyTimer);
+    app.busy = false;
+  }
+}
+
+export async function api(path, opts = {}) {
+  const m = opts.method || (opts.body !== undefined ? "POST" : "GET");
+  const quiet = opts.quiet ?? (m === "GET" && QUIET.includes(path));
+  if (quiet) return request(path, opts);
+  begin();
+  try {
+    return await request(path, opts);
+  } finally {
+    end();
+  }
+}
+
+async function request(path, { method, body, params, signal } = {}) {
   let url = path;
   if (params) {
     const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""));

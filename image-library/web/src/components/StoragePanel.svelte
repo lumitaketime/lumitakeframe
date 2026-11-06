@@ -1,4 +1,5 @@
 <script>
+  import Loading from "./Loading.svelte";
   /**
    * 儲存空間與模型：每一類資料與每個模型佔多少空間，以及清理、刪除。
    * 照片檔案本身永遠不會在這裡被刪除。
@@ -115,7 +116,7 @@
   <p class="muted small">這裡只管理圖庫自己產生的資料與下載的模型。照片檔案本身永遠不會在這裡被刪除。</p>
 
   {#if !data}
-    <div class="skeleton"></div>
+    <Loading kind="spinner" inline size={28} label="正在計算各項目佔用的空間…" />
   {:else}
     <div class="total"><b>{bytes(total) || "0 KB"}</b><span class="muted small">共使用</span></div>
     <div class="bar" role="img" aria-label="空間使用比例">

@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import BackButton from "../components/BackButton.svelte";
   /**
    * 整理工具：模糊照片、曝光問題、截圖與文件、大檔案、重複照片、批次匯出。
@@ -221,7 +222,7 @@
         </div>
       </div>
     {:else}
-      <div class="skeleton"></div>
+      <Loading kind="rows" count={6} />
     {/if}
   {:else}
     <div class="page-head">
@@ -256,7 +257,7 @@
     {/if}
 
     {#if !items}
-      <div class="skeleton"></div>
+      <Loading kind="grid" />
     {:else if sub === "blurry"}
       {#if items.length}
         <Grid assets={items} />

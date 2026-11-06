@@ -10,7 +10,7 @@ SCENE_WORDS = ["螢幕截圖", "截圖", "screenshot", "文件", "document", "�
 TAG_WORDS = ["螢幕截圖", "screenshot", "收據", "receipt", "發票", "invoice"]
 
 
-def screens_and_documents(conn: sqlite3.Connection, limit: int = 3000) -> list[tuple[sqlite3.Row, str]]:
+def screens_and_documents(conn: sqlite3.Connection, limit: int = 3000, png_rule: bool = True) -> list[tuple[sqlite3.Row, str]]:
     """可能是螢幕截圖、文件、收據的照片，附上判斷理由。"""
     rows = conn.execute(
         "SELECT * FROM images WHERE status = 'ok' AND media_type = 'photo' ORDER BY sort_at DESC"
@@ -27,7 +27,7 @@ def screens_and_documents(conn: sqlite3.Connection, limit: int = 3000) -> list[t
             reason = f"AI 判斷：{r['scene']}"
         elif any(w.lower() in text for w in TAG_WORDS) and r["analyzed_at"]:
             reason = "AI 關鍵字：截圖或收據"
-        elif name.endswith(".png") and not (r["camera"] or "").strip() and not r["is_raw"]:
+        elif png_rule and name.endswith(".png") and not (r["camera"] or "").strip() and not r["is_raw"]:
             reason = "PNG 而且沒有相機資訊"
         if reason:
             out.append((r, reason))

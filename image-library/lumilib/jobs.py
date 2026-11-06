@@ -58,6 +58,8 @@ class JobRunner:
         self.recent: deque = deque(maxlen=8)
         # 「每次先問我」：掃描完有新照片時先記下來，等使用者按「開始」
         self.confirm: dict | None = None
+        # 工作結束時要通知的對象（例如清掉伺服器的統計暫存）
+        self.on_finish: list = []
         self.threads = [threading.Thread(target=self._worker, args=(lane,), daemon=True, name=f"lumilib-{lane}")
                         for lane in QUEUED_LANES]
         for t in self.threads:
@@ -194,6 +196,11 @@ class JobRunner:
         elif job["kind"] == "pet_model" and not error and self._pets_ready("auto"):
             self.submit("pets")
             message += "；開始辨識寵物"
+        for fn in list(self.on_finish):
+            try:
+                fn(job)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
         with self.lock:
             self.last = {
                 "id": job["id"], "kind": job["kind"], "label": job["label"], "lane": job["lane"],

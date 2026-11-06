@@ -13,6 +13,7 @@ export const app = $state({
   toasts: [],
   context: null, // 目前頁面的情境，例如 { album: 3 }
   sidebarOpen: false,
+  busy: false, // 有請求超過一小段時間還沒回來：頂端顯示載入條
 });
 
 export const selection = new SvelteSet();

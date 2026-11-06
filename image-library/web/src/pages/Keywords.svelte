@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import ExploreTabs from "../components/ExploreTabs.svelte";
   import { api } from "../lib/api.js";
   import { navigate } from "../lib/router.svelte.js";
@@ -50,7 +51,9 @@
     <button class="chip" class:on={view === "list"} onclick={() => (view = "list")}>排行</button>
   </div>
 
-  {#if data && !list.length}
+  {#if !data}
+    <Loading kind="spinner" label="正在整理關鍵字…" />
+  {:else if !list.length}
     <div class="empty"><h2>還沒有關鍵字</h2><p>AI 分析後、或在照片加上關鍵字（含 Lightroom 匯入的）後，這裡會依出現次數整理你最常拍的內容。</p></div>
   {:else if view === "cloud"}
     <div class="cloud">

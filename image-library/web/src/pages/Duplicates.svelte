@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import BackButton from "../components/BackButton.svelte";
   import Icon from "../components/Icon.svelte";
   import { api, thumbUrl } from "../lib/api.js";
@@ -101,6 +102,8 @@
       <h2>找出重複與幾乎一樣的照片</h2>
       <p>完全相同的檔案（例如複製到不同資料夾）與幾乎一樣的照片（連拍、縮小或重新壓縮過的版本）。<br />十萬張大約需要幾分鐘，可以在背景執行。</p>
     </div>
+  {:else}
+    <Loading kind="rows" />
   {/if}
 </div>
 

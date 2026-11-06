@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import DateGroups from "../components/DateGroups.svelte";
   import Icon from "../components/Icon.svelte";
   import { api } from "../lib/api.js";
@@ -61,7 +62,7 @@
       <div class="empty"><p>相簿是空的。到「照片」或「資料夾」選取項目，按上方的「加到相簿」。</p></div>
     {/if}
   {:else}
-    <p class="muted"><span class="spinner"></span></p>
+    <Loading kind="grid" />
   {/if}
 </div>
 

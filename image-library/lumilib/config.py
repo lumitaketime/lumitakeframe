@@ -66,6 +66,9 @@ DEFAULTS = {
     # 也寫入 JPEG／HEIC／TIFF 檔案內嵌的 XMP（會修改原檔）
     "xmp_embed": 0,
     # RAW+JPEG 與連拍疊放
+    "dup_threshold": 6,  # 重複照片的相似度門檻（越小越嚴格）
+    "screen_png_rule": 1,  # 沒有相機資訊的 PNG 視為截圖
+    "large_files_limit": 200,  # 大檔案列出幾個
     "stack_enabled": 1,
     "burst_seconds": 2,
     # 人臉辨識
@@ -130,6 +133,9 @@ class Config:
     keep_awake: int = DEFAULTS["keep_awake"]
     xmp_sync: int = DEFAULTS["xmp_sync"]
     xmp_embed: int = DEFAULTS["xmp_embed"]
+    dup_threshold: int = DEFAULTS["dup_threshold"]
+    screen_png_rule: int = DEFAULTS["screen_png_rule"]
+    large_files_limit: int = DEFAULTS["large_files_limit"]
     stack_enabled: int = DEFAULTS["stack_enabled"]
     burst_seconds: int = DEFAULTS["burst_seconds"]
     pet_enabled: int = DEFAULTS["pet_enabled"]

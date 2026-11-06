@@ -57,8 +57,18 @@
     save("order", v);
   }
 
+  // 依檔名排序用自然順序：IMG_2 排在 IMG_10 前面
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  const byName = $derived(order === "name" || order === "name-desc");
+  // 依檔名排序時不分組（日期分組對檔名排序沒有意義）
+  const effGroup = $derived(byName ? "none" : group);
+
   const sorted = $derived.by(() => {
     const list = assets.filter(matches);
+    if (byName) {
+      const dir = order === "name" ? 1 : -1;
+      return list.sort((a, b) => dir * (collator.compare(a.name || "", b.name || "") || a.id - b.id));
+    }
     list.sort((a, b) => {
       const x = a.at || "";
       const y = b.at || "";
@@ -70,17 +80,17 @@
 
   function keyOf(a) {
     if (!a.at) return "";
-    return group === "day" ? a.at.slice(0, 10) : group === "month" ? a.at.slice(0, 7) : a.at.slice(0, 4);
+    return effGroup === "day" ? a.at.slice(0, 10) : effGroup === "month" ? a.at.slice(0, 7) : a.at.slice(0, 4);
   }
   function labelOf(key, sample) {
     if (!key) return "日期不明";
-    if (group === "day") return fullDayLabel(sample.at);
-    if (group === "month") return monthLabel(key);
+    if (effGroup === "day") return fullDayLabel(sample.at);
+    if (effGroup === "month") return monthLabel(key);
     return `${key}年`;
   }
 
   const groups = $derived.by(() => {
-    if (group === "none") return [{ key: "all", label: "", items: sorted, offset: 0 }];
+    if (effGroup === "none") return [{ key: "all", label: "", items: sorted, offset: 0 }];
     const out = [];
     let cur = null;
     sorted.forEach((a, i) => {
@@ -101,14 +111,16 @@
       size: g.items.length / total, count: g.items.length,
     }));
   });
-  const showScrubber = $derived(group !== "none" && groups.length > 3 && sorted.length > 60);
+  const showScrubber = $derived(effGroup !== "none" && groups.length > 3 && sorted.length > 60);
 
   const viewItems = $derived([
     { section: "分組" },
-    ...GROUPS.map(([v, label]) => ({ label, checked: group === v, run: () => setGroup(v) })),
+    ...GROUPS.map(([v, label]) => ({ label, checked: effGroup === v, disabled: byName && v !== "none", run: () => setGroup(v) })),
     { section: "排序" },
     { label: "新的在前", checked: order === "desc", run: () => setOrder("desc") },
     { label: "舊的在前", checked: order === "asc", run: () => setOrder("asc") },
+    { label: "檔名 A → Z", checked: order === "name", run: () => setOrder("name") },
+    { label: "檔名 Z → A", checked: order === "name-desc", run: () => setOrder("name-desc") },
   ]);
 
   // 副標：張數與拍攝日期範圍
@@ -192,7 +204,7 @@
   {#if showScrubber}
     <Scrubber {marks} {active} onjump={jump} bind:dragging />
   {/if}
-  {#if group !== "none"}<DatePill />{/if}
+  {#if effGroup !== "none"}<DatePill />{/if}
   {#if showing}<Slideshow items={sorted} onclose={() => (showing = false)} />{/if}
 </div>
 

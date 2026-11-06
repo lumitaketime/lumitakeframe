@@ -1,4 +1,5 @@
 <script>
+  import Loading from "../components/Loading.svelte";
   import { onMount, tick, untrack } from "svelte";
   import Grid from "../components/Grid.svelte";
   import Icon from "../components/Icon.svelte";
@@ -186,6 +187,7 @@
       <div class="tl-head titled"><div class="tl-title"><h1>{title}</h1><span class="muted small">{count(total)} 個項目</span></div></div>
     {/if}
 
+    {#if !ready}<Loading kind="grid" />{/if}
     {#if ready && !buckets.length}
       <div class="empty">
         {#if filterActive()}
@@ -222,6 +224,8 @@
             </div>
           {/each}
           </div>
+        {:else}
+          <Loading kind="grid" count={Math.min(b.count, 18)} delay={0} />
         {/if}
       </section>
     {/each}
