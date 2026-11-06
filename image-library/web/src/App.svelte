@@ -96,11 +96,32 @@
       drawer = !drawer;
       return;
     }
-    rail = !rail;
+    animateNav(() => (rail = !rail));
     try {
       localStorage.setItem("navRail", rail ? "1" : "0");
     } catch {
       /* 只影響這次 */
+    }
+  }
+
+  // 收合／展開的動畫：版面只重算一次，內容區用 transform 滑過去，選單用 clip-path 展開，不會掉幀
+  async function animateNav(change) {
+    const main = document.querySelector("main.scroll-area");
+    const side = document.querySelector("nav.sidebar:not(.drawer)");
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const before = main?.getBoundingClientRect().left ?? 0;
+    const sideBefore = side?.getBoundingClientRect().width ?? 0;
+    change();
+    await tick();
+    if (reduce || !main || !side) return;
+    const after = main.getBoundingClientRect().left;
+    const sideAfter = side.getBoundingClientRect().width;
+    const opts = { duration: 280, easing: "cubic-bezier(0.2, 0, 0, 1)" };
+    main.animate([{ transform: `translateX(${before - after}px)` }, { transform: "none" }], opts);
+    if (sideAfter > sideBefore) {
+      side.animate([{ clipPath: `inset(0 ${sideAfter - sideBefore}px 0 0)` }, { clipPath: "inset(0 0 0 0)" }], opts);
+    } else {
+      side.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "linear" });
     }
   }
   $effect(() => {
