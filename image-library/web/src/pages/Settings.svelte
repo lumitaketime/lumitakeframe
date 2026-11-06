@@ -1,4 +1,7 @@
 <script>
+  import { tick } from "svelte";
+  import StatusCards from "../components/StatusCards.svelte";
+  import SectionTitle from "../components/SectionTitle.svelte";
   import { ABOUT, THIRD_PARTY } from "../lib/about.js";
   import BackButton from "../components/BackButton.svelte";
   import { onMount } from "svelte";
@@ -20,22 +23,25 @@
 
   let { section = "" } = $props();
   let winWidth = $state(1200);
+  // 6 個分類；每類裡面是原本的幾個區塊（舊網址 /settings/faces 這類仍然有效，會捲到那個區塊）
   const SECTIONS = [
-    { id: "library", label: "圖庫資料夾", icon: mdiHarddisk },
-    { id: "ai", label: "AI 分析", icon: mdiCreation },
-    { id: "faces", label: "人臉辨識", icon: mdiFaceRecognition },
-    { id: "pets", label: "寵物辨識", icon: mdiPaw },
-    { id: "search", label: "智慧搜尋", icon: mdiImageSearchOutline },
-    { id: "lightroom", label: "Lightroom 與檢視", icon: mdiStar },
-    { id: "tools", label: "整理工具", icon: mdiToolboxOutline },
-    { id: "features", label: "功能與選單", icon: mdiViewDashboardOutline },
-    { id: "phone", label: "手機與平板", icon: mdiCellphone },
-    { id: "storage", label: "儲存空間與模型", icon: mdiDatabaseOutline },
-    { id: "look", label: "外觀與系統", icon: mdiThemeLightDark },
-    { id: "advanced", label: "進階", icon: mdiTuneVariant },
+    { id: "library", label: "圖庫", sub: "資料夾、外觀與選單", icon: mdiHarddisk, members: ["library", "look", "features"] },
+    { id: "ai", label: "AI 分析", sub: "模型、時機、提示詞", icon: mdiCreation, members: ["ai"] },
+    { id: "recog", label: "辨識", sub: "人臉、寵物", icon: mdiFaceRecognition, members: ["faces", "pets"] },
+    { id: "search", label: "搜尋", sub: "同義詞、圖像搜尋", icon: mdiImageSearchOutline, members: ["search"] },
+    { id: "organize", label: "整理與 Lightroom", sub: "判定標準、.xmp、疊放", icon: mdiStar, members: ["lightroom", "tools"] },
+    { id: "system", label: "系統", sub: "手機、儲存空間、進階", icon: mdiTuneVariant, members: ["phone", "storage", "advanced"] },
   ];
   // 桌機沒有指定分類時顯示第一個；手機先顯示分類清單
-  const current = $derived(SECTIONS.some((c) => c.id === section) || section === "about" ? section : winWidth > 760 ? "library" : "");
+  const groupOf = (id) => SECTIONS.find((c) => c.id === id || c.members.includes(id))?.id;
+  const current = $derived(section === "about" ? "about" : groupOf(section) || (winWidth > 760 ? "library" : ""));
+  // 從舊網址或其他頁面連進來（例如 /settings/pets）：捲到那個區塊
+  $effect(() => {
+    const target = section;
+    if (!target || SECTIONS.some((c) => c.id === target) || target === "about") return;
+    // 等換頁動畫與內容載入後再捲過去
+    tick().then(() => setTimeout(() => document.getElementById(`sec-${target}`)?.scrollIntoView({ block: "start" }), 350));
+  });
 
   const FEATURES = [
     { href: "/explore", label: "探索", hint: "依地點、物品、場景瀏覽" },
@@ -406,12 +412,13 @@
   <aside class="cats" aria-label="設定分類">
     <div class="cats-head"><BackButton to="/" label="離開設定" /><h1>設定</h1></div>
     {#each SECTIONS as c (c.id)}
-      <a href={`/settings/${c.id}`} use:link class:on={current === c.id}><Icon path={c.icon} size={20} /><span>{c.label}</span></a>
+      <a href={`/settings/${c.id}`} use:link class:on={current === c.id}><Icon path={c.icon} size={20} /><span class="cl"><span>{c.label}</span><span class="csub">{c.sub}</span></span></a>
     {/each}
     <a class="ver" class:on={current === "about"} href="/settings/about" use:link title="關於 Lumitake Library">Lumitake Library {app.server?.version || ""}</a>
   </aside>
   <div class="pane">
     <a class="back" href="/settings" use:link><Icon path={mdiArrowLeft} size={20} />設定</a>
+    {#if current !== "about"}<StatusCards />{/if}
     {#if current === "about"}
     <!-- 關於 -->
     <section class="card about">
@@ -439,10 +446,10 @@
     </section>
     {/if}
     {#if current === "library"}
+    <div class="anchor" id="sec-library"></div>
     <!-- 圖庫資料夾 -->
     <section class="card">
-      <h2><Icon path={mdiHarddisk} />圖庫資料夾</h2>
-      <p class="muted small">加入電腦或外接 SSD 上的資料夾。檔案留在原位，不會被複製；之後新增的照片按「重新掃描」或重新開啟程式就會出現。</p>
+      <SectionTitle icon={mdiHarddisk} title="圖庫資料夾">加入電腦或外接 SSD 上的資料夾。檔案留在原位，不會被複製；之後新增的照片按「重新掃描」或重新開啟程式就會出現。</SectionTitle>
       {#each roots as r (r.id)}
         <div class="root">
           <span class="dot" class:off={!r.online}></span>
@@ -470,6 +477,7 @@
     </section>
     {/if}
     {#if current === "ai"}
+    <div class="anchor" id="sec-ai"></div>
     <!-- 工作 -->
     <section class="card">
       <h2><Icon path={mdiCreation} />AI 分析</h2>
@@ -742,11 +750,11 @@
       {/if}
     </section>
     {/if}
-    {#if current === "faces"}
+    {#if current === "recog"}
+    <div class="anchor" id="sec-faces"></div>
     <!-- 人臉辨識 -->
     <section class="card" id="faces">
-      <h2><Icon path={mdiFaceRecognition} />人臉辨識</h2>
-      <p class="muted small">自動找出照片中的人臉，把同一個人整理在一起，命名後可直接搜尋名字。全部在這台 Mac 上運算，臉部特徵只存在本機。</p>
+      <SectionTitle icon={mdiFaceRecognition} title="人臉辨識">自動找出照片中的人臉，把同一個人整理在一起，命名後可直接搜尋名字。全部在這台 Mac 上運算，臉部特徵只存在本機。</SectionTitle>
       {#if settings}
         <label class="toggle">
           <input type="checkbox" checked={!!settings.face_enabled}
@@ -807,11 +815,11 @@
       {/if}
     </section>
     {/if}
-    {#if current === "pets"}
+    {#if current === "recog"}
+    <div class="anchor" id="sec-pets"></div>
     <!-- 寵物辨識 -->
     <section class="card" id="pets">
-      <h2><Icon path={mdiPaw} />寵物辨識</h2>
-      <p class="muted small">找出照片裡的貓和狗，依長相認出是哪一隻，像人物一樣命名、搜尋。全部在這台電腦上運算，特徵只存在本機。花色很像的同品種毛孩可能被分在一起，可以在寵物頁合併或移出照片。</p>
+      <SectionTitle icon={mdiPaw} title="寵物辨識">找出照片裡的貓和狗，依長相認出是哪一隻，像人物一樣命名、搜尋。全部在這台電腦上運算，特徵只存在本機。花色很像的同品種毛孩可能被分在一起，可以在寵物頁合併或移出照片。</SectionTitle>
       {#if settings}
         <label class="toggle">
           <input type="checkbox" checked={!!settings.pet_enabled}
@@ -875,6 +883,7 @@
     </section>
     {/if}
     {#if current === "search"}
+    <div class="anchor" id="sec-search"></div>
     <!-- 智慧搜尋 -->
     <section class="card" id="search">
       <h2><Icon path={mdiImageSearchOutline} />智慧搜尋（跨語言）</h2>
@@ -929,7 +938,8 @@
       {/if}
     </section>
     {/if}
-    {#if current === "lightroom"}
+    {#if current === "organize"}
+    <div class="anchor" id="sec-lightroom"></div>
     <!-- Lightroom 與疊放 -->
     <section class="card" id="lightroom">
       <h2><Icon path={mdiStar} />Lightroom 同步與疊放</h2>
@@ -971,10 +981,10 @@
       {/if}
     </section>
     {/if}
-    {#if current === "features"}
+    {#if current === "library"}
+    <div class="anchor" id="sec-features"></div>
     <section class="card">
-      <h2><Icon path={mdiViewDashboardOutline} />功能與選單</h2>
-      <p class="muted small">關掉的功能會從左側選單消失。照片、資料夾、相簿和設定一定會顯示。</p>
+      <SectionTitle icon={mdiViewDashboardOutline} title="功能與選單">關掉的功能會從左側選單消失。照片、資料夾、相簿和設定一定會顯示。</SectionTitle>
       <div class="feature-list">
         {#each FEATURES as f (f.href)}
           <label class="feature">
@@ -986,7 +996,8 @@
       <p class="muted tiny">左側選單的分組（圖庫、整理、分類…）可以點組名收合。</p>
     </section>
     {/if}
-    {#if current === "phone"}
+    {#if current === "system"}
+    <div class="anchor" id="sec-phone"></div>
     <!-- 手機 -->
     <section class="card">
       <h2><Icon path={mdiCellphone} />手機與平板（同一個 Wi-Fi）</h2>
@@ -1026,17 +1037,19 @@
       {/if}
     </section>
     {/if}
-    {#if current === "tools"}
+    {#if current === "organize"}
+    <div class="anchor" id="sec-tools"></div>
       <section class="card">
-        <h2><Icon path={mdiToolboxOutline} />整理工具的判定標準</h2>
-        <p class="muted small">模糊與曝光的偵測都在這台 Mac 上計算，不用 AI。調整後，「整理工具」的清單會立刻更新。</p>
+        <SectionTitle icon={mdiToolboxOutline} title="整理工具的判定標準">模糊與曝光的偵測都在這台 Mac 上計算，不用 AI。調整後，「整理工具」的清單會立刻更新。</SectionTitle>
         <QualitySettings />
       </section>
     {/if}
-    {#if current === "storage"}
+    {#if current === "system"}
+    <div class="anchor" id="sec-storage"></div>
       <StoragePanel />
     {/if}
-    {#if current === "look"}
+    {#if current === "library"}
+    <div class="anchor" id="sec-look"></div>
     <!-- 外觀與系統 -->
     <section class="card">
       <h2><Icon path={mdiThemeLightDark} />外觀</h2>
@@ -1071,11 +1084,11 @@
       <div class="row wrap"><a class="btn ghost small" href="/welcome" use:link>重新執行設定引導</a></div>
     </section>
     {/if}
-    {#if current === "advanced"}
+    {#if current === "system"}
+    <div class="anchor" id="sec-advanced"></div>
     <!-- 自訂模型 -->
     <section class="card" id="custom-models">
-      <h2><Icon path={mdiTuneVariant} />進階：自訂模型與提示詞</h2>
-      <p class="muted small">推薦清單之外，任何模型都可以自己指定。改了模型或提示詞之後，可到資料夾或相簿按「AI 分析」重新分析。一般使用不需要改這裡。</p>
+      <SectionTitle icon={mdiTuneVariant} title="進階：自訂模型與提示詞">推薦清單之外，任何模型都可以自己指定。改了模型或提示詞之後，可到資料夾或相簿按「AI 分析」重新分析。一般使用不需要改這裡。</SectionTitle>
       {#if settings && models}
         <h3>Ollama 位址</h3>
         <div class="row">
@@ -1160,6 +1173,9 @@
   }
   .cats a:hover { background: var(--bg-2); }
   .cats a.on { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 500; }
+  .cl { display: flex; flex-direction: column; min-width: 0; }
+  .csub { display: none; font-size: 12px; font-weight: 400; color: var(--on-surface-variant); }
+  .anchor { scroll-margin-top: 16px; }
   .cats a.ver { margin-top: 12px; padding: 6px 14px; font-size: 12px; color: var(--on-surface-variant); font-weight: 400; background: none; }
   .cats a.ver:hover { color: var(--on-surface); background: none; text-decoration: underline; }
   .about-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
@@ -1204,7 +1220,8 @@
     .settings.has-section .cats { display: none; }
     .settings:not(.has-section) .pane { display: none; }
     .cats { position: static; }
-    .cats a { padding: 13px 14px; border-radius: 12px; }
+    .cats a { padding: 12px 14px; border-radius: 12px; }
+    .csub { display: block; }
     .back { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: var(--muted); margin: 0 0 10px; }
   }
   .sched { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 6px; }

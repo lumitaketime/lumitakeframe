@@ -124,9 +124,16 @@
       side.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "linear" });
     }
   }
+  // 換版面（電腦／平板／手機）時收起抽屜與展開的搜尋，避免留下看不見的遮罩擋住畫面
+  const mode = $derived(wide ? "desktop" : narrow ? "phone" : "tablet");
+  let lastMode = "";
   $effect(() => {
-    if (wide) drawer = false;
-    if (!narrow) searchOpen = false;
+    const m = mode;
+    if (lastMode && m !== lastMode) {
+      drawer = false;
+      searchOpen = false;
+    }
+    lastMode = m;
   });
   // 換頁後收起抽屜
   $effect(() => {
@@ -271,7 +278,7 @@
 {:else if app.needLogin}
   <Login />
 {:else}
-  <div class="shell">
+  <div class="shell" class:mode-desktop={wide} class:mode-tablet={!wide && !narrow} class:mode-phone={narrow} class:rail={showRail}>
     <header class="topbar">
       <button class="icon-btn menu-btn" onclick={toggleNav} aria-label={!wide ? "打開選單" : rail ? "展開選單" : "收合選單"}
         aria-expanded={!wide ? drawer : !rail} title={!wide ? "選單" : rail ? "展開選單" : "收合選單"}><Icon path={mdiMenu} /></button>
@@ -423,7 +430,8 @@
     grid-template-columns: var(--nav-w) minmax(0, 1fr); grid-template-rows: var(--topbar) minmax(0, 1fr);
     grid-template-areas: "top top" "side main";
   }
-  .shell:has(.sidebar.rail) { --nav-w: 80px; }
+  /* 版面由程式依視窗寬度加上 class 決定（不用 :has() 或 CSS 斷點），Safari 縮放來回也不會卡住 */
+  .shell.rail { --nav-w: 80px; }
   .topbar {
     grid-area: top; display: flex; align-items: center; gap: 8px; padding: 0 16px 0 12px;
     padding-top: env(safe-area-inset-top); z-index: 20;
@@ -496,7 +504,7 @@
   .ask .msg { flex: 1; min-width: 200px; padding: 8px 0; }
   .ask .act { border: 0; background: none; color: var(--inverse-primary); font-weight: 500; padding: 10px 12px; border-radius: var(--corner-full); cursor: pointer; }
   .ask .act:hover { background: color-mix(in srgb, var(--inverse-primary) 8%, transparent); }
-  @media (max-width: 840px) { .ask { bottom: calc(88px + env(safe-area-inset-bottom)); } }
+  :global(.shell.mode-phone) ~ .ask { bottom: calc(96px + env(safe-area-inset-bottom)); }
 
   /* 平板：只有圖示的窄欄（像 Google 相簿）——圓形指示、分組之間一條短線 */
   .sidebar.rail { padding: 0 12px 24px; align-items: center; }
@@ -525,24 +533,26 @@
     background: var(--surface-container); padding: 0 12px 24px; will-change: transform;
   }
 
-  @media (max-width: 840px) {
-    .shell { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "main"; }
-    .sidebar:not(.drawer) { display: none; }
-    .brand { min-width: 0; padding-right: 0; }
-    main { margin: 0 8px; }
-    .route { padding-bottom: 80px; }
-    .bottom {
-      display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface-container);
-      padding-bottom: env(safe-area-inset-bottom); height: calc(80px + env(safe-area-inset-bottom));
-    }
-    .bottom a {
-      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-      text-decoration: none; color: var(--on-surface-variant); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.5px;
-    }
-    .bottom .ind { position: relative; display: flex; align-items: center; justify-content: center; width: 64px; height: 32px; border-radius: var(--corner-full); }
-    .bottom a.active { color: var(--on-surface); }
-    .bottom a.active .ind { color: var(--on-secondary-container); background: var(--secondary-container); }
+  /* 手機：側邊欄收起，下方是浮起來的膠囊分頁列 */
+  .shell.mode-phone { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "main"; }
+  .shell.mode-phone .sidebar:not(.drawer) { display: none; }
+  .shell.mode-phone .brand { min-width: 0; padding-right: 0; }
+  .shell.mode-phone main { margin: 0 8px; }
+  .shell.mode-phone .route { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  .shell.mode-phone .bottom {
+    display: flex; position: fixed; z-index: 30; gap: 4px; padding: 6px;
+    left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right));
+    bottom: calc(12px + env(safe-area-inset-bottom)); height: 68px;
+    background: var(--surface-container-high); border: 1px solid var(--outline-variant); border-radius: var(--corner-full);
   }
+  .shell.mode-phone .bottom a {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: var(--corner-full);
+    text-decoration: none; color: var(--on-surface-variant); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.3px;
+    transition: background-color var(--spring-effects-fast-duration) var(--spring-effects-fast), color var(--spring-effects-fast-duration) var(--spring-effects-fast);
+  }
+  .shell.mode-phone .bottom .ind { display: flex; align-items: center; justify-content: center; }
+  .shell.mode-phone .bottom a.active { background: var(--secondary-container); color: var(--on-secondary-container); }
+  .shell.mode-phone .bottom a:active { background: color-mix(in srgb, var(--on-surface) 10%, transparent); }
   @media (max-width: 600px) {
     .topbar { gap: 4px; padding: 0 4px; padding-top: env(safe-area-inset-top); }
     .brand span { font-size: 18px; }

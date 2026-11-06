@@ -47,5 +47,5 @@
   .act:hover { background: color-mix(in srgb, var(--inverse-primary) 8%, transparent); }
   .x { border: 0; background: none; color: var(--inverse-on-surface); width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
   .x:hover { background: color-mix(in srgb, var(--inverse-on-surface) 8%, transparent); }
-  @media (max-width: 760px) { .toasts { bottom: calc(88px + env(safe-area-inset-bottom)); } }
+  @media (max-width: 840px) { .toasts { bottom: calc(100px + env(safe-area-inset-bottom)); } }
 </style>
