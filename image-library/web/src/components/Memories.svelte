@@ -23,8 +23,8 @@
 <style>
   .memories { display: flex; gap: 10px; overflow-x: auto; padding: 14px 0 4px; scrollbar-width: none; }
   .card {
-    position: relative; flex-shrink: 0; width: 140px; height: 200px; border: 0; padding: 0; border-radius: 14px;
-    overflow: hidden; cursor: pointer; background: var(--bg-2);
+    position: relative; flex-shrink: 0; width: 140px; height: 200px; border: 0; padding: 0; border-radius: var(--corner-medium);
+    overflow: hidden; cursor: pointer; background: var(--surface-container);
   }
   .card img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s; }
   .card:hover img { transform: scale(1.05); }

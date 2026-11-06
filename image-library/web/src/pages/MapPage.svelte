@@ -79,17 +79,17 @@
   .wrap { position: absolute; inset: 0; }
   .map { width: 100%; height: 100%; z-index: 0; }
   .note {
-    position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 500; background: var(--panel);
-    color: var(--text); padding: 8px 16px; border-radius: 999px; box-shadow: var(--shadow); font-size: 14px; max-width: 90%;
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 500; background: var(--surface-container-low);
+    color: var(--on-surface); padding: 8px 16px; border-radius: var(--corner-full); border: 1px solid var(--outline-variant); font-size: 14px; max-width: 90%;
   }
   :global(.pin) {
-    width: 44px; height: 44px; border-radius: 12px; overflow: hidden; border: 3px solid #fff; background: #ccc;
-    box-shadow: 0 2px 8px rgba(0,0,0,.35); position: relative;
+    width: 44px; height: 44px; border-radius: var(--corner-medium); overflow: hidden; border: 3px solid #fff; background: #ccc;
+    position: relative;
   }
   :global(.pin img) { width: 100%; height: 100%; object-fit: cover; display: block; }
   :global(.pin.cluster) { width: 52px; height: 52px; }
   :global(.pin b) {
     position: absolute; right: -2px; bottom: -2px; background: #4250af; color: #fff; font-size: 11px;
-    padding: 1px 6px; border-radius: 999px 0 8px 0; font-weight: 700;
+    padding: 1px 6px; border-radius: var(--corner-full) 0 var(--corner-small) 0; font-weight: 700;
   }
 </style>

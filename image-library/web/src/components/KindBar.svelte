@@ -38,7 +38,7 @@
   :global(:root[data-theme="dark"]) .kindbar { --c-video: #3987e5; --c-raw: #d95926; --c-photo: #199e70; }
   .head { display: flex; align-items: baseline; gap: 8px; }
   .head b { font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
-  .bar { display: flex; gap: 2px; height: 14px; border-radius: 7px; overflow: hidden; background: var(--surface-container-highest); }
+  .bar { display: flex; gap: 2px; height: 14px; border-radius: var(--corner-small); overflow: hidden; background: var(--surface-container-highest); }
   .seg { min-width: 3px; transition: opacity var(--spring-effects-fast-duration) var(--spring-effects-fast); }
   .seg.dim { opacity: .3; }
   .video { background: var(--c-video); } .raw { background: var(--c-raw); } .photo { background: var(--c-photo); }

@@ -106,21 +106,21 @@
 </div>
 
 <style>
-  .strip { display: grid; grid-auto-flow: column; grid-auto-columns: 156px; gap: 12px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: thin; }
-  .tile { position: relative; border: 0; padding: 0; border-radius: var(--radius); overflow: hidden; aspect-ratio: 1; cursor: pointer; background: var(--bg-2); }
+  .strip { display: grid; grid-auto-flow: column; grid-auto-columns: 156px; gap: 12px; overflow-x: auto; padding-bottom: 8px; }
+  .tile { position: relative; border: 0; padding: 0; border-radius: var(--radius); overflow: hidden; aspect-ratio: 1; cursor: pointer; background: var(--surface-container); }
   .tile img { width: 100%; height: 100%; object-fit: cover; transition: transform .25s; }
   .tile:hover img { transform: scale(1.05); }
   .tile span {
-    position: absolute; left: 0; right: 0; bottom: 0; padding: 24px 10px 8px; color: #fff; font-weight: 600; text-align: left;
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 24px 10px 8px; color: #fff; font-weight: 500; text-align: left;
     background: linear-gradient(transparent, rgba(0,0,0,.7)); font-size: 14px; display: flex; flex-direction: column;
   }
   .tile small { font-weight: 400; opacity: .8; font-size: 12px; }
   .chip span { margin-left: 4px; font-size: 12px; }
-  .more { color: var(--text); text-decoration: none; }
+  .more { color: var(--on-surface); text-decoration: none; }
   .strip.people { grid-auto-columns: 104px; }
-  .person { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; color: var(--text); font-size: 13px; }
-  .person img { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; background: var(--bg-2); }
+  .person { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; color: var(--on-surface); font-size: 13px; }
+  .person img { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; background: var(--surface-container); }
   .person span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .map-link { margin-top: 10px; display: inline-block; padding: 14px 18px; background: var(--bg-2); border-radius: var(--radius); text-decoration: none; }
+  .map-link { margin-top: 10px; display: inline-block; padding: 14px 18px; background: var(--surface-container); border-radius: var(--radius); text-decoration: none; }
   @media (max-width: 760px) { .strip { grid-auto-columns: 124px; } }
 </style>

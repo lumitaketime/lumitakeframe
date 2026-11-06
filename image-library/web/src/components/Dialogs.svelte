@@ -183,22 +183,22 @@
 {/if}
 
 <style>
-  .msg { margin: 0; white-space: pre-wrap; word-break: break-word; color: var(--muted); }
+  .msg { margin: 0; white-space: pre-wrap; word-break: break-word; color: var(--on-surface-variant); }
   .new { display: flex; gap: 8px; margin: 4px 0 12px; }
   .list { display: flex; flex-direction: column; gap: 2px; max-height: 46vh; overflow-y: auto; }
   .item {
     display: flex; align-items: center; gap: 12px; padding: 8px; border: 0; background: none;
-    border-radius: 12px; cursor: pointer; text-align: left; color: inherit;
+    border-radius: var(--corner-medium); cursor: pointer; text-align: left; color: inherit;
   }
-  .item:hover { background: var(--bg-2); }
+  .item:hover { background: var(--surface-container); }
   .thumb {
-    width: 48px; height: 48px; border-radius: 10px; overflow: hidden; background: var(--bg-2);
-    display: flex; align-items: center; justify-content: center; color: var(--muted); flex-shrink: 0;
+    width: 48px; height: 48px; border-radius: var(--corner-medium); overflow: hidden; background: var(--surface-container);
+    display: flex; align-items: center; justify-content: center; color: var(--on-surface-variant); flex-shrink: 0;
   }
   .thumb img { width: 100%; height: 100%; object-fit: cover; }
   .thumb.round { border-radius: 50%; }
   .label { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-  .label b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .label b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 10px; }
 </style>

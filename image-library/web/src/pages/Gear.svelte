@@ -127,28 +127,28 @@
 </div>
 
 <style>
-  .active { position: sticky; top: 0; z-index: 5; background: var(--bg); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 0; }
+  .active { position: sticky; top: 0; z-index: 5; background: var(--surface); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 0; }
   .active .chip { gap: 6px; }
   .cams { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
   .cam {
-    display: flex; gap: 12px; align-items: center; padding: 8px; border-radius: 16px; border: 2px solid transparent;
-    background: var(--bg-2); cursor: pointer; text-align: left; color: inherit;
+    display: flex; gap: 12px; align-items: center; padding: 8px; border-radius: var(--corner-large); border: 2px solid transparent;
+    background: var(--surface-container); cursor: pointer; text-align: left; color: inherit;
   }
-  .cam.on { border-color: var(--primary); background: var(--primary-soft); }
-  .cam img { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; flex-shrink: 0; background: var(--bg-3); }
+  .cam.on { border-color: var(--primary); background: var(--secondary-container); }
+  .cam img { width: 64px; height: 64px; border-radius: var(--corner-medium); object-fit: cover; flex-shrink: 0; background: var(--surface-container-highest); }
   .cam-info { display: flex; flex-direction: column; min-width: 0; }
   .cam-info b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cam-info small { color: var(--muted); }
+  .cam-info small { color: var(--on-surface-variant); }
   .lenses { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; }
   .lens {
     display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 0 8px; padding: 8px 12px;
-    border-radius: 12px; border: 2px solid transparent; background: var(--bg-2); cursor: pointer; text-align: left; color: inherit;
+    border-radius: var(--corner-medium); border: 2px solid transparent; background: var(--surface-container); cursor: pointer; text-align: left; color: inherit;
   }
-  .lens.on { border-color: var(--primary); background: var(--primary-soft); }
-  .lens b { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lens .n { grid-row: 1 / 3; grid-column: 2; align-self: center; font-weight: 600; color: var(--muted); }
+  .lens.on { border-color: var(--primary); background: var(--secondary-container); }
+  .lens b { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lens .n { grid-row: 1 / 3; grid-column: 2; align-self: center; font-weight: 500; color: var(--on-surface-variant); }
   .ranges { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 24px; }
   .chip span { margin-left: 4px; font-size: 12px; }
   .chip:disabled { opacity: .4; cursor: default; }
-  .empty :global(svg) { color: var(--muted); margin: 0 auto; }
+  .empty :global(svg) { color: var(--on-surface-variant); margin: 0 auto; }
 </style>

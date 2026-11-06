@@ -1,4 +1,5 @@
 <script>
+  import { slider } from "../lib/slider.js";
   import Loading from "../components/Loading.svelte";
   import { tick } from "svelte";
   import StatusCards from "../components/StatusCards.svelte";
@@ -410,7 +411,7 @@
 <svelte:window bind:innerWidth={winWidth} />
 
 <div class="page settings" class:has-section={!!section}>
-  <aside class="cats" aria-label="設定分類">
+  <aside class="cats" aria-label="設定分類" use:slider={{ key: "settings-cats" }}>
     <div class="cats-head"><BackButton to="/" label="離開設定" /><h1>設定</h1></div>
     {#each SECTIONS as c (c.id)}
       <a href={`/settings/${c.id}`} use:link class:on={current === c.id}><Icon path={c.icon} size={20} /><span class="cl"><span>{c.label}</span><span class="csub">{c.sub}</span></span></a>
@@ -527,7 +528,7 @@
         <label class="toggle"><input type="checkbox" checked={!!settings.auto_analyze} onchange={(e) => saveSetting("auto_analyze", e.currentTarget.checked ? 1 : 0)} />掃描到新照片後自動 AI 分析</label>
       <div class="sched">
         <span class="label">什麼時候分析</span>
-        <div class="seg3" role="radiogroup" aria-label="分析時機">
+        <div class="seg3" role="radiogroup" aria-label="分析時機" use:slider>
           {#each [["always", "隨時", "有新照片就開始"], ["schedule", "依排程", "指定星期、時段與條件"], ["ask", "每次先問我", "掃描到新照片時先詢問"]] as [v, label, hint] (v)}
             <button role="radio" aria-checked={sched.mode === v} class:on={sched.mode === v} onclick={() => setMode(v)}>
               <b>{label}</b><span>{hint}</span>
@@ -646,7 +647,7 @@
       {#if settings}
         <div class="detail-pick">
           <span class="small"><b>分析詳細程度</b></span>
-          <div class="seg">
+          <div class="seg" use:slider>
             <button class:on={settings.analysis_detail !== "fast"} onclick={() => saveSetting("analysis_detail", "standard")}>標準</button>
             <button class:on={settings.analysis_detail === "fast"} onclick={() => saveSetting("analysis_detail", "fast")}>快速</button>
           </div>
@@ -1093,7 +1094,7 @@
         <p class="tiny muted">手機螢幕較窄，一律用正方形顯示。</p>
       {:else}<Loading kind="rows" count={2} />{/if}
       <h3>主題</h3>
-      <div class="row wrap">
+      <div class="row wrap" use:slider>
         {#each [["auto", "跟隨系統"], ["light", "淺色"], ["dark", "深色"]] as [v, label] (v)}
           <button class="chip" class:on={theme === v} onclick={() => setTheme(v)}>{label}</button>
         {/each}
@@ -1195,10 +1196,10 @@
   .cats-head { display: flex; align-items: center; gap: 4px; margin: 0 12px 14px 8px; }
   .cats h1 { font-size: 24px; margin: 0; font-weight: 400; }
   .cats a {
-    display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-radius: 999px; text-decoration: none;
-    color: var(--text); font-size: 15px;
+    display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-radius: var(--corner-full); text-decoration: none;
+    color: var(--on-surface); font-size: 15px;
   }
-  .cats a:hover { background: var(--bg-2); }
+  .cats a:hover { background: var(--surface-container); }
   .cats a.on { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 500; }
   .cl { display: flex; flex-direction: column; min-width: 0; }
   .tool-h { font-size: 14px; font-weight: 500; margin: 20px 0 8px; }
@@ -1215,31 +1216,28 @@
   .about .tp li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--outline-variant); flex-wrap: wrap; }
   .back { display: none; }
   .pane { min-width: 0; }
-  details.more { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
-  details.more summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--muted); padding: 4px 0; }
-  details.more[open] summary { color: var(--text); margin-bottom: 8px; }
+  details.more { margin-top: 14px; border-top: 1px solid var(--outline-variant); padding-top: 10px; }
+  details.more summary { cursor: pointer; font-weight: 500; font-size: 14px; color: var(--on-surface-variant); padding: 4px 0; }
+  details.more[open] summary { color: var(--on-surface); margin-bottom: 8px; }
   .detail-pick { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 10px 0 4px; }
-  .detail-pick .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
-  .detail-pick .seg button { border: 0; background: none; color: var(--muted); padding: 4px 16px; font-size: 13px; cursor: pointer; }
-  .detail-pick .seg button + button { border-left: 1px solid var(--line); }
-  .detail-pick .seg button.on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+  .detail-pick .seg { display: inline-flex; border: 1px solid var(--outline-variant); border-radius: var(--corner-full); overflow: hidden; }
+  .detail-pick .seg button { border: 0; background: none; color: var(--on-surface-variant); padding: 4px 16px; font-size: 13px; cursor: pointer; }
+  .detail-pick .seg button + button { border-left: 1px solid var(--outline-variant); }
+  .detail-pick .seg button.on { background: var(--secondary-container); color: var(--primary); font-weight: 500; }
   .picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 8px 0; }
-  .pick { background: var(--bg); border: 2px solid transparent; border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .pick { background: var(--surface); border: 2px solid transparent; border-radius: var(--corner-medium); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
   .pick.active { border-color: var(--primary); }
   .pick b { font-size: 16px; }
-  .feature-list { display: flex; flex-direction: column; background: var(--bg); border-radius: 14px; margin: 12px 0; }
+  .feature-list { display: flex; flex-direction: column; background: var(--surface); border-radius: var(--corner-medium); margin: 12px 0; }
   .feature { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; cursor: pointer; }
-  .feature + .feature { border-top: 1px solid var(--line); }
+  .feature + .feature { border-top: 1px solid var(--outline-variant); }
   .feature > span { display: flex; flex-direction: column; }
-  .switch { appearance: none; width: 40px; height: 24px; border-radius: 999px; background: var(--line); position: relative; cursor: pointer; flex-shrink: 0; transition: background .15s; }
-  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
-  .switch:checked { background: var(--primary); }
-  .switch:checked::after { left: 19px; }
+  /* 開關一律用全站的 M3 Switch（app.css） */
   .styles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
-  .style { background: var(--bg); border: 2px solid transparent; border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; cursor: pointer; color: var(--text); }
+  .style { background: var(--surface); border: 2px solid transparent; border-radius: var(--corner-medium); padding: 12px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; cursor: pointer; color: var(--on-surface); }
   .style.on { border-color: var(--primary); }
   .preview { display: flex; gap: 3px; height: 34px; width: 100%; margin-bottom: 6px; }
-  .preview i { background: var(--primary-soft); border-radius: 3px; }
+  .preview i { background: var(--secondary-container); border-radius: 3px; }
   .preview.aspect i:nth-child(1) { flex: 1.5; } .preview.aspect i:nth-child(2) { flex: .7; } .preview.aspect i:nth-child(3) { flex: 1.5; }
   .preview.aspect i:nth-child(4) { flex: 1; } .preview.aspect i:nth-child(5) { flex: .7; }
   .preview.square i { width: 34px; flex: none; }
@@ -1248,9 +1246,9 @@
     .settings.has-section .cats { display: none; }
     .settings:not(.has-section) .pane { display: none; }
     .cats { position: static; }
-    .cats a { padding: 12px 14px; border-radius: 12px; }
+    .cats a { padding: 12px 14px; border-radius: var(--corner-medium); }
     .csub { display: block; }
-    .back { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: var(--muted); margin: 0 0 10px; }
+    .back { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; color: var(--on-surface-variant); margin: 0 0 10px; }
   }
   .sched { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 6px; }
   .sched .label { font-size: 14px; font-weight: 500; }
@@ -1280,49 +1278,49 @@
   .card { background: var(--surface-container-low); border-radius: var(--corner-large); padding: 20px 24px; margin-bottom: 16px; }
   h2 { display: flex; align-items: center; gap: 12px; font-size: 18px; line-height: 24px; font-weight: 500; margin: 0 0 8px; }
   h3 { font-size: 14px; margin: 20px 0 10px; }
-  .root { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .root { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--outline-variant); }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: #2fa66b; flex-shrink: 0; }
-  .dot.off { background: var(--danger); }
+  .dot.off { background: var(--error); }
   .grow { flex: 1; min-width: 0; }
   .path { word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
   .add { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
   .row { display: flex; gap: 8px; align-items: center; }
   .row.wrap { flex-wrap: wrap; margin-top: 10px; }
   .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 12px 0; }
-  .stats a { background: var(--bg); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; align-items: center; text-decoration: none; color: var(--text); border: 2px solid transparent; }
-  .stats a:hover { border-color: var(--primary-soft); }
-  .stats a.bad b { color: var(--danger); }
+  .stats a { background: var(--surface); border-radius: var(--corner-medium); padding: 10px; display: flex; flex-direction: column; align-items: center; text-decoration: none; color: var(--on-surface); border: 2px solid transparent; }
+  .stats a:hover { border-color: var(--secondary-container); }
+  .stats a.bad b { color: var(--error); }
   .stats b { font-size: 18px; }
-  .stats span { font-size: 12px; color: var(--muted); }
-  .job { display: flex; gap: 12px; align-items: flex-start; background: var(--bg); padding: 12px; border-radius: 14px; }
+  .stats span { font-size: 12px; color: var(--on-surface-variant); }
+  .job { display: flex; gap: 12px; align-items: flex-start; background: var(--surface); padding: 12px; border-radius: var(--corner-medium); }
   .msg { word-break: break-all; }
   .models { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-  .model { background: var(--bg); border-radius: 14px; padding: 12px; border: 2px solid transparent; display: flex; flex-direction: column; }
+  .model { background: var(--surface); border-radius: var(--corner-medium); padding: 12px; border: 2px solid transparent; display: flex; flex-direction: column; }
   .model.active { border-color: var(--primary); }
   .model.too-big { opacity: .55; }
-  .machine { background: var(--bg); border-radius: 12px; padding: 10px 12px; }
+  .machine { background: var(--surface); border-radius: var(--corner-medium); padding: 10px 12px; }
   .ok-text { color: var(--primary); display: flex; align-items: center; gap: 6px; }
-  .test-result { background: var(--bg); border-radius: 14px; padding: 12px; margin: 10px 0; border-left: 4px solid var(--primary); }
-  .test-result.bad { border-left-color: var(--danger); }
+  .test-result { background: var(--surface); border-radius: var(--corner-medium); padding: 12px; margin: 10px 0; border-left: 4px solid var(--primary); }
+  .test-result.bad { border-left-color: var(--error); }
   .test-result p { margin: 6px 0 0; }
   .mono { font-family: ui-monospace, Menlo, monospace; word-break: break-all; white-space: pre-wrap; }
   .model p { margin: 6px 0 10px; flex: 1; }
   .mhead { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .badge { background: var(--primary-soft); color: var(--primary); font-size: 11px; padding: 1px 8px; border-radius: 999px; font-weight: 600; }
-  .using { display: inline-flex; align-items: center; gap: 4px; color: var(--primary); font-weight: 600; font-size: 14px; }
+  .badge { background: var(--secondary-container); color: var(--primary); font-size: 11px; padding: 1px 8px; border-radius: var(--corner-full); font-weight: 500; }
+  .using { display: inline-flex; align-items: center; gap: 4px; color: var(--primary); font-weight: 500; font-size: 14px; }
   .primary { color: var(--primary); }
-  .warn { display: flex; gap: 12px; background: var(--bg); border-radius: 14px; padding: 12px; margin: 10px 0; color: var(--danger); }
-  .warn > div { color: var(--text); }
+  .warn { display: flex; gap: 12px; background: var(--surface); border-radius: var(--corner-medium); padding: 12px; margin: 10px 0; color: var(--error); }
+  .warn > div { color: var(--on-surface); }
   .warn p { margin: 4px 0; }
-  .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); min-width: 200px; flex: 1; }
+  .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--on-surface-variant); min-width: 200px; flex: 1; }
   .toggle { display: flex; flex-direction: row-reverse; align-items: center; justify-content: space-between; gap: 16px; margin: 12px 0; font-size: 16px; line-height: 24px; letter-spacing: 0.5px; cursor: pointer; }
   .pw { max-width: 320px; }
   .qr-row { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
-  .qr { width: 170px; height: 170px; background: #fff; border-radius: 12px; padding: 6px; }
+  .qr { width: 170px; height: 170px; background: #fff; border-radius: var(--corner-medium); padding: 6px; }
   .qr :global(svg) { width: 100%; height: 100%; }
   .prompt { font-family: ui-monospace, Menlo, monospace; font-size: 12px; resize: vertical; margin-bottom: 8px; }
   .short { max-width: 260px; }
-  code { background: var(--bg); padding: 2px 8px; border-radius: 6px; font-size: 13px; word-break: break-all; }
+  code { background: var(--surface); padding: 2px 8px; border-radius: var(--corner-small); font-size: 13px; word-break: break-all; }
   .sys { margin: 14px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
   @media (max-width: 760px) {
     .stats { grid-template-columns: repeat(3, 1fr); }

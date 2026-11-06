@@ -57,9 +57,9 @@
 </div>
 
 <style>
-  .page-head a.icon-btn { color: var(--text); }
+  .page-head a.icon-btn { color: var(--on-surface); }
   h1 { display: flex; align-items: center; gap: 8px; }
   h1 :global(svg) { color: var(--primary); }
   .sub { margin: -8px 0 16px 52px; }
-  code { background: var(--bg-2); padding: 1px 6px; border-radius: 6px; }
+  code { background: var(--surface-container); padding: 1px 6px; border-radius: var(--corner-small); }
 </style>

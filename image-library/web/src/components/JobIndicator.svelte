@@ -41,12 +41,12 @@
 <style>
   .job {
     position: relative; overflow: hidden; display: flex; align-items: center; gap: 8px; border: 0; cursor: pointer;
-    background: var(--primary-soft); color: var(--primary); border-radius: 999px; padding: 6px 14px; font-size: 13px;
+    background: var(--secondary-container); color: var(--primary); border-radius: var(--corner-full); padding: 6px 14px; font-size: 13px;
     max-width: 260px;
   }
-  .job.idle { background: var(--bg-2); color: var(--muted); }
+  .job.idle { background: var(--surface-container); color: var(--on-surface-variant); }
   .job.idle:hover { color: var(--primary); }
-  .job.warn { background: var(--bg-2); color: var(--danger); }
+  .job.warn { background: var(--surface-container); color: var(--error); }
   .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--primary); transition: width .4s; }
   @media (max-width: 760px) { .txt { display: none; } .job { padding: 8px; } }

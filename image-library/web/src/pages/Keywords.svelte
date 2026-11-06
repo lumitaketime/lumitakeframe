@@ -1,4 +1,5 @@
 <script>
+  import { slider } from "../lib/slider.js";
   import Loading from "../components/Loading.svelte";
   import ExploreTabs from "../components/ExploreTabs.svelte";
   import { api } from "../lib/api.js";
@@ -43,12 +44,16 @@
   </div>
   <ExploreTabs />
   <div class="chips bar">
-    <button class="chip" class:on={source === "all"} onclick={() => (source = "all")}>全部</button>
-    <button class="chip" class:on={source === "mine"} onclick={() => (source = "mine")}>我的與 Lightroom</button>
-    <button class="chip" class:on={source === "ai"} onclick={() => (source = "ai")}>AI 關鍵字</button>
+    <div class="chips" use:slider>
+      <button class="chip" class:on={source === "all"} onclick={() => (source = "all")}>全部</button>
+      <button class="chip" class:on={source === "mine"} onclick={() => (source = "mine")}>我的與 Lightroom</button>
+      <button class="chip" class:on={source === "ai"} onclick={() => (source = "ai")}>AI 關鍵字</button>
+    </div>
     <span class="spacer"></span>
-    <button class="chip" class:on={view === "cloud"} onclick={() => (view = "cloud")}>文字雲</button>
-    <button class="chip" class:on={view === "list"} onclick={() => (view = "list")}>排行</button>
+    <div class="chips" use:slider>
+      <button class="chip" class:on={view === "cloud"} onclick={() => (view = "cloud")}>文字雲</button>
+      <button class="chip" class:on={view === "list"} onclick={() => (view = "list")}>排行</button>
+    </div>
   </div>
 
   {#if !data}
@@ -84,15 +89,15 @@
   .spacer { flex: 1; }
   .cloud {
     display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 14px;
-    padding: 28px 16px; background: var(--bg-2); border-radius: 20px; line-height: 1.2;
+    padding: 28px 16px; background: var(--surface-container); border-radius: var(--corner-large-increased); line-height: 1.2;
   }
-  .word { border: 0; background: none; color: var(--text); cursor: pointer; font-weight: 600; padding: 2px 4px; border-radius: 8px; }
+  .word { border: 0; background: none; color: var(--on-surface); cursor: pointer; font-weight: 500; padding: 2px 4px; border-radius: var(--corner-small); }
   .word.mine { color: var(--primary); }
-  .word:hover { background: var(--bg-3); opacity: 1 !important; }
+  .word:hover { background: var(--surface-container-highest); opacity: 1 !important; }
   .rank { list-style: none; padding: 0; margin: 0; max-width: 640px; }
-  .rank li { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
-  .no { width: 32px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
-  .tag { border: 0; background: none; color: var(--text); cursor: pointer; font-size: 15px; font-weight: 600; padding: 0; flex: 1; text-align: left; }
+  .rank li { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px solid var(--outline-variant); }
+  .no { width: 32px; text-align: right; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+  .tag { border: 0; background: none; color: var(--on-surface); cursor: pointer; font-size: 15px; font-weight: 500; padding: 0; flex: 1; text-align: left; }
   .tag.mine { color: var(--primary); }
-  .count { color: var(--muted); font-size: 13px; }
+  .count { color: var(--on-surface-variant); font-size: 13px; }
 </style>

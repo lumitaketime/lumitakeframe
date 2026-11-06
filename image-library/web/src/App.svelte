@@ -1,4 +1,5 @@
 <script>
+  import { slider } from "./lib/slider.js";
   import { onMount, tick } from "svelte";
   import { fade, fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
@@ -367,12 +368,12 @@
         {/if}
       </div>
     {/snippet}
-    <nav class="sidebar" class:rail={showRail} aria-label="主選單" aria-hidden={narrow}>
+    <nav class="sidebar" class:rail={showRail} aria-label="主選單" aria-hidden={narrow} use:slider={{ selector: "a.active" }}>
       {@render navContent(showRail)}
     </nav>
     {#if drawer}
       <button class="scrim" onclick={() => (drawer = false)} aria-label="關閉選單"></button>
-      <nav class="sidebar drawer" aria-label="主選單" transition:fly={{ x: -300, duration: 240, opacity: 1, easing: cubicOut }}>
+      <nav class="sidebar drawer" aria-label="主選單" use:slider={{ selector: "a.active" }} transition:fly={{ x: -300, duration: 240, opacity: 1, easing: cubicOut }}>
         {@render navContent(false)}
       </nav>
     {/if}
@@ -434,7 +435,7 @@
       {/key}
     </main>
 
-    <nav class="bottom" aria-label="主選單">
+    <nav class="bottom" aria-label="主選單" use:slider>
       {#each NAV.filter((n) => n.mobile && visible(n)) as n (n.href)}
         <a href={n.href} use:link class:active={active(n.href)}><span class="ind"><Icon path={n.icon} /></span><span>{n.label}</span></a>
       {/each}
@@ -456,7 +457,7 @@
 <Toasts />
 
 <style>
-  .boot { height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  .boot { height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--on-surface-variant); }
   /* 外框（頂欄＋選單）是一層淡色，內容區是另一層、圓角浮在上面，深淺色都看得出分層 */
   .shell {
     --nav-w: var(--sidebar);
@@ -493,6 +494,8 @@
     animation: nav-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
   }
   @keyframes nav-pill { from { transform: scaleX(0.3); opacity: 0.4; } }
+  /* 有滑動指示時，膠囊由 slider 畫（會從上一個項目滑過來），這裡的就不畫了 */
+  .sidebar:global(.has-slider) a.active::after { display: none; }
   .unpin { border: 0; background: none; color: inherit; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; margin-right: -6px; }
   .sidebar a:hover .unpin, .unpin:focus-visible { opacity: .8; }
   .unpin:hover { background: color-mix(in srgb, currentColor 12%, transparent); opacity: 1; }

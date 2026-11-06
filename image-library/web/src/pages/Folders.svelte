@@ -2,17 +2,30 @@
   import Loading from "../components/Loading.svelte";
   import DateGroups from "../components/DateGroups.svelte";
   import Icon from "../components/Icon.svelte";
+  import CoverPicker from "../components/CoverPicker.svelte";
   import { api, thumbUrl } from "../lib/api.js";
   import { route, navigate, link } from "../lib/router.svelte.js";
   import { app, showDialog, toast, refresh } from "../lib/state.svelte.js";
   import { analyzeAssets } from "../lib/actions.js";
-  import { mdiFolderOutline, mdiFolderOpenOutline, mdiFolderPlusOutline, mdiCreation, mdiHarddisk, mdiContentCopy } from "../lib/icons.js";
+  import { mdiFolderOutline, mdiFolderOpenOutline, mdiFolderPlusOutline, mdiCreation, mdiHarddisk, mdiContentCopy, mdiImageOutline } from "../lib/icons.js";
   import { count } from "../lib/format.js";
 
   let { rootId = null } = $props();
   let data = $state(null);
   let error = $state("");
   const path = $derived(route.query.path || "");
+  let picking = $state(false);
+
+  // 選取一張照片時，選取列會出現「設為資料夾封面」
+  $effect(() => {
+    app.context = rootId ? { folder: { root: rootId, path } } : null;
+  });
+
+  async function saveCover(imageId) {
+    await api("/api/folders/cover", { body: { root_id: rootId, path, image_id: imageId || null } });
+    toast(imageId ? "已更換資料夾封面" : "封面改回自動（最新的照片）");
+    refresh();
+  }
 
   $effect(() => {
     rootId;
@@ -126,6 +139,7 @@
           { label: "AI 分析這個資料夾", icon: mdiCreation, run: analyzeFolder },
           { label: app.server?.local ? "在 Finder 中打開" : "在 Mac 上打開", icon: mdiFolderOpenOutline, run: revealFolder, disabled: !data.root.online },
           { label: "複製路徑", icon: mdiContentCopy, run: copyPath },
+          { label: "更換封面…", icon: mdiImageOutline, run: () => (picking = true), disabled: !data.assets.length && !data.folders.length },
         ]}
         above={subfolders}
       />
@@ -133,9 +147,14 @@
   {/if}
 </div>
 
+{#if picking && data}
+  <CoverPicker title={data.crumbs.length ? data.crumbs[data.crumbs.length - 1].name : data.root.name} scope={`folder:${rootId}:${path}`}
+    current={data.cover_custom ? data.cover : null} onsave={saveCover} onclose={() => (picking = false)} />
+{/if}
+
 <style>
   .offline-note { margin: 0 0 12px; }
   .folders { margin-bottom: 28px; }
-  .offline { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+  .offline { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 2px 8px; border-radius: var(--corner-full); }
   a.cover-card { text-decoration: none; }
 </style>

@@ -175,9 +175,17 @@ def _filter_sql(query: Query, include_terms: bool, groups: list[list[str]] | Non
         params.append(_like(term))
     if include_terms:
         # 每個搜尋詞一組（原詞＋翻譯與同義詞），組內任一個符合即可，各組都要符合
+        # 用全文索引（FTS5）找，百萬張也只要幾毫秒；少數做不到子字串比對的詞（含數字的檔名、型號）才逐筆比對
+        from .db import fts_query
+
         for group in groups or [[t] for t in query.terms]:
-            where.append("(" + " OR ".join(["i.search_text LIKE ? ESCAPE '\\'"] * len(group)) + ")")
-            params += [_like(t) for t in group]
+            exprs = [fts_query(t) for t in group]
+            if all(exprs):
+                where.append("i.id IN (SELECT rowid FROM search_fts WHERE search_fts MATCH ?)")
+                params.append(" OR ".join(exprs))
+            else:
+                where.append("(" + " OR ".join(["i.search_text LIKE ? ESCAPE '\\'"] * len(group)) + ")")
+                params += [_like(t) for t in group]
     return " AND ".join(where), params
 
 
@@ -369,18 +377,21 @@ def search(
 
     if use_semantic:
         vectors = embedder.embed(embed_model, [query.text])
-        cands = conn.execute(
-            f"{base} WHERE i.embedding IS NOT NULL AND i.embed_model = ? AND i.status = 'ok'", [embed_model]
-        ).fetchall()
-        cands = [c for c in cands if c["id"] in allowed]
-        if vectors and cands:
+        vec_rows = [r for r in conn.execute(
+            "SELECT image_id, vec FROM image_vectors WHERE kind = 'text' AND model = ?", [embed_model]
+        ) if r["image_id"] in allowed]
+        if vectors and vec_rows:
             modes.append("semantic")
-            sims = _cosine_scores(vectors[0], [c["embedding"] for c in cands])
-            for cand, sim in zip(cands, sims):
-                if cand["id"] in scored:
-                    scored[cand["id"]][0] += sim
-                elif sim >= min_similarity:
-                    scored[cand["id"]] = [sim, cand, "semantic"]
+            sims = _cosine_scores(vectors[0], [r["vec"] for r in vec_rows])
+            hits = {r["image_id"]: sim for r, sim in zip(vec_rows, sims) if r["image_id"] in scored or sim >= min_similarity}
+            for image_id, sim in hits.items():
+                if image_id in scored:
+                    scored[image_id][0] += sim
+            extra = [i for i, sim in hits.items() if i not in scored]
+            for start in range(0, len(extra), 900):
+                chunk = extra[start:start + 900]
+                for cand in conn.execute(f"{base} WHERE i.id IN ({','.join('?' * len(chunk))})", chunk):
+                    scored[cand["id"]] = [hits[cand["id"]], cand, "semantic"]
 
     items = list(scored.values())
     if query.terms:
@@ -407,13 +418,21 @@ def name_matches(conn: sqlite3.Connection, terms: list[str]) -> set[int]:
     result: set[int] | None = None
     for term in terms:
         like = _like(term.lower())
-        ids = {r[0] for r in conn.execute(
-            "SELECT DISTINCT f.image_id FROM faces f JOIN persons p ON p.id = f.person_id "
-            "WHERE p.name IS NOT NULL AND lower(p.name) LIKE ? ESCAPE '\\'", (like,))}
-        try:
+        # 先在人物、寵物表（小）找名字，再用索引取照片；不要整張人臉表逐筆比對
+        pids = [r[0] for r in conn.execute(
+            "SELECT id FROM persons WHERE name IS NOT NULL AND lower(name) LIKE ? ESCAPE '\\'", (like,))]
+        ids = set()
+        for start in range(0, len(pids), 900):
+            chunk = pids[start:start + 900]
             ids |= {r[0] for r in conn.execute(
-                "SELECT DISTINCT d.image_id FROM pet_detections d JOIN pets p ON p.id = d.pet_id "
-                "WHERE p.name IS NOT NULL AND lower(p.name) LIKE ? ESCAPE '\\'", (like,))}
+                f"SELECT DISTINCT image_id FROM faces WHERE person_id IN ({','.join('?' * len(chunk))})", chunk)}
+        try:
+            pet_ids = [r[0] for r in conn.execute(
+                "SELECT id FROM pets WHERE name IS NOT NULL AND lower(name) LIKE ? ESCAPE '\\'", (like,))]
+            for start in range(0, len(pet_ids), 900):
+                chunk = pet_ids[start:start + 900]
+                ids |= {r[0] for r in conn.execute(
+                    f"SELECT DISTINCT image_id FROM pet_detections WHERE pet_id IN ({','.join('?' * len(chunk))})", chunk)}
         except sqlite3.OperationalError:
             pass
         if not ids:

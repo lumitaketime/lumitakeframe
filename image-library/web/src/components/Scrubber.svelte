@@ -97,17 +97,17 @@
   }
   .track { position: absolute; inset: 12px 0; pointer-events: none; }
   .year {
-    position: absolute; right: 16px; transform: translateY(-50%); font-size: 11px; color: var(--text);
-    font-weight: 600; background: var(--bg); padding: 0 2px; font-variant-numeric: tabular-nums;
+    position: absolute; right: 16px; transform: translateY(-50%); font-size: 11px; color: var(--on-surface);
+    font-weight: 500; background: var(--surface); padding: 0 2px; font-variant-numeric: tabular-nums;
   }
-  .tick { position: absolute; right: 6px; width: 6px; height: 1px; background: var(--muted); opacity: .45; }
+  .tick { position: absolute; right: 6px; width: 6px; height: 1px; background: var(--on-surface-variant); opacity: .45; }
   .indicator {
     position: absolute; right: 0; width: 26px; height: 2px; background: var(--primary); transition: top .12s;
   }
   .bubble {
-    position: absolute; right: 60px; transform: translateY(-50%); background: var(--text); color: var(--bg);
-    border-radius: 8px; padding: 5px 10px; font-size: 13px; white-space: nowrap; pointer-events: none; z-index: 5;
-    box-shadow: var(--shadow); font-variant-numeric: tabular-nums;
+    position: absolute; right: 60px; transform: translateY(-50%); background: var(--on-surface); color: var(--surface);
+    border-radius: var(--corner-small); padding: 5px 10px; font-size: 13px; white-space: nowrap; pointer-events: none; z-index: 5;
+    font-variant-numeric: tabular-nums;
   }
   @media (max-width: 760px) {
     .scrubber { width: 26px; position: fixed; right: 0; top: var(--topbar); bottom: 64px; height: auto; z-index: 10; }

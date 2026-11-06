@@ -2,15 +2,23 @@
   import Loading from "../components/Loading.svelte";
   import DateGroups from "../components/DateGroups.svelte";
   import Icon from "../components/Icon.svelte";
+  import CoverPicker from "../components/CoverPicker.svelte";
   import { api } from "../lib/api.js";
   import { navigate, link } from "../lib/router.svelte.js";
   import { app, showDialog, toast, refresh } from "../lib/state.svelte.js";
   import { confirm } from "../lib/actions.js";
-  import { mdiPencilOutline, mdiDeleteOutline, mdiCreation } from "../lib/icons.js";
+  import { mdiPencilOutline, mdiDeleteOutline, mdiCreation, mdiImageOutline } from "../lib/icons.js";
 
   let { id } = $props();
   let album = $state(null);
   let error = $state("");
+  let picking = $state(false);
+
+  async function saveCover(imageId) {
+    await api(`/api/albums/${id}`, { body: { cover_id: imageId || 0 } });
+    toast(imageId ? "已更換相簿封面" : "封面改回自動（最新的照片）");
+    refresh();
+  }
 
   $effect(() => {
     app.context = { album: id };
@@ -54,6 +62,7 @@
       crumbs={[{ label: "相簿", href: "/albums" }]}
       menu={[
         { label: "重新命名", icon: mdiPencilOutline, run: rename },
+        { label: "更換封面…", icon: mdiImageOutline, run: () => (picking = true), disabled: !album.assets.length },
         { label: "AI 分析相簿", icon: mdiCreation, run: analyze },
         { label: "刪除相簿", icon: mdiDeleteOutline, run: remove, danger: true },
       ]}
@@ -66,7 +75,12 @@
   {/if}
 </div>
 
+{#if picking && album}
+  <CoverPicker title={album.name} scope={`album:${id}`} current={album.cover_id} auto={album.assets[0]?.id}
+    onsave={saveCover} onclose={() => (picking = false)} />
+{/if}
+
 <style>
-  .page-head a.icon-btn { color: var(--text); }
+  .page-head a.icon-btn { color: var(--on-surface); }
   .sub { margin: -8px 0 16px 52px; }
 </style>

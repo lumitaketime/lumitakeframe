@@ -72,7 +72,7 @@
   :global(:root[data-theme="dark"]) .treemap { --series-1: #3987e5; }
   .cell {
     position: absolute; border: 0; padding: 8px 10px; margin: 0; cursor: pointer; text-align: left; overflow: hidden;
-    display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; border-radius: 4px;
+    display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; border-radius: var(--corner-extra-small);
     background: color-mix(in srgb, var(--series-1) calc(var(--t) * 100%), var(--surface-container));
     color: var(--on-surface);
     transition: left var(--spring-standard-default-spatial-duration) var(--spring-standard-default-spatial),
@@ -87,7 +87,7 @@
   .cell:focus-visible { outline: 2px solid var(--on-surface); outline-offset: -2px; }
   .name, .val {
     max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: fit-content;
-    background: var(--surface); padding: 1px 6px; border-radius: 4px;
+    background: var(--surface); padding: 1px 6px; border-radius: var(--corner-extra-small);
   }
   .name { font-size: 13px; font-weight: 500; }
   .val { font-size: 12px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }

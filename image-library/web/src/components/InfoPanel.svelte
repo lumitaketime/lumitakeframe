@@ -340,10 +340,10 @@
 </aside>
 
 <style>
-  .info { width: 360px; background: var(--panel); color: var(--text); height: 100%; overflow-y: auto; flex-shrink: 0; }
-  header { display: flex; align-items: center; gap: 4px; padding: 8px; position: sticky; top: 0; background: var(--panel); z-index: 2; }
-  h3 { margin: 0; font-size: 17px; font-weight: 600; }
-  h4 { margin: 22px 0 10px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .03em; }
+  .info { width: 360px; background: var(--surface-container-low); color: var(--on-surface); height: 100%; overflow-y: auto; flex-shrink: 0; }
+  header { display: flex; align-items: center; gap: 4px; padding: 8px; position: sticky; top: 0; background: var(--surface-container-low); z-index: 2; }
+  h3 { margin: 0; font-size: 17px; font-weight: 500; }
+  h4 { margin: 22px 0 10px; font-size: 13px; color: var(--on-surface-variant); font-weight: 500; letter-spacing: .03em; }
   .pad { padding: 0 18px 28px; }
   .desc { margin: 0 0 12px; line-height: 1.65; }
   .tr { margin: -4px 0 12px; }
@@ -375,38 +375,38 @@
   .tag-input { height: 32px; border: 1px solid var(--primary); border-radius: var(--corner-small); padding: 0 10px; background: none; outline: none; font-size: 14px; min-width: 140px; }
   .people-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; }
   .people-head h4 { margin: 0; }
-  .people-head .icon-btn { width: 32px; height: 32px; color: var(--muted); }
-  .people-head .icon-btn.on { color: var(--primary); background: var(--primary-soft); }
+  .people-head .icon-btn { width: 32px; height: 32px; color: var(--on-surface-variant); }
+  .people-head .icon-btn.on { color: var(--primary); background: var(--secondary-container); }
   .faces { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 10px; margin-bottom: 12px; }
   .face { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; }
   .face-img { border: 0; padding: 0; background: none; cursor: pointer; width: 100%; }
-  .face-img img { width: 100%; aspect-ratio: 1; border-radius: 12px; object-fit: cover; background: var(--bg-2); display: block; }
+  .face-img img { width: 100%; aspect-ratio: 1; border-radius: var(--corner-medium); object-fit: cover; background: var(--surface-container); display: block; }
   .face-img:hover img { outline: 2px solid var(--primary); outline-offset: 2px; }
   .face-name { font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 0 0; min-height: 20px; }
-  .face-name.unnamed { color: var(--muted); }
+  .face-name.unnamed { color: var(--on-surface-variant); }
   .face-x {
     position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: 0; cursor: pointer;
-    background: var(--text); color: var(--bg); font-size: 14px; line-height: 1; box-shadow: var(--shadow);
+    background: var(--on-surface); color: var(--surface); font-size: 14px; line-height: 1;
   }
   .edit-tip { margin: -4px 0 12px; }
   .pet-link { text-decoration: none; color: inherit; }
   .pet-link .face-img { display: block; }
   .pet-link .face-img img { border-radius: 50%; }
-  .warn { color: var(--danger); display: flex; gap: 6px; align-items: flex-start; }
+  .warn { color: var(--error); display: flex; gap: 6px; align-items: flex-start; }
   .icon-btn.sm { width: 32px; height: 32px; }
   dl { margin: 0; display: flex; flex-direction: column; gap: 14px; }
-  .item { display: flex; gap: 14px; align-items: flex-start; color: var(--muted); }
-  .item > div { color: var(--text); display: flex; flex-direction: column; gap: 2px; }
+  .item { display: flex; gap: 14px; align-items: flex-start; color: var(--on-surface-variant); }
+  .item > div { color: var(--on-surface); display: flex; flex-direction: column; gap: 2px; }
   .min { min-width: 0; flex: 1; }
   .break { word-break: break-all; }
   .exp { font-size: 13px; margin-top: 2px; }
   .btns { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
   .path {
-    border: 0; background: none; padding: 0; text-align: left; cursor: copy; color: var(--text);
+    border: 0; background: none; padding: 0; text-align: left; cursor: copy; color: var(--on-surface);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all;
   }
   .path:hover { color: var(--primary); }
   @media (max-width: 900px) {
-    .info { width: 100%; height: auto; max-height: 62vh; border-radius: 20px 20px 0 0; }
+    .info { width: 100%; height: auto; max-height: 62vh; border-radius: var(--corner-large-increased) var(--corner-large-increased) 0 0; }
   }
 </style>

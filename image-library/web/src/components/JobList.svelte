@@ -46,17 +46,17 @@
 
 <style>
   .jobs { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
-  .job { display: flex; gap: 10px; align-items: center; background: var(--bg); border-radius: 14px; padding: 10px 12px; }
+  .job { display: flex; gap: 10px; align-items: center; background: var(--surface); border-radius: var(--corner-medium); padding: 10px 12px; }
   .compact .job { padding: 8px 10px; }
   .job.queued { opacity: .7; }
   .grow { flex: 1; min-width: 0; }
   .head { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
   .head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pct { font-variant-numeric: tabular-nums; color: var(--primary); font-weight: 600; font-size: 13px; }
-  .lane { font-size: 11px; color: var(--primary); background: var(--primary-soft); border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
-  .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 6px 0 4px; }
+  .pct { font-variant-numeric: tabular-nums; color: var(--primary); font-weight: 500; font-size: 13px; }
+  .lane { font-size: 11px; color: var(--primary); background: var(--secondary-container); border-radius: var(--corner-full); padding: 2px 8px; flex-shrink: 0; }
+  .bar { height: 6px; border-radius: 3px; background: var(--outline-variant); overflow: hidden; margin: 6px 0 4px; }
   .bar span { display: block; height: 100%; background: var(--primary); transition: width .4s; border-radius: 3px; }
-  .paused .bar span { background: var(--muted); }
+  .paused .bar span { background: var(--on-surface-variant); }
   .bar.indeterminate span { animation: slide 1.4s ease-in-out infinite; }
   @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }
   @media (prefers-reduced-motion: reduce) { .bar.indeterminate span { animation: none; } }

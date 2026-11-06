@@ -160,24 +160,24 @@
 
 <style>
   .name-row { display: flex; align-items: center; gap: 10px; margin: 8px 0 10px; flex-wrap: wrap; }
-  .back { color: var(--text); }
-  .avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: var(--bg-2); flex-shrink: 0; }
+  .back { color: var(--on-surface); }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: var(--surface-container); flex-shrink: 0; }
   .name-input {
-    font-size: 20px; font-weight: 600; color: var(--text); background: none; border: 0; border-bottom: 2px solid var(--line);
+    font-size: 20px; font-weight: 500; color: var(--on-surface); background: none; border: 0; border-bottom: 2px solid var(--outline-variant);
     padding: 6px 2px; min-width: 0; width: min(320px, 60vw); outline: none;
   }
-  .name-input::placeholder { color: var(--muted); font-weight: 400; }
+  .name-input::placeholder { color: var(--on-surface-variant); font-weight: 400; }
   .name-input:focus { border-bottom-color: var(--primary); }
-  .done { border: 0; background: none; color: var(--primary); font-weight: 600; font-size: 14px; cursor: pointer; padding: 6px 10px; border-radius: 8px; }
-  .done:hover { background: var(--primary-soft); }
+  .done { border: 0; background: none; color: var(--primary); font-weight: 500; font-size: 14px; cursor: pointer; padding: 6px 10px; border-radius: var(--corner-small); }
+  .done:hover { background: var(--secondary-container); }
   .spacer { flex: 1; }
   .pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px 50px; }
   .pill {
-    display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); background: none; color: var(--text);
-    border-radius: 999px; padding: 5px 14px; font-size: 13px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--outline-variant); background: none; color: var(--on-surface);
+    border-radius: var(--corner-full); padding: 5px 14px; font-size: 13px; cursor: pointer;
   }
-  .pill.on { background: var(--primary-soft); color: var(--primary); border-color: transparent; font-weight: 600; }
-  .pill.add { color: var(--muted); }
+  .pill.on { background: var(--secondary-container); color: var(--primary); border-color: transparent; font-weight: 500; }
+  .pill.add { color: var(--on-surface-variant); }
   .cnt { margin-left: 4px; }
   .tip { margin-top: 18px; }
   @media (max-width: 760px) { .pills { margin-left: 0; } }

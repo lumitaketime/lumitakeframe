@@ -35,6 +35,7 @@
   const total = $derived(rows.length ? tops[rows.length - 1] + rows[rows.length - 1].height : 0);
   const VIRTUAL_MIN = 30; // 列數少時全部畫出，行為和以前一樣
   let view = $state({ top: 0, bottom: 2400 });
+  let pageY = $state(0); // 網格在整頁內容中的位置，用來讓載入中的波浪跨區塊連續
   let near = $state(true);
 
   function first(y) {
@@ -66,6 +67,8 @@
       const gr = el.getBoundingClientRect();
       const h = scroller.clientHeight || innerHeight;
       const y = sr.top - gr.top; // 畫面頂端在網格內的位置
+      const py = Math.round((scroller.scrollTop || 0) - y);
+      if (Math.abs(py - pageY) > 4) pageY = py;
       // 上下各多畫一個多畫面，快速捲動時才不會看到空白
       const top = y - h * 1.2;
       const bottom = y + h * 2.2;
@@ -117,7 +120,7 @@
 
 <div class="grid" bind:this={el} bind:clientWidth={width} style:height="{total}px">
   {#each shown as { row, i } (i)}
-    <div class="row" style:top="{tops[i]}px" style:height="{row.height}px" style:gap="{gap}px">
+    <div class="row" style:top="{tops[i]}px" style:height="{row.height}px" style:gap="{gap}px" style:--wave={Math.floor((pageY + tops[i]) / 150) % 14}>
       {#each row.items as item (item.asset.id)}
         <Thumb
           asset={item.asset}

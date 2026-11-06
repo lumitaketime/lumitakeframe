@@ -245,14 +245,14 @@
   .spacer { flex: 1; }
   .timeline { display: flex; min-height: 100%; }
   .content { flex: 1; min-width: 0; padding: 0 12px 100px 24px; }
-  .month-title { font-size: 20px; font-weight: 600; margin: 22px 0 4px; }
+  .month-title { font-size: 20px; font-weight: 500; margin: 22px 0 4px; }
   .days { display: flex; flex-wrap: wrap; column-gap: 12px; }
   @media (max-width: 639px) { .days { column-gap: 2px; } }
   .day { margin-bottom: 12px; min-width: 0; }
   .day-head span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .day-head { display: flex; align-items: center; gap: 4px; height: 40px; font-size: 14px; font-weight: 500; }
   .day-check {
-    border: 0; background: none; padding: 0; width: 0; overflow: hidden; color: var(--muted); cursor: pointer;
+    border: 0; background: none; padding: 0; width: 0; overflow: hidden; color: var(--on-surface-variant); cursor: pointer;
     transition: width .15s; display: flex;
   }
   .day:hover .day-check, .day-check.on { width: 24px; }

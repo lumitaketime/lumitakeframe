@@ -26,13 +26,13 @@
   {#if kind === "grid"}
     <div class="skel-grid" class:square role="status" aria-label={label || "載入中"}>
       {#each Array(count || (square ? 24 : 18)) as _, i (i)}
-        <span class="skel" style:--r={square ? 1 : RATIOS[i % RATIOS.length]} style:animation-delay="{(i % 8) * 60}ms"></span>
+        <span class="skel" style:--r={square ? 1 : RATIOS[i % RATIOS.length]} style:--wave={Math.floor(i / (square ? 6 : 4))}></span>
       {/each}
     </div>
   {:else if kind === "cards"}
     <div class="skel-cards" role="status" aria-label={label || "載入中"}>
       {#each Array(count || 8) as _, i (i)}
-        <div class="card-sk" style:animation-delay="{i * 50}ms">
+        <div class="card-sk" style:--wave={Math.floor(i / 4)}>
           <span class="skel cover" class:round></span>
           <span class="skel line"></span>
           <span class="skel line short"></span>
@@ -42,7 +42,7 @@
   {:else if kind === "rows"}
     <div class="skel-rows" role="status" aria-label={label || "載入中"}>
       {#each Array(count || 4) as _, i (i)}
-        <div class="row-sk" style:animation-delay="{i * 60}ms">
+        <div class="row-sk" style:--wave={i}>
           <span class="skel dot"></span>
           <span class="col"><span class="skel line"></span><span class="skel line short"></span></span>
         </div>
@@ -79,13 +79,12 @@
     100% { stroke-dashoffset: 107; transform: rotate(360deg); }
   }
 
+  /* 一閃一閃、由上往下一波一波（--wave＝第幾列） */
   .skel {
-    display: block; border-radius: var(--corner-small);
-    background: linear-gradient(105deg, var(--surface-container) 30%, var(--surface-container-highest) 50%, var(--surface-container) 70%);
-    background-size: 200vw 100%; background-attachment: fixed;
-    animation: skel-sweep 1.6s cubic-bezier(.4, 0, .6, 1) infinite, m3-fade var(--duration-medium2) var(--easing-standard) both;
+    display: block; border-radius: var(--corner-small); background: var(--surface-container-highest);
+    animation: m3-skel-wave 1.5s ease-in-out infinite both;
+    animation-delay: calc(var(--wave, 0) * 110ms);
   }
-  @keyframes skel-sweep { from { background-position: 100vw 0; } to { background-position: -100vw 0; } }
 
   .skel-grid { display: flex; flex-wrap: wrap; gap: 4px; }
   .skel-grid .skel { height: 200px; flex: var(--r) 1 calc(200px * var(--r)); }
@@ -103,6 +102,7 @@
   .line.short { width: 40%; height: 12px; margin-top: 6px; }
 
   .skel-rows { display: flex; flex-direction: column; gap: 8px; }
+  .card-sk .skel, .row-sk .skel { animation-delay: calc(var(--wave, 0) * 110ms); }
   .row-sk { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-radius: var(--corner-large); background: var(--surface-container-low); }
   .row-sk .dot { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; }
   .row-sk .col { flex: 1; }
@@ -110,7 +110,7 @@
   .row-sk .line.short { margin-top: 8px; }
 
   @media (prefers-reduced-motion: reduce) {
-    .skel { animation: none; }
+    .skel { animation: none; opacity: .7; }
     .m3-spin, .m3-spin circle { animation-duration: 1.568s !important; animation-iteration-count: infinite !important; }
   }
 </style>

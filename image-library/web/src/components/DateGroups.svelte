@@ -215,7 +215,7 @@
   .dg-head.bare { min-height: 0; padding: 0 0 4px; }
   .titles { display: flex; flex-direction: column; min-width: 0; margin-left: 4px; }
   .crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; font-size: 13px; line-height: 18px; color: var(--on-surface-variant); }
-  .crumbs a { color: inherit; text-decoration: none; border-radius: 4px; padding: 0 2px; }
+  .crumbs a { color: inherit; text-decoration: none; border-radius: var(--corner-extra-small); padding: 0 2px; }
   .crumbs a:hover { color: var(--primary); text-decoration: underline; }
   .title-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
   .title-row h1 { font-size: 28px; line-height: 36px; font-weight: 400; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

@@ -1,4 +1,5 @@
 <script>
+  import { slider } from "../lib/slider.js";
   import Loading from "../components/Loading.svelte";
   import BackButton from "../components/BackButton.svelte";
   /**
@@ -287,7 +288,7 @@
       {/each}
     {:else if sub === "large"}
       <div class="bar">
-        <div class="seg" role="tablist" aria-label="檢視">
+        <div class="seg" role="tablist" aria-label="檢視" use:slider>
           <button role="tab" aria-selected={largeTab === "files"} class:on={largeTab === "files"} onclick={() => (largeTab = "files")}>檔案</button>
           <button role="tab" aria-selected={largeTab === "folders"} class:on={largeTab === "folders"} onclick={() => (largeTab = "folders")}>資料夾</button>
         </div>
@@ -413,8 +414,8 @@
   .rows li.sel { background: var(--secondary-container); }
   .thumb-btn { position: relative; border: 0; padding: 0; background: var(--surface-container); width: 56px; height: 56px; border-radius: var(--corner-small); overflow: hidden; cursor: pointer; flex-shrink: 0; }
   .thumb-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .vid { position: absolute; right: 3px; bottom: 3px; background: rgb(0 0 0 / .55); color: #fff; border-radius: 4px; display: flex; padding: 1px; }
-  .rawb { position: absolute; right: 3px; bottom: 3px; font-size: 8px; line-height: 12px; font-weight: 600; color: #fff; background: rgb(0 0 0 / .4); border: 1px solid rgb(255 255 255 / .45); border-radius: 3px; padding: 0 3px; }
+  .vid { position: absolute; right: 3px; bottom: 3px; background: rgb(0 0 0 / .55); color: #fff; border-radius: var(--corner-extra-small); display: flex; padding: 1px; }
+  .rawb { position: absolute; right: 3px; bottom: 3px; font-size: 8px; line-height: 12px; font-weight: 500; color: #fff; background: rgb(0 0 0 / .4); border: 1px solid rgb(255 255 255 / .45); border-radius: 3px; padding: 0 3px; }
   .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .grow b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
   .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -1,4 +1,5 @@
 <script>
+  import { slider } from "../lib/slider.js";
   import Loading from "../components/Loading.svelte";
   import ExploreTabs from "../components/ExploreTabs.svelte";
   import Icon from "../components/Icon.svelte";
@@ -70,7 +71,7 @@
   {/if}
 
   {#if groups.some((g) => g.count)}
-    <div class="chips groups">
+    <div class="chips groups" use:slider>
       <button class="chip" class:on={!filter} onclick={() => (filter = "")}>全部</button>
       {#each groups.filter((g) => g.count) as g (g.name)}
         <button class="chip" class:on={filter === g.name} onclick={() => (filter = filter === g.name ? "" : g.name)}>{g.name}<span class="muted">{g.count}</span></button>
@@ -109,16 +110,16 @@
 <style>
   .groups { margin-bottom: 8px; }
   .groups .chip span { margin-left: 4px; font-size: 12px; }
-  .assign { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--primary-soft); border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; position: sticky; top: 0; z-index: 3; }
+  .assign { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--secondary-container); border-radius: var(--corner-medium); padding: 10px 12px; margin-bottom: 12px; position: sticky; top: 0; z-index: 3; }
   .people { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 22px 14px; }
-  .person { display: flex; flex-direction: column; align-items: center; text-decoration: none; color: var(--text); gap: 2px; min-width: 0; }
+  .person { display: flex; flex-direction: column; align-items: center; text-decoration: none; color: var(--on-surface); gap: 2px; min-width: 0; }
   .face { position: relative; width: 100%; max-width: 132px; }
-  .face img { width: 100%; aspect-ratio: 1; border-radius: 50%; object-fit: cover; background: var(--bg-2); transition: transform .2s; display: block; }
+  .face img { width: 100%; aspect-ratio: 1; border-radius: 50%; object-fit: cover; background: var(--surface-container); transition: transform .2s; display: block; }
   .person:hover img { transform: scale(1.04); }
   .person.picked img { outline: 4px solid var(--primary); outline-offset: 2px; }
-  .check { position: absolute; top: 0; left: 0; color: var(--primary); background: var(--bg); border-radius: 50%; }
-  .person b { margin-top: 8px; font-weight: 600; font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .person span { font-size: 12px; color: var(--muted); }
+  .check { position: absolute; top: 0; left: 0; color: var(--primary); background: var(--surface); border-radius: 50%; }
+  .person b { margin-top: 8px; font-weight: 500; font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .person span { font-size: 12px; color: var(--on-surface-variant); }
   .tags { color: var(--primary) !important; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hidden-person { opacity: .45; }
   label { display: flex; align-items: center; gap: 6px; }

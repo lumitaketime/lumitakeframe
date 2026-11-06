@@ -22,7 +22,13 @@
   --danger: var(--error);
   --fav: #e53950;
   --overlay: rgb(0 0 0 / 0.32);
-  --shadow: var(--elevation-level3);
+  /* 不用陰影：層次靠 M3 的色調（surface-container 各階）與細邊框表現 */
+  --shadow: none;
+  --elevation-level1: none;
+  --elevation-level2: none;
+  --elevation-level3: none;
+  --elevation-level4: none;
+  --elevation-level5: none;
   --radius: var(--corner-medium);
   --sidebar: 256px;
   --topbar: 64px;
@@ -86,7 +92,6 @@ img { -webkit-user-drag: none; }
     background-color var(--spring-effects-default-duration) var(--spring-effects-default),
     box-shadow var(--spring-effects-default-duration) var(--spring-effects-default);
 }
-.btn:hover:not(:disabled) { box-shadow: var(--elevation-level1); }
 .btn:active:not(:disabled), .chip:active, .pill:active { border-radius: var(--corner-small); }
 .btn:disabled {
   cursor: default; box-shadow: none;
@@ -195,15 +200,23 @@ input[type="range"]:active::-webkit-slider-thumb, input[type="range"]:focus-visi
 input[type="range"]:focus { outline: none; }
 input[type="range"]:disabled { opacity: .38; cursor: default; }
 
-/* 捲軸：細、圓角、沒有白色底條，滑過時才變明顯 */
-* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--on-surface) 28%, transparent) transparent; }
-::-webkit-scrollbar { width: 12px; height: 12px; background: transparent; }
-::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--on-surface) 24%, transparent); border-radius: 999px;
-  border: 3px solid transparent; background-clip: padding-box; min-height: 40px;
+/* 捲軸：細、圓角、沒有底條，平常淡淡的只是暗示這裡可以捲，滑到區塊上才稍微明顯。
+   新版 Safari／Chrome 一旦設定 scrollbar-width／scrollbar-color 就會改畫系統捲軸（Mac 接滑鼠時有一條白底），
+   所以標準屬性只給不支援 ::-webkit-scrollbar 的瀏覽器（Firefox）。 */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--on-surface) 18%, transparent) transparent; }
 }
-::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--on-surface) 42%, transparent); }
+::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner, ::-webkit-scrollbar-track-piece { background: transparent; border: 0; box-shadow: none; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--on-surface) 12%, transparent); border-radius: 999px;
+  border: 3px solid transparent; background-clip: padding-box; min-height: 40px;
+  transition: background-color var(--duration-short4, .2s);
+}
+:hover::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--on-surface) 24%, transparent); }
+::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in srgb, var(--on-surface) 40%, transparent); border-width: 2px;
+}
 ::-webkit-scrollbar-button { display: none; }
 
 /* ---- 文字 ---- */
@@ -267,6 +280,8 @@ input[type="range"]:disabled { opacity: .38; cursor: default; }
   animation: spin .8s linear infinite; display: inline-block; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* 骨架的「一閃一閃」：亮→暗→亮，搭配不同的延遲就成了由上往下的波浪 */
+@keyframes m3-skel-wave { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 
 /* ---- 進場動畫：清單、卡片依序由下往上淡入（間隔 30ms） ---- */
 @keyframes m3-enter { from { opacity: 0; transform: translateY(12px); } }
@@ -298,3 +313,18 @@ input[type="range"]:disabled { opacity: .38; cursor: default; }
   .m3-ripple { display: none; }
 }
 @keyframes m3-fade { from { opacity: 0; } }
+
+/* ---- 滑動的選取指示（lib/slider.js）：分段按鈕、單選膠囊、分頁底線、側邊欄 ---- */
+.has-slider > .slider-ind {
+  position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; opacity: 0;
+  background: var(--slider-bg, var(--secondary-container)); border-radius: var(--corner-full);
+  transition:
+    transform var(--spring-expressive-default-spatial-duration) var(--spring-expressive-default-spatial),
+    width var(--spring-expressive-default-spatial-duration) var(--spring-expressive-default-spatial),
+    height var(--spring-expressive-default-spatial-duration) var(--spring-expressive-default-spatial),
+    opacity var(--duration-short4, 200ms) var(--easing-standard, ease);
+}
+.has-slider.slider-underline > .slider-ind { background: var(--slider-bg, var(--primary)); border-radius: 3px 3px 0 0; }
+.has-slider > :not(.slider-ind) { position: relative; z-index: 1; }
+.has-slider.slider-pill > :is(.on, .active, [aria-selected="true"], [aria-checked="true"], [aria-current="page"]) { background-color: transparent !important; }
+.has-slider.slider-underline > :is(.on, .active, [aria-selected="true"], [aria-current="page"]) { border-bottom-color: transparent !important; }

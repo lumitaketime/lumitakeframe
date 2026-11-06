@@ -284,8 +284,16 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    def folder_cover(c, root_id: int, path: str) -> int | None:
+        """使用者自訂的資料夾封面（照片還在才算）。"""
+        row = c.execute(
+            "SELECT fc.image_id FROM folder_covers fc JOIN images i ON i.id = fc.image_id "
+            "WHERE fc.root_id = ? AND fc.path = ? AND i.status = 'ok'", (root_id, path)).fetchone()
+        return row[0] if row else None
+
     def _root_dict(c, r) -> dict:
-        cover = c.execute(
+        custom = folder_cover(c, r["id"], "")
+        cover = {"id": custom} if custom else c.execute(
             "SELECT id FROM images WHERE root_id = ? AND status = 'ok' AND thumb_ok = 1 ORDER BY sort_at DESC LIMIT 1",
             (r["id"],),
         ).fetchone()
@@ -293,7 +301,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             "id": r["id"], "name": r["name"], "path": r["path"], "online": Path(r["path"]).is_dir(),
             "count": r["image_count"] if "image_count" in r.keys() else c.execute(
                 "SELECT COUNT(*) FROM images WHERE root_id = ? AND status = 'ok'", (r["id"],)).fetchone()[0],
-            "last_scan": r["last_scan"], "cover": cover["id"] if cover else None,
+            "last_scan": r["last_scan"], "cover": cover["id"] if cover else None, "cover_custom": bool(custom),
         }
 
     # ---- 時間軸 ----
@@ -1286,10 +1294,16 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 if row["folder"] == path:
                     continue
                 name = row["folder"][len(prefix):].split("/")[0]
-                child = children.setdefault(name, {"name": name, "path": prefix + name, "count": 0, "cover": None, "latest": ""})
+                child = children.setdefault(name, {"name": name, "path": prefix + name, "count": 0, "cover": None, "latest": "", "cover_custom": False})
                 child["count"] += row["count"]
                 if (row["latest"] or "") >= child["latest"]:
                     child["latest"], child["cover"] = row["latest"] or "", row["id"]
+            # 使用者自訂的封面優先
+            for child in children.values():
+                custom = folder_cover(c, r["id"], child["path"])
+                if custom:
+                    child["cover"], child["cover_custom"] = custom, True
+            here_custom = folder_cover(c, r["id"], path) if path else None
             assets = c.execute(
                 f"SELECT i.*, {STACK_COUNT_SQL} FROM images i WHERE i.root_id = ? AND i.folder = ? AND i.status = 'ok' "
                 "AND i.stack_top = 1 ORDER BY i.sort_at DESC, i.id DESC",
@@ -1299,14 +1313,36 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             for part in [p for p in path.split("/") if p]:
                 acc.append(part)
                 crumbs.append({"name": part, "path": "/".join(acc)})
+            root_info = _root_dict(c, r)
             return {
-                "root": _root_dict(c, r),
+                "root": root_info,
                 "path": path,
                 "abs_path": str(Path(r["path"]).joinpath(*[p for p in path.split("/") if p])),
                 "crumbs": crumbs,
                 "folders": sorted(children.values(), key=lambda x: x["name"].lower()),
                 "assets": [summarize(a) for a in assets],
+                "cover": here_custom if path else root_info["cover"],
+                "cover_custom": bool(here_custom) if path else root_info["cover_custom"],
             }
+        finally:
+            c.close()
+
+    @app.post("/api/folders/cover")
+    def set_folder_cover(body: dict = Body(...)):
+        """資料夾（或資料夾來源本身，path 為空）的封面；image_id 為空＝改回自動（最新的照片）。"""
+        c = conn()
+        try:
+            root_id = int(body.get("root_id") or 0)
+            path = str(body.get("path") or "").strip("/")
+            if db.get_root(c, root_id) is None:
+                raise HTTPException(404, "找不到資料夾")
+            image_id = body.get("image_id")
+            if image_id:
+                c.execute("INSERT OR REPLACE INTO folder_covers (root_id, path, image_id) VALUES (?, ?, ?)", (root_id, path, int(image_id)))
+            else:
+                c.execute("DELETE FROM folder_covers WHERE root_id = ? AND path = ?", (root_id, path))
+            c.commit()
+            return {"ok": True}
         finally:
             c.close()
 

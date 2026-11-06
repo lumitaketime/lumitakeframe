@@ -93,7 +93,7 @@
 
 <style>
   .thumb {
-    position: relative; overflow: hidden; background: var(--bg-2); cursor: pointer; flex-shrink: 0;
+    position: relative; overflow: hidden; background: var(--surface-container); cursor: pointer; flex-shrink: 0;
     -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   }
   img {
@@ -103,17 +103,16 @@
       border-radius var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
   }
   img.loaded { opacity: 1; }
-  /* 載入中：和縮圖同形狀的圓角色塊，一道柔和的光由左往右掃過（所有色塊共用同一道光，看起來像一片波浪） */
+  /* 載入中：和縮圖同形狀的圓角色塊一閃一閃；每一列依它在頁面上的高度延後一點，看起來像一波一波由上往下閃（--wave 由 Grid 算好） */
   .thumb.loading { background: none; }
   .thumb.loading::before {
     content: ""; position: absolute; inset: 0; border-radius: var(--corner-small); pointer-events: none;
-    background: linear-gradient(105deg, var(--surface-container) 30%, var(--surface-container-highest) 50%, var(--surface-container) 70%);
-    background-size: 200vw 100%; background-attachment: fixed;
-    animation: skel-sweep 1.6s cubic-bezier(.4, 0, .6, 1) infinite;
+    background: var(--surface-container-highest);
+    animation: m3-skel-wave 1.5s ease-in-out infinite both;
+    animation-delay: calc(var(--wave, 0) * 110ms);
   }
-  @keyframes skel-sweep { from { background-position: 100vw 0; } to { background-position: -100vw 0; } }
   @media (prefers-reduced-motion: reduce) { .thumb.loading::before { animation: none; } }
-  .fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  .fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--on-surface-variant); }
   .shade {
     position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .15s;
     background: linear-gradient(to bottom, rgba(0,0,0,.45), transparent 35%);
@@ -127,29 +126,28 @@
   }
   .selecting .check { opacity: 1; }
   .selecting .shade { opacity: .6; }
-  .selected { background: var(--primary-soft); }
-  .selected img { transform: scale(.86); border-radius: 10px; }
+  .selected { background: var(--secondary-container); }
+  .selected img { transform: scale(.86); border-radius: var(--corner-medium); }
   .selected .check { opacity: 1; color: var(--primary); filter: none; }
   .selected .shade { opacity: 0; }
   .badge {
-    position: absolute; color: #fff; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 2px;
+    position: absolute; color: #fff; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 2px;
     text-shadow: 0 1px 3px rgba(0,0,0,.7); filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
   }
   .tr { top: 6px; right: 6px; }
   .fav { position: absolute; bottom: 5px; left: 6px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
   .missing img { filter: grayscale(1); opacity: .45; }
   .rejected img { opacity: .35; }
-  .stack { background: rgba(0,0,0,.45); padding: 1px 6px 1px 4px; border-radius: 6px; font-size: 11px; }
+  .stack { background: rgba(0,0,0,.45); padding: 1px 6px 1px 4px; border-radius: var(--corner-small); font-size: 11px; }
   .stack.with-video { top: 28px; }
   .corner { position: absolute; right: 5px; bottom: 5px; display: flex; align-items: center; gap: 4px; pointer-events: none; }
   .raw {
-    font-size: 9px; line-height: 14px; font-weight: 600; letter-spacing: .06em; color: rgb(255 255 255 / .92);
-    background: rgb(0 0 0 / .38); border: 1px solid rgb(255 255 255 / .45); border-radius: 4px; padding: 0 4px;
-    backdrop-filter: blur(4px);
+    font-size: 9px; line-height: 14px; font-weight: 500; letter-spacing: .06em; color: rgb(255 255 255 / .92);
+    background: rgb(0 0 0 / .38); border: 1px solid rgb(255 255 255 / .45); border-radius: var(--corner-extra-small); padding: 0 4px;
   }
   .meta-badge {
     display: flex; align-items: center; gap: 2px; color: #fff;
-    background: rgba(0,0,0,.45); border-radius: 6px; padding: 1px 5px; font-size: 11px; font-weight: 700;
+    background: rgba(0,0,0,.45); border-radius: var(--corner-small); padding: 1px 5px; font-size: 11px; font-weight: 700;
   }
   .meta-badge :global(svg) { color: #f5c518; }
   .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 2px; box-shadow: 0 0 0 1px rgba(255,255,255,.7); }

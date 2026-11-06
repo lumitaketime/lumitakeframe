@@ -33,6 +33,13 @@
   const ids = $derived([...selection]);
   const albumId = $derived(app.context?.album);
   const personId = $derived(app.context?.person);
+  const folderCtx = $derived(app.context?.folder);
+
+  async function setFolderCover() {
+    await api("/api/folders/cover", { body: { root_id: folderCtx.root, path: folderCtx.path, image_id: ids[0] } });
+    toast("已設為資料夾封面");
+    refresh();
+  }
 
   async function notThisPerson() {
     const res = await api(`/api/people/${personId}/remove`, { body: { ids } });
@@ -89,8 +96,11 @@
   {#if albumId}
     <button class="icon-btn" title="從相簿移除" onclick={() => run(() => removeFromAlbum(albumId, ids))}><Icon path={mdiImageRemoveOutline} /></button>
     {#if ids.length === 1}
-      <button class="icon-btn" title="設為封面" onclick={() => run(setCover)}><Icon path={mdiImageOutline} /></button>
+      <button class="icon-btn" title="設為相簿封面" aria-label="設為相簿封面" onclick={() => run(setCover)}><Icon path={mdiImageOutline} /></button>
     {/if}
+  {/if}
+  {#if folderCtx && ids.length === 1}
+    <button class="icon-btn" title="設為資料夾封面" aria-label="設為資料夾封面" onclick={() => run(setFolderCover)}><Icon path={mdiImageOutline} /></button>
   {/if}
   {#if personId}
     <button class="icon-btn" title="不是這個人" onclick={() => run(notThisPerson)}><Icon path={mdiAccountRemoveOutline} /></button>
@@ -121,22 +131,22 @@
   .bar {
     position: fixed; top: 0; left: 0; right: 0; height: var(--topbar); z-index: 60;
     display: flex; align-items: center; gap: 4px; padding: 0 12px; padding-top: env(safe-area-inset-top);
-    background: var(--panel); box-shadow: 0 2px 12px rgba(0,0,0,.12); color: var(--primary);
+    background: var(--surface-container); border-bottom: 1px solid var(--outline-variant); color: var(--primary);
     animation: down .15s ease-out;
   }
-  b { color: var(--text); font-weight: 600; margin-left: 4px; }
+  b { color: var(--on-surface); font-weight: 500; margin-left: 4px; }
   .spacer { flex: 1; }
   .rate-wrap { position: relative; }
   .rate-menu {
-    position: absolute; top: 46px; right: -40px; background: var(--panel); color: var(--text); border-radius: 14px;
-    box-shadow: var(--shadow); padding: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 5; min-width: 250px;
+    position: absolute; top: 46px; right: -40px; background: var(--surface-container); color: var(--on-surface); border-radius: var(--corner-large);
+    border: 1px solid var(--outline-variant); padding: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 5; min-width: 250px;
   }
   .rate-menu .row { display: flex; gap: 4px; align-items: center; }
   .rate-menu button {
-    border: 0; background: var(--bg-2); color: var(--text); border-radius: 8px; padding: 6px 8px; cursor: pointer;
+    border: 0; background: var(--surface-container); color: var(--on-surface); border-radius: var(--corner-small); padding: 6px 8px; cursor: pointer;
     display: flex; align-items: center; gap: 2px; font-size: 13px;
   }
-  .rate-menu button:hover { background: var(--bg-3); }
+  .rate-menu button:hover { background: var(--surface-container-highest); }
   .rate-menu button :global(svg) { color: #f5c518; }
   .rate-menu .dot { width: 26px; height: 26px; border-radius: 50%; padding: 0; }
   @keyframes down { from { transform: translateY(-100%); } }

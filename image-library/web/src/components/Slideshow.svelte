@@ -118,13 +118,13 @@
   .none { color: #fff; text-align: center; margin-top: 40vh; }
   .controls {
     position: absolute; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%);
-    display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,.6); color: #fff; border-radius: 999px; padding: 6px 12px;
+    display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,.6); color: #fff; border-radius: var(--corner-full); padding: 6px 12px;
     transition: opacity .3s;
   }
   .controls.hidden { opacity: 0; pointer-events: none; }
   .controls button { border: 0; background: none; color: #fff; display: flex; padding: 6px; border-radius: 50%; cursor: pointer; }
   .controls button:hover { background: rgba(255,255,255,.15); }
-  .controls select { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 3px 8px; font-size: 13px; }
+  .controls select { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: var(--corner-full); padding: 3px 8px; font-size: 13px; }
   .controls select option { color: #000; }
   .count { font-size: 13px; min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; opacity: .8; }
   @media (prefers-reduced-motion: reduce) { img { transition: none; } }

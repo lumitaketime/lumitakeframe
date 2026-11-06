@@ -1,4 +1,5 @@
 <script>
+  import { slider } from "../lib/slider.js";
   /** 快速篩選列：星等、顏色標籤、檔案類型。 */
   import Icon from "./Icon.svelte";
   import { filter, filterActive, clearFilter } from "../lib/filter.svelte.js";
@@ -26,7 +27,7 @@
     {/each}
   </div>
   {#if kinds}
-    <div class="grp seg" aria-label="檔案類型">
+    <div class="grp seg" aria-label="檔案類型" use:slider>
       {#each [["raw", "RAW"], ["jpeg", "JPEG"], ["video", "影片"]] as [k, label] (k)}
         <button class:on={filter.kind === k} onclick={() => setKind(k)}>{label}</button>
       {/each}

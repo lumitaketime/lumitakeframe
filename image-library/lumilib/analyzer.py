@@ -518,7 +518,7 @@ def embed_images(
         return 0
     rows = conn.execute(
         """SELECT * FROM images WHERE status = 'ok' AND analyzed_at IS NOT NULL
-           AND (embedding IS NULL OR embed_model IS NOT ?)""",
+           AND embed_model IS NOT ?""",
         (cfg.embed_model,),
     ).fetchall()
     done = 0
@@ -529,9 +529,10 @@ def embed_images(
         vectors = client.embed(cfg.embed_model, [embedding_text(r) for r in batch])
         for row, vec in zip(batch, vectors):
             conn.execute(
-                "UPDATE images SET embedding = ?, embed_model = ? WHERE id = ?",
-                (pack_vector(vec), cfg.embed_model, row["id"]),
+                "INSERT OR REPLACE INTO image_vectors (image_id, kind, model, vec) VALUES (?, 'text', ?, ?)",
+                (row["id"], cfg.embed_model, pack_vector(vec)),
             )
+            conn.execute("UPDATE images SET embed_model = ? WHERE id = ?", (cfg.embed_model, row["id"]))
             done += 1
         conn.commit()
     return done

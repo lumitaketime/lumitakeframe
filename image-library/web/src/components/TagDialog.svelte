@@ -1,4 +1,5 @@
 <script>
+  import { slider } from "../lib/slider.js";
   /**
    * 批次加上（或移除）我的標籤，例如 #嘉義車站。
    * 標籤和 AI 關鍵字一起被搜尋，也會出現在關鍵字雲；RAW 會寫入 .xmp，Lightroom 看得到。
@@ -74,7 +75,7 @@
 
 <Modal title="{mode === 'add' ? '加上標籤' : '移除標籤'}（{ids.length} 張）" onclose={() => onclose?.(false)}>
   <div class="form">
-    <div class="seg" role="tablist">
+    <div class="seg" role="tablist" use:slider>
       <button class:on={mode === "add"} onclick={() => (mode = "add")}>加上</button>
       <button class:on={mode === "remove"} onclick={() => (mode = "remove")}>移除</button>
     </div>

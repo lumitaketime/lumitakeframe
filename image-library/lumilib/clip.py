@@ -243,7 +243,7 @@ def index_images(conn: sqlite3.Connection, cfg: Config, model: ClipModel | None 
     model = model or get_model(cfg)
     rows = conn.execute(
         "SELECT id, fingerprint, rel_path FROM images WHERE status = 'ok' AND thumb_ok = 1 "
-        "AND (clip IS NULL OR clip_model IS NOT ?) ORDER BY sort_at DESC",
+        "AND clip_model IS NOT ? ORDER BY sort_at DESC",
         (cfg.clip_model,),
     ).fetchall()
     done = 0
@@ -260,7 +260,9 @@ def index_images(conn: sqlite3.Connection, cfg: Config, model: ClipModel | None 
             if progress:
                 progress(n, len(rows), f"略過 {row['rel_path']}：{exc}")
             continue
-        conn.execute("UPDATE images SET clip = ?, clip_model = ? WHERE id = ?", (vec.tobytes(), cfg.clip_model, row["id"]))
+        conn.execute("INSERT OR REPLACE INTO image_vectors (image_id, kind, model, vec) VALUES (?, 'clip', ?, ?)",
+                     (row["id"], cfg.clip_model, vec.astype(np.float32).tobytes()))
+        conn.execute("UPDATE images SET clip_model = ? WHERE id = ?", (cfg.clip_model, row["id"]))
         done += 1
         if n % 100 == 0:
             conn.commit()
@@ -285,7 +287,8 @@ def invalidate() -> None:
 def matrix(conn: sqlite3.Connection, model_name: str) -> tuple[np.ndarray, np.ndarray]:
     """回傳 (ids, 向量矩陣)。圖庫有變動時自動重新載入。"""
     sig = conn.execute(
-        "SELECT COUNT(*), COALESCE(MAX(id), 0) FROM images WHERE status = 'ok' AND clip IS NOT NULL AND clip_model = ?",
+        "SELECT COUNT(*), COALESCE(MAX(i.id), 0) FROM image_vectors v JOIN images i ON i.id = v.image_id "
+        "WHERE v.kind = 'clip' AND i.status = 'ok' AND v.model = ?",
         (model_name,),
     ).fetchone()
     key = (model_name, sig[0], sig[1])
@@ -294,7 +297,8 @@ def matrix(conn: sqlite3.Connection, model_name: str) -> tuple[np.ndarray, np.nd
             return _index["ids"], _index["mat"]
     ids, vecs = [], []
     for row in conn.execute(
-        "SELECT id, clip FROM images WHERE status = 'ok' AND clip IS NOT NULL AND clip_model = ?", (model_name,)
+        "SELECT v.image_id AS id, v.vec AS clip FROM image_vectors v JOIN images i ON i.id = v.image_id "
+        "WHERE v.kind = 'clip' AND i.status = 'ok' AND v.model = ?", (model_name,)
     ):
         ids.append(row["id"])
         vecs.append(np.frombuffer(row["clip"], dtype=np.float32))
@@ -336,6 +340,7 @@ def is_multilingual(name: str, cfg: Config | None = None) -> bool:
 
 def remove_index(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE images SET clip = NULL, clip_model = NULL")
+    conn.execute("DELETE FROM image_vectors WHERE kind = 'clip'")
     conn.commit()
     invalidate()
 

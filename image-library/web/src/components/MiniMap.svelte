@@ -29,5 +29,5 @@
 <div class="map" bind:this={el} style:height="{height}px"></div>
 
 <style>
-  .map { width: 100%; border-radius: 12px; overflow: hidden; z-index: 0; }
+  .map { width: 100%; border-radius: var(--corner-medium); overflow: hidden; z-index: 0; }
 </style>

@@ -1,4 +1,5 @@
 <script>
+  import { slider } from "../lib/slider.js";
   import Loading from "../components/Loading.svelte";
   import BackButton from "../components/BackButton.svelte";
   import Icon from "../components/Icon.svelte";
@@ -64,7 +65,7 @@
   </div>
   {#if data?.computed_at}
     <p class="muted small">上次比對：{data.computed_at.slice(0, 16).replace("T", " ")}。藍框是建議保留的（星等、最愛、RAW、解析度優先），點照片可切換保留；按右下角的放大鏡看大圖。</p>
-    <div class="chips tabs">
+    <div class="chips tabs" use:slider>
       <button class="chip" class:on={tab === "similar"} onclick={() => (tab = "similar")}>幾乎一樣（{data.total_similar}）</button>
       <button class="chip" class:on={tab === "exact"} onclick={() => (tab = "exact")}>完全相同的檔案（{data.total_exact}）</button>
     </div>
@@ -109,20 +110,20 @@
 
 <style>
   .tabs { margin: 8px 0 18px; }
-  .group { background: var(--bg-2); border-radius: 16px; padding: 12px; margin-bottom: 14px; }
+  .group { background: var(--surface-container); border-radius: var(--corner-large); padding: 12px; margin-bottom: 14px; }
   .items { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
   .item { position: relative; width: 180px; flex-shrink: 0; }
-  .pic { border: 3px solid transparent; border-radius: 12px; padding: 0; background: none; cursor: pointer; display: block; position: relative; width: 100%; }
+  .pic { border: 3px solid transparent; border-radius: var(--corner-medium); padding: 0; background: none; cursor: pointer; display: block; position: relative; width: 100%; }
   .item.kept .pic { border-color: var(--primary); }
-  .pic img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 9px; display: block; }
-  .keep { position: absolute; left: 6px; top: 6px; display: flex; align-items: center; gap: 2px; background: var(--primary); color: var(--on-primary); border-radius: 999px; padding: 1px 8px 1px 2px; font-size: 12px; font-weight: 600; }
+  .pic img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--corner-medium); display: block; }
+  .keep { position: absolute; left: 6px; top: 6px; display: flex; align-items: center; gap: 2px; background: var(--primary); color: var(--on-primary); border-radius: var(--corner-full); padding: 1px 8px 1px 2px; font-size: 12px; font-weight: 500; }
   .zoom { position: absolute; right: 8px; top: 150px; border: 0; border-radius: 50%; width: 28px; height: 28px; background: rgba(0,0,0,.5); cursor: pointer; }
   .info { display: flex; flex-direction: column; font-size: 12px; margin-top: 4px; min-width: 0; }
   .info b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .info span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .info span { color: var(--on-surface-variant); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .stars { display: flex; align-items: center; gap: 2px; }
   .stars :global(svg) { color: #f5c518; }
   .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-  .empty :global(svg) { color: var(--muted); margin: 0 auto; }
+  .empty :global(svg) { color: var(--on-surface-variant); margin: 0 auto; }
   @media (max-width: 760px) { .item { width: 140px; } .zoom { top: 110px; } }
 </style>

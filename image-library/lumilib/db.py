@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 12  # v12：大圖庫用的索引（資料夾來源、時間軸、品質）
+SCHEMA_VERSION = 13  # v13：AI 向量搬到獨立的表、全文索引（FTS5）、資料夾自訂封面
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -136,7 +137,95 @@ CREATE TABLE IF NOT EXISTS album_items (
     added_at TEXT NOT NULL,
     PRIMARY KEY (album_id, image_id)
 );
+
+-- v13：AI 向量（描述文字的語意向量 text、圖像搜尋 clip）獨立存放。
+-- 放在 images 表裡時，每一次「掃一遍全部照片」的查詢都會連這些大資料一起讀，百萬張時會很慢。
+CREATE TABLE IF NOT EXISTS image_vectors (
+    image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    model TEXT,
+    vec BLOB NOT NULL,
+    PRIMARY KEY (image_id, kind)
+) WITHOUT ROWID;
+
+-- v13：資料夾自訂封面（path 空字串＝資料夾來源本身）
+CREATE TABLE IF NOT EXISTS folder_covers (
+    root_id INTEGER NOT NULL REFERENCES roots(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+    PRIMARY KEY (root_id, path)
+);
 """
+
+# v13：全文索引。中文、日文、韓文逐字＋兩字一組，其他文字依單字（可前綴比對）；
+# 由觸發器自動和 images.search_text 同步（fts_tokens 是在 connect() 註冊的 Python 函式）。
+FTS = """
+CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(tokens, tokenize = 'unicode61 remove_diacritics 2');
+CREATE TRIGGER IF NOT EXISTS images_fts_ins AFTER INSERT ON images BEGIN
+    INSERT INTO search_fts(rowid, tokens) VALUES (new.id, fts_tokens(new.search_text));
+END;
+CREATE TRIGGER IF NOT EXISTS images_fts_upd AFTER UPDATE OF search_text ON images BEGIN
+    DELETE FROM search_fts WHERE rowid = old.id;
+    INSERT INTO search_fts(rowid, tokens) VALUES (new.id, fts_tokens(new.search_text));
+END;
+CREATE TRIGGER IF NOT EXISTS images_fts_del AFTER DELETE ON images BEGIN
+    DELETE FROM search_fts WHERE rowid = old.id;
+END;
+-- 分析結果或檔案變了（模型欄位被清空）時，舊的向量一起刪掉
+CREATE TRIGGER IF NOT EXISTS images_vec_text_reset AFTER UPDATE OF embed_model ON images WHEN new.embed_model IS NULL BEGIN
+    DELETE FROM image_vectors WHERE image_id = new.id AND kind = 'text';
+END;
+CREATE TRIGGER IF NOT EXISTS images_vec_clip_reset AFTER UPDATE OF clip_model ON images WHEN new.clip_model IS NULL BEGIN
+    DELETE FROM image_vectors WHERE image_id = new.id AND kind = 'clip';
+END;
+"""
+
+_CJK = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]+")
+_WORD = re.compile(r"[^\W_]+")
+
+
+def fts_tokens(text: str | None) -> str:
+    """全文索引用的詞：中日韓文字拆成單字與兩字一組（「海邊」→ 海 邊 海邊），其他保留原文交給 unicode61 斷詞。"""
+    text = (text or "").lower()
+    out: list[str] = []
+    pos = 0
+    for m in _CJK.finditer(text):
+        out.append(text[pos:m.start()])
+        run = m.group()
+        out.extend(run)
+        out.extend(run[i:i + 2] for i in range(len(run) - 1))
+        pos = m.end()
+    out.append(text[pos:])
+    return " ".join(x.strip() for x in out if x.strip())
+
+
+def fts_query(term: str) -> str | None:
+    """搜尋詞 → FTS5 查詢式；做不到和原本「子字串比對」一樣的結果時回傳 None（改用 LIKE）。"""
+    t = (term or "").lower().strip()
+    if not t:
+        return None
+    exprs: list[str] = []
+    pos = 0
+    pieces: list[tuple[bool, str]] = []
+    for m in _CJK.finditer(t):
+        pieces.append((False, t[pos:m.start()]))
+        pieces.append((True, m.group()))
+        pos = m.end()
+    pieces.append((False, t[pos:]))
+    for cjk, piece in pieces:
+        if cjk:
+            toks = [piece] if len(piece) == 1 else [piece[i:i + 2] for i in range(len(piece) - 1)]
+            exprs += [f'"{x}"' for x in toks]
+        else:
+            words = _WORD.findall(piece)
+            if not words:
+                continue
+            # 含數字的詞（檔名、型號，例如 0012、x-t5）常常從中間開始比對，交給 LIKE
+            if any(ch.isdigit() for w in words for ch in w):
+                return None
+            exprs.append('"' + " ".join(words) + '"*')
+    return "(" + " AND ".join(exprs) + ")" if exprs else None
+
 
 # v2 新增欄位：(名稱, 型別定義)
 V2_COLUMNS = [
@@ -252,6 +341,26 @@ def _migrate(conn: sqlite3.Connection) -> None:
             )
 
 
+def _migrate_v13(conn: sqlite3.Connection) -> None:
+    """向量搬到 image_vectors、建立全文索引。四萬張約數秒，只在升級時做一次。"""
+    conn.execute(
+        "INSERT OR REPLACE INTO image_vectors (image_id, kind, model, vec) "
+        "SELECT id, 'text', embed_model, embedding FROM images WHERE embedding IS NOT NULL")
+    conn.execute(
+        "INSERT OR REPLACE INTO image_vectors (image_id, kind, model, vec) "
+        "SELECT id, 'clip', clip_model, clip FROM images WHERE clip IS NOT NULL")
+    conn.execute("UPDATE images SET embedding = NULL WHERE embedding IS NOT NULL")
+    conn.execute("UPDATE images SET clip = NULL WHERE clip IS NOT NULL")
+    # 沒有向量的就不算建立過，之後會重新建立
+    conn.execute("UPDATE images SET embed_model = NULL WHERE embed_model IS NOT NULL AND id NOT IN "
+                 "(SELECT image_id FROM image_vectors WHERE kind = 'text')")
+    conn.execute("UPDATE images SET clip_model = NULL WHERE clip_model IS NOT NULL AND id NOT IN "
+                 "(SELECT image_id FROM image_vectors WHERE kind = 'clip')")
+    conn.executescript(FTS)
+    conn.execute("DELETE FROM search_fts")
+    conn.execute("INSERT INTO search_fts(rowid, tokens) SELECT id, fts_tokens(search_text) FROM images")
+
+
 def local_iso(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp).replace(microsecond=0).isoformat()
 
@@ -262,6 +371,7 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
         db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.create_function("fts_tokens", 1, fts_tokens, deterministic=True)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
@@ -269,6 +379,8 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     if version < SCHEMA_VERSION:
         conn.executescript(SCHEMA)
         _migrate(conn)
+        if version < 13:
+            _migrate_v13(conn)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
     return conn
@@ -515,8 +627,10 @@ def update_album(conn: sqlite3.Connection, album_id: int, name=None, description
     if description is not None:
         conn.execute("UPDATE albums SET description = ? WHERE id = ?", (description, album_id))
     if cover_id is not None:
-        conn.execute("UPDATE albums SET cover_id = ? WHERE id = ?", (int(cover_id), album_id))
-    conn.execute("UPDATE albums SET updated_at = ? WHERE id = ?", (now_iso(), album_id))
+        # 0 或空字串＝改回自動（最新的照片）；只換封面不改變相簿的排列順序
+        conn.execute("UPDATE albums SET cover_id = ? WHERE id = ?", (int(cover_id) or None, album_id))
+    if name is not None or description is not None:
+        conn.execute("UPDATE albums SET updated_at = ? WHERE id = ?", (now_iso(), album_id))
     conn.commit()
 
 

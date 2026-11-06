@@ -538,7 +538,7 @@
   }
   .top .icon-btn { color: #fff; text-decoration: none; }
   .count { font-size: 13px; opacity: .7; margin-left: 4px; }
-  .raw-tag { margin-left: 8px; font-size: 10px; line-height: 16px; font-weight: 600; letter-spacing: .06em; border: 1px solid rgb(255 255 255 / .5); border-radius: 4px; padding: 0 5px; opacity: .85; }
+  .raw-tag { margin-left: 8px; font-size: 10px; line-height: 16px; font-weight: 500; letter-spacing: .06em; border: 1px solid rgb(255 255 255 / .5); border-radius: var(--corner-extra-small); padding: 0 5px; opacity: .85; }
   .spacer { flex: 1; }
   .hidden { opacity: 0; pointer-events: none; }
   .stage {
@@ -555,7 +555,7 @@
   video { width: 100%; height: 100%; background: #000; }
   .notice {
     position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.7);
-    padding: 10px 16px; border-radius: 12px; display: flex; gap: 12px; align-items: center; font-size: 14px;
+    padding: 10px 16px; border-radius: var(--corner-medium); display: flex; gap: 12px; align-items: center; font-size: 14px;
   }
   .nav {
     position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; border: 0; cursor: pointer;
@@ -567,11 +567,11 @@
   .nav.right { right: 16px; }
   .top .icon-btn.active { background: rgba(255, 255, 255, .2); }
   .zoom-panel {
-    position: absolute; top: 72px; right: 16px; z-index: 4; width: 176px; padding: 8px; border-radius: 12px;
-    background: rgba(20, 20, 24, .82); backdrop-filter: blur(8px); color: #fff; display: flex; flex-direction: column; gap: 6px;
-    box-shadow: 0 6px 24px rgba(0, 0, 0, .35); cursor: default;
+    position: absolute; top: 72px; right: 16px; z-index: 4; width: 176px; padding: 8px; border-radius: var(--corner-medium);
+    background: rgb(20 20 24 / .88); color: #fff; display: flex; flex-direction: column; gap: 6px;
+    border: 1px solid rgb(255 255 255 / .12); cursor: default;
   }
-  .znav { position: relative; flex-shrink: 0; align-self: center; overflow: hidden; border-radius: 4px; cursor: crosshair; touch-action: none; }
+  .znav { position: relative; flex-shrink: 0; align-self: center; overflow: hidden; border-radius: var(--corner-extra-small); cursor: crosshair; touch-action: none; }
   .znav img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: .55; pointer-events: none; }
   .znav .view { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); pointer-events: none; }
   .zrow { display: flex; align-items: center; gap: 4px; }
@@ -583,7 +583,7 @@
   @media (max-width: 760px) { .zoom-panel { display: none; } }
   .rate-bar {
     position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center;
-    gap: 2px; background: rgba(0,0,0,.55); border-radius: 999px; padding: 4px 10px; transition: opacity .2s;
+    gap: 2px; background: rgba(0,0,0,.55); border-radius: var(--corner-full); padding: 4px 10px; transition: opacity .2s;
   }
   .rate-bar button { border: 0; background: none; color: rgba(255,255,255,.75); cursor: pointer; padding: 4px; display: flex; }
   .rate-bar .star.on { color: #f5c518; }
@@ -593,24 +593,24 @@
   .rate-bar .label.on { opacity: 1; box-shadow: 0 0 0 2px #fff; }
   .stack-strip {
     position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center;
-    gap: 6px; background: rgba(0,0,0,.6); border-radius: 14px; padding: 6px 10px; max-width: 92%; overflow-x: auto;
+    gap: 6px; background: rgba(0,0,0,.6); border-radius: var(--corner-medium); padding: 6px 10px; max-width: 92%; overflow-x: auto;
   }
   .stack-title { display: flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; margin-right: 4px; }
-  .member { position: relative; border: 2px solid transparent; border-radius: 8px; padding: 0; background: none; cursor: pointer; flex-shrink: 0; }
+  .member { position: relative; border: 2px solid transparent; border-radius: var(--corner-small); padding: 0; background: none; cursor: pointer; flex-shrink: 0; }
   .member.current { border-color: #fff; }
-  .member img { width: 52px; height: 52px; object-fit: cover; border-radius: 6px; display: block; }
+  .member img { width: 52px; height: 52px; object-fit: cover; border-radius: var(--corner-small); display: block; }
   .member span { position: absolute; left: 2px; bottom: 2px; font-size: 9px; background: rgba(0,0,0,.6); color: #fff; padding: 0 3px; border-radius: 3px; }
   .btn.dark { color: #fff; border-color: rgba(255,255,255,.4); }
   .menu-wrap { position: relative; }
   .menu {
-    position: absolute; right: 0; top: 44px; background: var(--panel); color: var(--text); border-radius: 14px;
-    box-shadow: var(--shadow); padding: 6px; min-width: 220px; display: flex; flex-direction: column; z-index: 5;
+    position: absolute; right: 0; top: 44px; background: var(--surface-container); color: var(--on-surface); border-radius: var(--corner-large);
+    border: 1px solid var(--outline-variant); padding: 6px; min-width: 220px; display: flex; flex-direction: column; z-index: 5;
   }
   .menu button, .menu a {
     display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 0; background: none;
-    border-radius: 10px; cursor: pointer; text-align: left; color: inherit; text-decoration: none; font-size: 14px;
+    border-radius: var(--corner-medium); cursor: pointer; text-align: left; color: inherit; text-decoration: none; font-size: 14px;
   }
-  .menu button:hover, .menu a:hover { background: var(--bg-2); }
+  .menu button:hover, .menu a:hover { background: var(--surface-container); }
   .side { height: 100%; animation: side-in .32s cubic-bezier(.2,0,0,1); }
   @keyframes side-in { from { transform: translateX(24px); opacity: 0; } }
   @media (max-width: 900px) {

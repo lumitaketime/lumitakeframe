@@ -53,8 +53,8 @@
 <style>
   .pill {
     position: fixed; transform: translate(-50%, -6px); z-index: 25; pointer-events: none;
-    background: var(--text); color: var(--bg); border-radius: 999px; padding: 6px 16px; font-size: 14px; font-weight: 600;
-    box-shadow: var(--shadow); opacity: 0; transition: opacity .25s, transform .25s; white-space: nowrap;
+    background: var(--on-surface); color: var(--surface); border-radius: var(--corner-full); padding: 6px 16px; font-size: 14px; font-weight: 500;
+    opacity: 0; transition: opacity .25s, transform .25s; white-space: nowrap;
   }
   .pill.show { opacity: .92; transform: translate(-50%, 0); }
   @media (prefers-reduced-motion: reduce) { .pill { transition: none; } }

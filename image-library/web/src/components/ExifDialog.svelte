@@ -1,4 +1,5 @@
 <script>
+  import { slider } from "../lib/slider.js";
   /**
    * EXIF 編輯器：一張或多張照片的檔名、拍攝時間、相機、鏡頭、地點、標題說明、作者版權。
    * 選取的照片值不同時顯示「多個值」，只寫入有改的欄位；套用前先預覽「從什麼改成什麼」，之後可以復原。
@@ -221,7 +222,7 @@
 
       <section>
         <h3>拍攝時間</h3>
-        <div class="seg" role="radiogroup" aria-label="拍攝時間">
+        <div class="seg" role="radiogroup" aria-label="拍攝時間" use:slider>
           {#each [["keep", "不改"], ["set", "設定為"], ["shift", "整批平移"]] as [v, label] (v)}
             <button role="radio" aria-checked={timeMode === v} class:on={timeMode === v} onclick={() => (timeMode = v)}>{label}</button>
           {/each}
@@ -276,7 +277,7 @@
 
       <section>
         <h3>地點</h3>
-        <div class="seg" role="radiogroup" aria-label="地點">
+        <div class="seg" role="radiogroup" aria-label="地點" use:slider>
           {#each [["keep", "不改"], ["set", "指定位置"], ["remove", "移除 GPS"]] as [v, label] (v)}
             <button role="radio" aria-checked={gpsMode === v} class:on={gpsMode === v} onclick={() => (gpsMode = v)}>{label}</button>
           {/each}
