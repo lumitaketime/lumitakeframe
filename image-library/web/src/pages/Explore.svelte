@@ -24,25 +24,25 @@
   {:else}
     {#if data.people?.length}
       <h2 class="section-title"><a href="/people" use:link class="more">人物 →</a></h2>
-      <ExpandGrid min={104} total={data.people.length}>
-        {#each data.people as p (p.id)}
-          <a class="person" href={`/people/${p.id}`} use:link>
-            <img src={`/api/faces/${p.cover_face_id}/thumb`} alt="" loading="lazy" />
-            <span>{p.name || "未命名"}</span>
-          </a>
-        {/each}
+      <ExpandGrid min={104} items={data.people} key={(p) => p.id}>
+        {#snippet item(p)}
+        <a class="person" href={`/people/${p.id}`} use:link>
+          <img src={`/api/faces/${p.cover_face_id}/thumb`} alt="" loading="lazy" />
+          <span>{p.name || "未命名"}</span>
+        </a>
+        {/snippet}
       </ExpandGrid>
     {/if}
 
     {#if data.tags.length}
       <h2 class="section-title">事物</h2>
-      <ExpandGrid min={156} total={data.tags.length}>
-        {#each data.tags as t (t.value)}
-          <button class="tile" onclick={() => go(`tag:${q(t.value)}`)}>
-            <img src={thumbUrl({ id: t.cover })} alt="" loading="lazy" />
-            <span>{t.value}</span>
-          </button>
-        {/each}
+      <ExpandGrid min={156} items={data.tags} key={(t) => t.value}>
+        {#snippet item(t)}
+        <button class="tile" onclick={() => go(`tag:${q(t.value)}`)}>
+          <img src={thumbUrl({ id: t.cover })} alt="" loading="lazy" />
+          <span>{t.value}</span>
+        </button>
+        {/snippet}
       </ExpandGrid>
     {:else}
       <div class="empty small">
@@ -53,24 +53,24 @@
 
     {#if data.scenes.length}
       <h2 class="section-title">場景</h2>
-      <ExpandGrid min={156} total={data.scenes.length}>
-        {#each data.scenes as s (s.value)}
-          <button class="tile" onclick={() => go(`"${s.value}"`)}>
-            <img src={thumbUrl({ id: s.cover })} alt="" loading="lazy" /><span>{s.value}</span>
-          </button>
-        {/each}
+      <ExpandGrid min={156} items={data.scenes} key={(s) => s.value}>
+        {#snippet item(s)}
+        <button class="tile" onclick={() => go(`"${s.value}"`)}>
+          <img src={thumbUrl({ id: s.cover })} alt="" loading="lazy" /><span>{s.value}</span>
+        </button>
+        {/snippet}
       </ExpandGrid>
     {/if}
 
     {#if data.places?.length || data.gps}
       <h2 class="section-title">地點</h2>
       {#if data.places?.length}
-        <ExpandGrid min={156} total={data.places.length}>
-          {#each data.places as p (p.value)}
-            <button class="tile" onclick={() => go(`place:${q(p.value)}`)}>
-              <img src={thumbUrl({ id: p.cover })} alt="" loading="lazy" /><span>{p.value}<small>{p.count.toLocaleString()}</small></span>
-            </button>
-          {/each}
+        <ExpandGrid min={156} items={data.places} key={(p) => p.value}>
+          {#snippet item(p)}
+          <button class="tile" onclick={() => go(`place:${q(p.value)}`)}>
+            <img src={thumbUrl({ id: p.cover })} alt="" loading="lazy" /><span>{p.value}<small>{p.count.toLocaleString()}</small></span>
+          </button>
+          {/snippet}
         </ExpandGrid>
       {/if}
       {#if data.gps}<a class="map-link" href="/map" use:link>在地圖上瀏覽 {data.gps.toLocaleString()} 個有 GPS 的項目 →</a>{/if}
@@ -78,12 +78,12 @@
 
     {#if data.years.length}
       <h2 class="section-title">年份</h2>
-      <ExpandGrid min={156} total={data.years.length}>
-        {#each data.years as y (y.value)}
-          <button class="tile" onclick={() => go(`year:${y.value}`)}>
-            <img src={thumbUrl({ id: y.cover })} alt="" loading="lazy" /><span>{y.value}<small>{y.count.toLocaleString()}</small></span>
-          </button>
-        {/each}
+      <ExpandGrid min={156} items={data.years} key={(y) => y.value}>
+        {#snippet item(y)}
+        <button class="tile" onclick={() => go(`year:${y.value}`)}>
+          <img src={thumbUrl({ id: y.cover })} alt="" loading="lazy" /><span>{y.value}<small>{y.count.toLocaleString()}</small></span>
+        </button>
+        {/snippet}
       </ExpandGrid>
     {/if}
 
