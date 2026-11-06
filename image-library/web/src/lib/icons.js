@@ -21,7 +21,7 @@ export {
   mdiWhiteBalanceSunny, mdiThemeLightDark, mdiCalendarOutline, mdiFileOutline, mdiImageRemoveOutline,
   mdiMagnifyPlusOutline, mdiMagnifyMinusOutline, mdiAlbum, mdiStarFourPoints, mdiServerNetwork, mdiLockOutline,
   mdiCheckboxMarkedCircle, mdiCheckboxBlankCircleOutline, mdiPlayCircle, mdiArrowUp, mdiFolderHome,
-  mdiAccountBoxOutline, mdiAccountArrowRightOutline, mdiAccountMultiplePlusOutline, mdiAccountRemoveOutline, mdiEyeOffOutline, mdiEyeOutline,
+  mdiAccountBoxOutline, mdiAccountArrowRightOutline, mdiFullscreen, mdiFullscreenExit, mdiAccountMultiplePlusOutline, mdiAccountRemoveOutline, mdiEyeOffOutline, mdiEyeOutline,
   mdiFaceRecognition, mdiTranslate, mdiImageSearchOutline, mdiViewDashboardOutline, mdiDatabaseOutline, mdiBroom,
   mdiPound, mdiBlur, mdiBrightness6, mdiCellphoneScreenshot, mdiFileExportOutline, mdiToolboxOutline, mdiCheckAll, mdiChartBoxOutline,
   mdiArrowRight, mdiFileDocumentEditOutline, mdiInformationVariantCircleOutline, mdiAlertOutline, mdiCheckCircleOutline, mdiPinOutline, mdiPinOffOutline, mdiFilterVariant, mdiSort, mdiViewGridOutline, mdiCheckBold, mdiLinkVariant, mdiDragVariant, mdiSortDescending, mdiPaw, mdiDog, mdiCat, mdiMenuOpen,

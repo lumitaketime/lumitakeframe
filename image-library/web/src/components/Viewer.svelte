@@ -12,6 +12,7 @@
     mdiArrowLeft, mdiChevronLeft, mdiChevronRight, mdiDeleteOutline, mdiDotsVertical, mdiDownload, mdiFolderOpenOutline,
     mdiHeart, mdiHeartOutline, mdiInformationOutline, mdiImageAlbum, mdiFolderMoveOutline, mdiCreation, mdiContentCopy,
     mdiMagnifyPlusOutline, mdiMagnifyMinusOutline, mdiStar, mdiStarOutline, mdiFlagRemove, mdiLayers, mdiFileDocumentEditOutline,
+    mdiFullscreen, mdiFullscreenExit,
   } from "../lib/icons.js";
 
   let detail = $state(null);
@@ -22,6 +23,72 @@
   let ty = $state(0);
   let loaded = $state(false);
   let chrome = $state(true);
+  // ---- 工具列自動隱藏：滑鼠 5 秒沒動、進入全螢幕、只用鍵盤左右切換時收起；滑鼠一動就出現 ----
+  let idleHidden = $state(false);
+  let overChrome = false; // 滑鼠停在工具列上時不收
+  let idleTimer = 0;
+  const show = $derived(chrome && !idleHidden);
+  function wake() {
+    idleHidden = false;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      // 滑鼠停在工具列、評分列、選單上時不收（直接看指標底下是什麼，工具列剛出現時也準）
+      const under = lastMove.x >= 0 && document.elementFromPoint(lastMove.x, lastMove.y);
+      const onChrome = overChrome || under?.closest?.(".top, .rate-bar, .stack-strip, .menu, .zoom-panel, .nav");
+      if (onChrome || menu || zoomOpen) wake();
+      else idleHidden = true;
+    }, 5000);
+  }
+  function hideNow() {
+    clearTimeout(idleTimer);
+    if (!menu && !zoomOpen) idleHidden = true;
+  }
+  let lastMove = { x: -1, y: -1 };
+  function onMouseMove(e) {
+    if (e.pointerType === "touch") return;
+    // 有些瀏覽器在畫面變動時會送出位置沒變的 mousemove，不算
+    if (e.clientX === lastMove.x && e.clientY === lastMove.y) return;
+    lastMove = { x: e.clientX, y: e.clientY };
+    wake();
+  }
+
+  // ---- 全螢幕：Mac App 用系統的全螢幕（整個視窗獨立一個空間），瀏覽器用網頁全螢幕 ----
+  let fullscreen = $state(false);
+  let enteredFs = false;
+  let rootEl = $state();
+  const winFull = () => Math.abs(innerWidth - screen.width) < 2 && Math.abs(innerHeight - screen.height) < 2;
+  function syncFs() {
+    const now = !!(document.fullscreenElement || document.webkitFullscreenElement) || (isMacApp && winFull());
+    if (now && !fullscreen) hideNow(); // 一進入全螢幕就收起工具列
+    fullscreen = now;
+  }
+  function toggleFullscreen() {
+    if (isMacApp) {
+      enteredFs = !fullscreen;
+      location.href = "lumitake://fullscreen"; // 由 App 攔截，切換視窗全螢幕
+      return;
+    }
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+    } else {
+      const req = rootEl?.requestFullscreen || rootEl?.webkitRequestFullscreen;
+      req?.call(rootEl);
+      enteredFs = true;
+    }
+  }
+  const canFullscreen = typeof document !== "undefined" && (isMacApp || document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  $effect(() => {
+    document.addEventListener("fullscreenchange", syncFs);
+    document.addEventListener("webkitfullscreenchange", syncFs);
+    window.addEventListener("resize", syncFs);
+    wake();
+    return () => {
+      clearTimeout(idleTimer);
+      document.removeEventListener("fullscreenchange", syncFs);
+      document.removeEventListener("webkitfullscreenchange", syncFs);
+      window.removeEventListener("resize", syncFs);
+    };
+  });
   let pushed = false;
   let editingExif = $state(false);
   // 開關動畫：opening＝照片從縮圖長出來；closing＝縮回縮圖
@@ -121,6 +188,11 @@
 
   async function close() {
     if (phase === "closing") return;
+    if (enteredFs && fullscreen) {
+      enteredFs = false;
+      if (isMacApp) location.href = "lumitake://fullscreen";
+      else (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+    }
     await heroOut();
     if (pushed) {
       pushed = false;
@@ -218,8 +290,8 @@
     if ((e.key === "+" || e.key === "=") && !isVideo) return setZoom(zoom * 1.25);
     if ((e.key === "-" || e.key === "_") && !isVideo) return setZoom(zoom / 1.25);
     if (e.key === "Escape") close();
-    else if (e.key === "ArrowRight") go(1);
-    else if (e.key === "ArrowLeft") go(-1);
+    else if (e.key === "ArrowRight") { go(1); hideNow(); }
+    else if (e.key === "ArrowLeft") { go(-1); hideNow(); }
     else if (e.key === "i") toggleInfo();
     else if (e.key === "f") toggleFav();
     else if (e.key === "Delete" || e.key === "Backspace") remove();
@@ -362,9 +434,10 @@
 
 <svelte:window onkeydown={onkey} onpopstate={onpop} />
 
-<div class="viewer" class:opening={phase === "opening"} class:closing={phase === "closing"} role="dialog" aria-modal="true" aria-label="檢視">
+<div class="viewer" class:opening={phase === "opening"} class:closing={phase === "closing"} class:idle={!show} role="dialog" aria-modal="true" aria-label="檢視" tabindex="-1"
+  bind:this={rootEl} onpointermove={onMouseMove} onpointerdown={(e) => e.pointerType !== "touch" && wake()}>
   <div class="stage-wrap">
-    <div class="top" class:hidden={!chrome}>
+    <div class="top" class:hidden={!show} role="toolbar" tabindex="-1" onpointerenter={() => (overChrome = true)} onpointerleave={() => (overChrome = false)}>
       <button class="icon-btn" onclick={close} aria-label="返回"><Icon path={mdiArrowLeft} /></button>
       <span class="count">{viewer.index + 1} / {viewer.list.length}</span>
       {#if item?.raw}<span class="raw-tag" title="RAW 檔">RAW</span>{/if}
@@ -377,6 +450,11 @@
       <button class="icon-btn" onclick={toggleFav} aria-label="我的最愛" disabled={!detail}>
         <Icon path={detail?.favorite ? mdiHeart : mdiHeartOutline} />
       </button>
+      {#if canFullscreen}
+        <button class="icon-btn desktop" onclick={toggleFullscreen} aria-label={fullscreen ? "離開全螢幕" : "全螢幕"} title={fullscreen ? "離開全螢幕" : "全螢幕"}>
+          <Icon path={fullscreen ? mdiFullscreenExit : mdiFullscreen} />
+        </button>
+      {/if}
       <button class="icon-btn" class:active={showInfo} onclick={toggleInfo} aria-label="資訊"><Icon path={mdiInformationOutline} /></button>
       {#if !isMacApp}
         <a class="icon-btn desktop" href={item ? originalUrl(item, true) : "#"} aria-label="下載原檔" title="下載原檔"><Icon path={mdiDownload} /></a>
@@ -471,7 +549,7 @@
         </div>
       {/if}
       {#if detail && !isVideo && app.server?.ui?.viewer_rating_bar !== 0}
-        <div class="rate-bar" class:hidden={!chrome}>
+        <div class="rate-bar" class:hidden={!show}>
           <button class="reject" class:on={detail.rating === -1} title="拒絕（X）" onclick={() => setXmp({ rating: detail.rating === -1 ? 0 : -1 })}>
             <Icon path={mdiFlagRemove} size={20} />
           </button>
@@ -487,7 +565,7 @@
         </div>
       {/if}
       {#if detail?.stack?.length > 1}
-        <div class="stack-strip" class:hidden={!chrome}>
+        <div class="stack-strip" class:hidden={!show}>
           <span class="stack-title"><Icon path={mdiLayers} size={16} />疊放 {detail.stack.length} 張</span>
           {#each detail.stack as m (m.id)}
             <button class="member" class:current={m.id === detail.id} onclick={() => showMember(m)} title={m.name}>
@@ -500,10 +578,10 @@
         </div>
       {/if}
       {#if viewer.index > 0}
-        <button class="nav left" class:hidden={!chrome} onclick={() => go(-1)} aria-label="上一張"><Icon path={mdiChevronLeft} size={32} /></button>
+        <button class="nav left" class:hidden={!show} onclick={() => go(-1)} aria-label="上一張"><Icon path={mdiChevronLeft} size={32} /></button>
       {/if}
       {#if viewer.index < viewer.list.length - 1}
-        <button class="nav right" class:hidden={!chrome} onclick={() => go(1)} aria-label="下一張"><Icon path={mdiChevronRight} size={32} /></button>
+        <button class="nav right" class:hidden={!show} onclick={() => go(1)} aria-label="下一張"><Icon path={mdiChevronRight} size={32} /></button>
       {/if}
     </div>
   </div>
@@ -531,12 +609,19 @@
   .viewer.opening .top, .viewer.closing .top, .viewer.closing .nav, .viewer.closing .side { opacity: 0; transition: opacity .15s; }
   .viewer .top { transition: opacity .2s; }
   .stage-wrap { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  /* 工具列自己一條，照片從它下面開始：不在照片上加任何漸層或遮罩 */
+  /* 照片滿版，工具列浮在上面；只在左上、右上按鈕後面有一點點淡淡的暗角，讓白色圖示在亮的天空上也看得到。
+     工具列收起時暗角一起消失，照片上不留任何東西 */
   .top {
-    position: relative; flex-shrink: 0; z-index: 3; display: flex; align-items: center; gap: 2px;
+    position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 2px;
     padding: max(8px, env(safe-area-inset-top)) 8px 8px; background: none;
-    transition: opacity .2s;
+    transition: opacity .25s;
   }
+  .top::before, .top::after {
+    content: ""; position: absolute; top: 0; height: 96px; pointer-events: none; z-index: -1;
+  }
+  .top::before { left: 0; width: 260px; background: radial-gradient(farthest-side at 0 0, rgb(0 0 0 / .32), transparent); }
+  .top::after { right: 0; width: 380px; background: radial-gradient(farthest-side at 100% 0, rgb(0 0 0 / .32), transparent); }
+  .viewer.idle { cursor: none; }
   .top .icon-btn { color: #fff; text-decoration: none; }
   .count { font-size: 14px; opacity: .7; margin-left: 4px; }
   .raw-tag { margin-left: 8px; font-size: 10px; line-height: 16px; font-weight: 500; letter-spacing: .06em; border: 1px solid rgb(255 255 255 / .5); border-radius: var(--corner-extra-small); padding: 0 5px; opacity: .85; }

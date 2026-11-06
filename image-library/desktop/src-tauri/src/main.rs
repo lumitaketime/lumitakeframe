@@ -275,11 +275,28 @@ fn main() {
         .manage(Server(Mutex::new(None)))
         .setup(|app| {
             let handle = app.handle().clone();
+            let fs_handle = handle.clone();
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Lumitake Library")
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(380.0, 560.0)
                 .user_agent(USER_AGENT)
+                // 看圖的「全螢幕」按鈕：網頁要求前往 lumitake://fullscreen 時，改成切換視窗的系統全螢幕
+                .on_navigation(move |url| {
+                    if url.scheme() == "lumitake" {
+                        if url.host_str() == Some("fullscreen") {
+                            let h = fs_handle.clone();
+                            thread::spawn(move || {
+                                if let Some(w) = h.get_webview_window("main") {
+                                    let on = w.is_fullscreen().unwrap_or(false);
+                                    let _ = w.set_fullscreen(!on);
+                                }
+                            });
+                        }
+                        return false;
+                    }
+                    true
+                })
                 .build()?;
 
             let starter = handle.clone();
