@@ -207,3 +207,72 @@ class FaceCoverTests(unittest.TestCase):
             self.assertEqual(c.post("/api/petid/1", json={"cover_id": 12}).status_code, 400)
             c.post("/api/petid/1", json={"cover_id": 21})
             self.assertEqual(c.get("/api/petid/1").json()["cover"], 21)
+
+
+class PeopleCorrectionTests(unittest.TestCase):
+    def setUp(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib.config import load_config
+        from lumilib.server import create_app
+
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "p").mkdir()
+        self.cfg = load_config(tmp / "home")
+        conn = db.connect(self.cfg.db_path)
+        root = db.add_root(conn, tmp / "p")["id"]
+        self.imgs = [_add(conn, root, f"{n}.jpg", n) for n in "abc"]
+        now = db.now_iso()
+        conn.execute("INSERT INTO persons (id, name, created_at, updated_at) VALUES (1, '小明', ?, ?)", (now, now))
+        conn.execute("INSERT INTO persons (id, name, created_at, updated_at) VALUES (2, '小華', ?, ?)", (now, now))
+        for fid, img in zip((10, 11, 12), self.imgs):
+            conn.execute("INSERT INTO faces (id, image_id, person_id, score, embedding, model, created_at) VALUES (?, ?, 1, .9, x'00', 'm', ?)",
+                         (fid, img, now))
+        conn.commit()
+        conn.close()
+        self.client = TestClient(create_app(self.cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8765", client=("127.0.0.1", 1))
+        self.client.__enter__()
+
+    def tearDown(self):
+        self.client.__exit__(None, None, None)
+
+    def names(self, q):
+        return {r["name"] for r in self.client.get("/api/search", params={"q": q}).json()["results"]}
+
+    def test_move_split_and_undo(self):
+        c = self.client
+        a, b, _ = self.imgs
+        res = c.post("/api/people/1/move", json={"ids": [a], "to": 2}).json()
+        self.assertEqual((res["person_id"], res["moved"]), (2, 1))
+        self.assertEqual(self.names("小華"), {"a.jpg"})  # 搜尋名字跟著更新
+        conn = db.connect(self.cfg.db_path)
+        self.assertEqual(tuple(conn.execute("SELECT person_id, manual FROM faces WHERE id = 10").fetchone()), (2, 1))
+        conn.close()
+        split = c.post("/api/people/1/move", json={"ids": [b], "name": "阿傑"}).json()
+        self.assertEqual(self.names("阿傑"), {"b.jpg"})
+        c.post("/api/people/move/undo", json={"undo": split["undo"]})
+        self.assertEqual(self.names("阿傑"), set())
+        self.assertNotIn("阿傑", [p["name"] for p in c.get("/api/people", params={"all": 1}).json()])  # 拆出來的空人物也刪掉
+        c.post("/api/people/move/undo", json={"undo": res["undo"]})
+        self.assertEqual(self.names("小明"), {"a.jpg", "b.jpg", "c.jpg"})
+        self.assertEqual(c.post("/api/people/move/undo", json={"undo": res["undo"]}).status_code, 410)
+
+    def test_manual_fixes_survive_recluster(self):
+        from lumilib.faces import merge_persons, recluster
+
+        conn = db.connect(self.cfg.db_path)
+        now = db.now_iso()
+        # 兩個未命名的人物：一個被合併、一個被隱藏
+        conn.execute("INSERT INTO persons (id, created_at, updated_at) VALUES (3, ?, ?)", (now, now))
+        conn.execute("INSERT INTO persons (id, hidden, created_at, updated_at) VALUES (4, 1, ?, ?)", (now, now))
+        conn.execute("UPDATE faces SET person_id = 3 WHERE id = 10")
+        conn.execute("UPDATE faces SET person_id = 4 WHERE id = 11")
+        conn.execute("INSERT INTO persons (id, created_at, updated_at) VALUES (5, ?, ?)", (now, now))
+        conn.execute("UPDATE faces SET person_id = 5 WHERE id = 12")
+        conn.commit()
+        merge_persons(conn, 3, [5])
+        recluster(conn, self.cfg)
+        rows = dict(conn.execute("SELECT id, person_id FROM faces").fetchall())
+        self.assertEqual((rows[10], rows[12]), (3, 3))  # 合併的結果保留
+        self.assertEqual(rows[11], 4)  # 隱藏的人物保留
+        conn.close()

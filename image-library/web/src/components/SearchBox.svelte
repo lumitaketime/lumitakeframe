@@ -299,7 +299,7 @@
   .scope > span { font-size: 12px; color: var(--on-surface-variant); margin-right: 4px; }
   .scope .chip { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .divider { height: 1px; background: var(--outline-variant); margin: 4px 0; }
-  .people { display: flex; gap: 12px; padding: 12px 20px 4px; overflow-x: auto; }
+  .people { display: flex; gap: 12px; padding: 12px 20px 4px; overflow-x: auto; overscroll-behavior-x: contain; }
   .person { border: 0; background: none; padding: 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 72px; flex-shrink: 0; color: var(--on-surface); }
   .person span { font-size: 12px; max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .all { display: flex; align-items: center; gap: 8px; margin: 8px 20px 0; border: 0; background: none; color: var(--primary); font-size: 14px; font-weight: 500; cursor: pointer; padding: 8px 0; }

@@ -38,6 +38,8 @@
   import { drag, unpin } from "./lib/pin.svelte.js";
   import { undoLast, undoable } from "./lib/undo.svelte.js";
   import { fadeThrough } from "./lib/motion.js";
+  // 設定的各分類是同一頁的不同區塊：換分類不重建整頁（避免閃一下、狀態卡重新載入）
+  const routeKey = $derived(route.path.startsWith("/settings") ? "/settings" : route.path);
   import { rubberBand, installShake } from "./lib/alive.js";
   import {
     mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
@@ -388,7 +390,7 @@
 
     <main class="scroll-area" use:rubberBand>
       <div class="load-bar" class:on={app.busy} aria-hidden="true"><span></span></div>
-      {#key route.path}
+      {#key routeKey}
         <div class="route" in:fadeThrough>
         {#if page === "" || page === "welcome"}
           <Timeline />
@@ -515,7 +517,7 @@
   .nav-group.drop { outline: 2px dashed var(--outline); outline-offset: -2px; background: color-mix(in srgb, var(--primary) 6%, transparent); padding-bottom: 6px;
     transition: background-color var(--spring-effects-fast-duration) var(--spring-effects-fast), outline-color var(--spring-effects-fast-duration) var(--spring-effects-fast); }
   .nav-group.over { outline-color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent); }
-  .drop-hint { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 13px; color: var(--primary); }
+  .drop-hint { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 14px; color: var(--primary); }
   .drag-ghost {
     position: fixed; z-index: 400; pointer-events: none; transform: translate(-50%, -130%); display: flex; align-items: center; gap: 8px;
     padding: 10px 16px; border-radius: var(--corner-full); background: var(--inverse-surface); color: var(--inverse-on-surface);
@@ -526,7 +528,7 @@
   .drop-float {
     position: fixed; z-index: 390; left: 12px; top: 50%; transform: translateY(-50%); width: 132px; padding: 24px 12px; text-align: center;
     display: flex; flex-direction: column; align-items: center; gap: 8px; border-radius: var(--corner-extra-large);
-    border: 2px dashed var(--outline); background: var(--surface-container-high); color: var(--on-surface-variant); font-size: 13px;
+    border: 2px dashed var(--outline); background: var(--surface-container-high); color: var(--on-surface-variant); font-size: 14px;
     animation: m3-enter var(--duration-medium2) var(--easing-emphasized-decelerate);
   }
   .drop-float.over { border-color: var(--primary); color: var(--primary); background: var(--primary-container); }
@@ -606,7 +608,7 @@
   .shell.mode-phone .bottom a:active { background: color-mix(in srgb, var(--on-surface) 10%, transparent); }
   @media (max-width: 600px) {
     .topbar { gap: 4px; padding: 0 4px; padding-top: env(safe-area-inset-top); }
-    .brand span { font-size: 18px; }
+    .brand span { font-size: 16px; }
     main { margin: 0; border-radius: var(--corner-large) var(--corner-large) 0 0; }
   }
   @media (max-width: 420px) { .brand span { display: none; } }

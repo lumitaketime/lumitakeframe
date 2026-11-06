@@ -194,7 +194,7 @@
 <style>
   .reasons { background: var(--surface-container); border-radius: var(--corner-large); padding: 12px 16px; margin: 6px 0 14px; }
   .reasons ul { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
-  .reasons li { display: flex; gap: 12px; font-size: 13px; }
+  .reasons li { display: flex; gap: 12px; font-size: 14px; }
   .reasons .n { flex-shrink: 0; width: 72px; font-weight: 500; color: var(--error); font-variant-numeric: tabular-nums; }
   .reasons .why { word-break: break-all; color: var(--on-surface-variant); }
   .reasons .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -206,7 +206,7 @@
   .scope-bar b { color: var(--on-surface); font-weight: 500; }
   .status-pill {
     display: inline-flex; align-items: center; gap: 12px; height: 48px; padding: 0 24px 0 16px; margin: 0 0 12px;
-    border-radius: var(--corner-full); background: var(--secondary-container); color: var(--on-secondary-container); font-size: 15px;
+    border-radius: var(--corner-full); background: var(--secondary-container); color: var(--on-secondary-container); font-size: 16px;
     animation: m3-enter var(--duration-medium2) var(--easing-emphasized-decelerate);
   }
   .status-pill.done { padding-left: 24px; }
@@ -217,7 +217,7 @@
   .help table { border-collapse: collapse; width: 100%; max-width: 760px; font-size: 14px; }
   .help td { padding: 8px 10px; border-bottom: 1px solid var(--outline-variant); vertical-align: top; }
   .help td:first-child { white-space: nowrap; }
-  code { background: var(--surface-container); padding: 2px 6px; border-radius: var(--corner-small); font-size: 13px; }
+  code { background: var(--surface-container); padding: 2px 6px; border-radius: var(--corner-small); font-size: 14px; }
   .center { text-align: center; margin: 20px; }
   @media (max-width: 760px) { .help td:first-child { white-space: normal; } }
 </style>

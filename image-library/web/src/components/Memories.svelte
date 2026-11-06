@@ -1,4 +1,5 @@
 <script>
+  import { hscroll } from "../lib/hscroll.js";
   import { api, thumbUrl } from "../lib/api.js";
   import { app, openViewer } from "../lib/state.svelte.js";
 
@@ -10,14 +11,14 @@
 </script>
 
 {#if items.length}
-  <section class="memories" aria-label="那年今日">
+  <div class="hs"><section class="memories" aria-label="那年今日" use:hscroll>
     {#each items as m (m.year)}
       <button class="card" onclick={() => openViewer(m.assets, 0)}>
         <img src={thumbUrl(m.assets[0])} alt="" loading="lazy" />
         <span class="label"><b>{m.years_ago} 年前</b><small>{m.year} · {m.count} 張</small></span>
       </button>
     {/each}
-  </section>
+  </section></div>
 {/if}
 
 <style>

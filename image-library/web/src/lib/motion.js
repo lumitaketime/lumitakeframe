@@ -7,13 +7,13 @@ const reduced = () => typeof window !== "undefined" && window.matchMedia?.("(pre
 const decel = (t) => 1 - Math.pow(1 - t, 4);
 const accel = (t) => t * t * t;
 
-/** 淡出再淡入（換頁）：新內容在舊內容淡出 90ms 後，用 210ms 淡入並微微放大 */
-export function fadeThrough(node, { delay = 90, duration = 210 } = {}) {
-  if (reduced()) return { duration: 80, css: (t) => `opacity:${t}` };
-  return {
-    delay, duration, easing: decel,
-    css: (t) => `opacity:${t}; transform: scale(${0.98 + 0.02 * t})`,
-  };
+/**
+ * 換頁：新頁面直接出現並快速淡入（從半透明開始，不從全透明開始），不延遲、不縮放。
+ * 以前先等 90ms、從 0 開始淡入又整頁縮放：換頁時會有一段空白，固定位置的元件（日期標籤、捲動軸）也會跟著跳。
+ */
+export function fadeThrough(node, { duration = 160 } = {}) {
+  if (reduced()) return { duration: 0 };
+  return { duration, easing: decel, css: (t) => `opacity:${0.4 + 0.6 * t}` };
 }
 
 /** 浮層進場：由上方或錨點長出（emphasized-decelerate、400ms） */

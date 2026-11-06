@@ -981,6 +981,37 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    @app.post("/api/people/{person_id:int}/move")
+    def move_person_images(person_id: int, body: dict = Body(...)):
+        """選取的照片移到另一個人物（to），或拆成新人物（name，可以是空字串＝未命名）。可以復原。"""
+        from .faces import move_images
+
+        c = conn()
+        try:
+            to = body.get("to")
+            name = body.get("name")
+            try:
+                res = move_images(c, person_id, [int(i) for i in body.get("ids") or []][:MAX_IDS],
+                                  to_person=int(to) if to else None, new_name=str(name) if name is not None else None)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc))
+            return {"person_id": res["person_id"], "moved": res["moved"],
+                    "undo": keep_undo("move", res["snapshot"]) if res["snapshot"] else None}
+        finally:
+            c.close()
+
+    @app.post("/api/people/move/undo")
+    def undo_person_move(body: dict = Body(...)):
+        from .faces import undo_move
+
+        snap = take_undo("move", body.get("undo"))
+        c = conn()
+        try:
+            undo_move(c, snap)
+            return {"ok": True}
+        finally:
+            c.close()
+
     @app.post("/api/people/{person_id:int}/remove")
     def remove_from_person(person_id: int, body: dict = Body(...)):
         from .faces import remove_images_from_person

@@ -238,8 +238,8 @@
   .plan li + li { border-top: 1px solid var(--outline-variant); }
   .plan li.off { color: var(--on-surface-variant); }
   .plan .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .plan b { font-weight: 500; font-size: 15px; }
-  .plan .grow span { font-size: 13px; color: var(--on-surface-variant); }
+  .plan b { font-weight: 500; font-size: 16px; }
+  .plan .grow span { font-size: 14px; color: var(--on-surface-variant); }
   .ic { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--surface-container-highest); flex-shrink: 0; }
   .ic.raw { background: var(--tertiary-container); color: var(--on-tertiary-container); }
   .ic.jpg { background: var(--secondary-container); color: var(--on-secondary-container); }
@@ -261,7 +261,7 @@
   .grow-in { flex: 1; min-width: 200px; }
   .short { max-width: 160px; }
   .mini { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--on-surface-variant); flex: 1; min-width: 140px; }
-  .dest { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-container-highest); border-radius: var(--corner-small); padding: 6px 10px; font-size: 13px; min-width: 0; flex: 1; }
+  .dest { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-container-highest); border-radius: var(--corner-small); padding: 6px 10px; font-size: 14px; min-width: 0; flex: 1; }
   .dest span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .more {
     display: flex; align-items: center; gap: 12px; border: 0; background: none; color: var(--on-surface); cursor: pointer;

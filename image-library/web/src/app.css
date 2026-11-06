@@ -106,7 +106,7 @@ img { -webkit-user-drag: none; }
 .btn.text { background: transparent; color: var(--primary); padding: 0 12px; box-shadow: none; }
 .btn.danger { background: var(--error); color: var(--on-error); }
 .btn.ghost.danger-text, .btn.text.danger-text { color: var(--error); }
-.btn.small { height: 32px; padding: 0 16px; font-size: 13px; gap: 6px; }
+.btn.small { height: 32px; padding: 0 16px; font-size: 14px; gap: 6px; }
 
 /* ---- 圖示按鈕 ---- */
 .icon-btn {
@@ -255,7 +255,7 @@ input[type="range"]:disabled { opacity: .38; cursor: default; }
 
 /* ---- 卡片（Filled card） ---- */
 .card { background: var(--surface-container-low); border-radius: var(--corner-large); padding: 20px 24px; margin-bottom: 16px; }
-.card h2 { font-size: 18px; line-height: 24px; font-weight: 500; margin: 0 0 8px; }
+.card h2 { font-size: 22px; line-height: 28px; font-weight: 400; margin: 0 0 8px; }
 
 /* ---- 卡片、封面 ---- */
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 24px 16px; }
@@ -328,3 +328,26 @@ input[type="range"]:disabled { opacity: .38; cursor: default; }
 .has-slider > :not(.slider-ind) { position: relative; z-index: 1; }
 .has-slider.slider-pill > :is(.on, .active, [aria-selected="true"], [aria-checked="true"], [aria-current="page"]) { background-color: transparent !important; }
 .has-slider.slider-underline > :is(.on, .active, [aria-selected="true"], [aria-current="page"]) { border-bottom-color: transparent !important; }
+
+/* ---- 橫向捲動列（lib/hscroll.js） ---- */
+.hs { position: relative; }
+[data-hscroll] {
+  overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+[data-hscroll] > * { scroll-snap-align: start; }
+.hs-nav {
+  position: absolute; top: calc(50% - 24px); z-index: 2; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--outline-variant);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
+  background: var(--surface-container-high); color: var(--on-surface);
+  opacity: 0; pointer-events: none; transform: scale(.8);
+  transition: opacity var(--duration-short4, .2s) var(--easing-standard, ease),
+    transform var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
+}
+.hs-nav.prev { left: -8px; }
+.hs-nav.next { right: -8px; }
+.hs-nav:hover { background: var(--surface-container-highest); }
+/* 只有用滑鼠（可以 hover）時才顯示；觸控和觸控板直接滑就好 */
+@media (hover: hover) and (pointer: fine) {
+  .hs:hover.can-prev .hs-nav.prev, .hs:hover.can-next .hs-nav.next { opacity: 1; pointer-events: auto; transform: none; }
+}

@@ -342,8 +342,8 @@
 <style>
   .info { width: 360px; background: var(--surface-container-low); color: var(--on-surface); height: 100%; overflow-y: auto; flex-shrink: 0; }
   header { display: flex; align-items: center; gap: 4px; padding: 8px; position: sticky; top: 0; background: var(--surface-container-low); z-index: 2; }
-  h3 { margin: 0; font-size: 17px; font-weight: 500; }
-  h4 { margin: 22px 0 10px; font-size: 13px; color: var(--on-surface-variant); font-weight: 500; letter-spacing: .03em; }
+  h3 { margin: 0; font-size: 16px; font-weight: 500; }
+  h4 { margin: 22px 0 10px; font-size: 14px; color: var(--on-surface-variant); font-weight: 500; letter-spacing: .03em; }
   .pad { padding: 0 18px 28px; }
   .desc { margin: 0 0 12px; line-height: 1.65; }
   .tr { margin: -4px 0 12px; }
@@ -399,7 +399,7 @@
   .item > div { color: var(--on-surface); display: flex; flex-direction: column; gap: 2px; }
   .min { min-width: 0; flex: 1; }
   .break { word-break: break-all; }
-  .exp { font-size: 13px; margin-top: 2px; }
+  .exp { font-size: 14px; margin-top: 2px; }
   .btns { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
   .path {
     border: 0; background: none; padding: 0; text-align: left; cursor: copy; color: var(--on-surface);

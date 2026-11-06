@@ -89,7 +89,7 @@
     max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: fit-content;
     background: var(--surface); padding: 1px 6px; border-radius: var(--corner-extra-small);
   }
-  .name { font-size: 13px; font-weight: 500; }
+  .name { font-size: 14px; font-weight: 500; }
   .val { font-size: 12px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
   .tip {
     position: absolute; z-index: 3; pointer-events: none; transform: translate(12px, 12px); display: flex; flex-direction: column; gap: 2px;
@@ -97,7 +97,7 @@
     font-size: 12px; line-height: 16px; white-space: nowrap; max-width: 280px;
   }
   .tip.flip { transform: translate(calc(-100% - 12px), 12px); }
-  .tip b { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+  .tip b { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
   .tip .muted { color: inherit; opacity: .8; }
   @media (max-width: 760px) { .treemap { height: 260px; } }
 </style>

@@ -61,22 +61,42 @@ export function rubberBand(node, opts = {}) {
     });
   }
 
+  let bumpUntil = 0;
+  function bump(dir) {
+    // 一般滑鼠的滾輪一格就是一大段：只輕輕頂一下（一次），不要每一格都拉開又彈回
+    const now = Date.now();
+    if (now < bumpUntil) return;
+    bumpUntil = now + 700;
+    anims.forEach((a) => a.cancel());
+    anims = targets().map((el) =>
+      el.animate([{ translate: "0 0" }, { translate: `0 ${dir * 14}px` }, { translate: "0 0" }], { duration: 420, easing: "cubic-bezier(.3, .7, .4, 1)" }));
+  }
+
   function onWheel(e) {
-    if (reduce() || e.ctrlKey || e.metaKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) || !e.deltaY) return;
-    if (innerCanScroll(e.target, node, e.deltaY)) return;
+    if (reduce() || e.ctrlKey || e.metaKey || !e.deltaY || Math.abs(e.deltaX) * 2 > Math.abs(e.deltaY)) return;
+    if (innerCanScroll(e.target, node, e.deltaY) || e.target.closest?.("[data-hscroll]")) return;
     const up = e.deltaY < 0;
     if ((up && !atTop()) || (!up && !atBottom())) {
       if (pull) release();
+      raw = 0;
       return;
     }
     // 滾輪一格的量依裝置不同（行／頁），統一換成像素
     const px = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * node.clientHeight : e.deltaY;
+    if (e.deltaMode !== 0 || Math.abs(px) >= 60) {
+      bump(up ? 1 : -1);
+      return;
+    }
     raw = Math.max(-MAX * 6, Math.min(MAX * 6, raw - px * 0.5));
     if ((up && raw < 0) || (!up && raw > 0)) raw = 0;
-    pull = resist(raw);
-    apply();
     clearTimeout(idle);
     idle = setTimeout(release, 110);
+    // 前面一小段不動（死區），輕輕碰到邊緣不會晃
+    const DEAD = 16;
+    const eff = Math.abs(raw) <= DEAD ? 0 : raw - Math.sign(raw) * DEAD;
+    if (!eff && !pull) return;
+    pull = resist(eff);
+    apply();
   }
 
   function onTouchStart(e) {

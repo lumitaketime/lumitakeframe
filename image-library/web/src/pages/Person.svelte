@@ -181,7 +181,7 @@
   .avatar-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
   .avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: var(--surface-container); flex-shrink: 0; }
   .name-input {
-    font-size: 20px; font-weight: 500; color: var(--on-surface); background: none; border: 0; border-bottom: 2px solid var(--outline-variant);
+    font-size: 22px; font-weight: 500; color: var(--on-surface); background: none; border: 0; border-bottom: 2px solid var(--outline-variant);
     padding: 6px 2px; min-width: 0; width: min(320px, 60vw); outline: none;
   }
   .name-input::placeholder { color: var(--on-surface-variant); font-weight: 400; }
@@ -192,7 +192,7 @@
   .pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px 50px; }
   .pill {
     display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--outline-variant); background: none; color: var(--on-surface);
-    border-radius: var(--corner-full); padding: 5px 14px; font-size: 13px; cursor: pointer;
+    border-radius: var(--corner-full); padding: 5px 14px; font-size: 14px; cursor: pointer;
   }
   .pill.on { background: var(--secondary-container); color: var(--primary); border-color: transparent; font-weight: 500; }
   .pill.add { color: var(--on-surface-variant); }

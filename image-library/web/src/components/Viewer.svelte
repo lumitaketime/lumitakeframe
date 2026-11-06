@@ -537,7 +537,7 @@
     transition: opacity .2s;
   }
   .top .icon-btn { color: #fff; text-decoration: none; }
-  .count { font-size: 13px; opacity: .7; margin-left: 4px; }
+  .count { font-size: 14px; opacity: .7; margin-left: 4px; }
   .raw-tag { margin-left: 8px; font-size: 10px; line-height: 16px; font-weight: 500; letter-spacing: .06em; border: 1px solid rgb(255 255 255 / .5); border-radius: var(--corner-extra-small); padding: 0 5px; opacity: .85; }
   .spacer { flex: 1; }
   .hidden { opacity: 0; pointer-events: none; }

@@ -125,7 +125,7 @@
   .txt { grid-column: 2 / 4; min-width: 0; display: flex; flex-direction: column; }
   /* 窄的時候換行（最多兩行），不要把數字截掉 */
   .txt b, .txt span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; word-break: keep-all; overflow-wrap: anywhere; }
-  .txt b { font-weight: 500; font-size: 15px; line-height: 20px; }
+  .txt b { font-weight: 500; font-size: 16px; line-height: 20px; }
   .txt span { font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
   .st.warn .txt span { color: inherit; opacity: .85; }
   /* M3 線性進度條 */

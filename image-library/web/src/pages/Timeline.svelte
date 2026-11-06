@@ -86,12 +86,13 @@
     });
     ready = true;
     await tick();
-    for (const b of buckets) if (b.stale) loadBucket(b, true);
+    // 不要一次重新載入所有看過的月份（四萬張時一次幾十個請求，畫面會頓、會跳）：
+    // 重新觀察後，畫面附近的會立刻更新，其他的捲到時再更新；在那之前先顯示舊的內容
     observeAll();
   }
 
   async function loadBucket(b, force = false) {
-    if (b.loading || (b.assets && !force)) return;
+    if (b.loading || (b.assets && !force && !b.stale)) return;
     b.loading = true;
     const el = root?.querySelector(`[data-month="${b.month}"]`);
     const before = el?.offsetHeight || 0;
@@ -245,7 +246,7 @@
   .spacer { flex: 1; }
   .timeline { display: flex; min-height: 100%; }
   .content { flex: 1; min-width: 0; padding: 0 12px 100px 24px; }
-  .month-title { font-size: 20px; font-weight: 500; margin: 22px 0 4px; }
+  .month-title { font-size: 22px; font-weight: 500; margin: 22px 0 4px; }
   .days { display: flex; flex-wrap: wrap; column-gap: 12px; }
   @media (max-width: 639px) { .days { column-gap: 2px; } }
   .day { margin-bottom: 12px; min-width: 0; }
@@ -260,7 +261,7 @@
 
   @media (max-width: 760px) {
     .content { padding: 0 4px 100px; }
-    .month-title { font-size: 17px; margin: 16px 6px 2px; }
-    .day-head { padding: 0 6px; height: 34px; font-size: 13px; }
+    .month-title { font-size: 16px; margin: 16px 6px 2px; }
+    .day-head { padding: 0 6px; height: 34px; font-size: 14px; }
   }
 </style>

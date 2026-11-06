@@ -24,5 +24,5 @@
   .st-title { display: flex; align-items: center; gap: 10px; }
   .info { width: 32px; height: 32px; color: var(--on-surface-variant); margin-left: -2px; }
   .info.on { color: var(--primary); }
-  .st-desc { margin: -4px 0 12px; font-size: 13px; line-height: 20px; color: var(--on-surface-variant); max-width: 68ch; }
+  .st-desc { margin: -4px 0 12px; font-size: 14px; line-height: 20px; color: var(--on-surface-variant); max-width: 68ch; }
 </style>

@@ -7,6 +7,15 @@
   let { asset, width, height, selected = false, selecting = false, onopen, onselect } = $props();
   let failed = $state(false);
   let loaded = $state(false);
+  let instant = $state(false);
+
+  // 已經在瀏覽器快取裡的縮圖（例如捲回來時重新建立的列）直接顯示，不要再淡入一次（看起來會閃）
+  function cached(img) {
+    if (img.complete && img.naturalWidth) {
+      instant = true;
+      loaded = true;
+    }
+  }
   let pressTimer;
   let pressed = false;
 
@@ -57,7 +66,7 @@
   {#if failed}
     <div class="fallback"><Icon path={mdiImageRemoveOutline} size={28} /></div>
   {:else}
-    <img src={thumbUrl(asset)} alt="" loading="lazy" decoding="async" draggable="false" class:loaded
+    <img src={thumbUrl(asset)} alt="" loading="lazy" decoding="async" draggable="false" class:loaded class:instant use:cached
       onload={() => (loaded = true)} onerror={() => (failed = true)} />
   {/if}
   <div class="shade"></div>
@@ -103,6 +112,7 @@
       border-radius var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
   }
   img.loaded { opacity: 1; }
+  img.instant { transition-property: transform, border-radius; } /* 只是不淡入；選取時的縮放動畫照舊 */
   /* 載入中：和縮圖同形狀的圓角色塊一閃一閃；每一列依它在頁面上的高度延後一點，看起來像一波一波由上往下閃（--wave 由 Grid 算好） */
   .thumb.loading { background: none; }
   .thumb.loading::before {

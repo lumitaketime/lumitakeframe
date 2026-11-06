@@ -49,9 +49,9 @@
   .dot:hover { opacity: .7; }
   .dot.on { opacity: 1; box-shadow: 0 0 0 2px var(--surface-container-low), 0 0 0 4px var(--c); }
   .seg { border: 1px solid var(--outline); border-radius: var(--corner-full); overflow: hidden; gap: 0; }
-  .seg button { border: 0; background: none; color: var(--on-surface); padding: 0 14px; height: 32px; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .seg button { border: 0; background: none; color: var(--on-surface); padding: 0 14px; height: 32px; font-size: 14px; font-weight: 500; cursor: pointer; }
   .seg button + button { border-left: 1px solid var(--outline); }
   .seg button.on { background: var(--secondary-container); color: var(--on-secondary-container); }
-  .clear { display: flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--primary); border-radius: var(--corner-full); padding: 0 12px; height: 32px; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .clear { display: flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--primary); border-radius: var(--corner-full); padding: 0 12px; height: 32px; font-size: 14px; font-weight: 500; cursor: pointer; }
   .clear:hover { background: color-mix(in srgb, var(--primary) 8%, transparent); }
 </style>

@@ -286,7 +286,7 @@
   .dots span.on { background: var(--primary); }
   .hero { display: flex; justify-content: center; margin: 8px 0 4px; }
   h1 { font-size: 24px; text-align: center; margin: 8px 0; text-wrap: balance; }
-  h2 { display: flex; align-items: center; gap: 10px; font-size: 20px; margin: 6px 0 10px; }
+  h2 { display: flex; align-items: center; gap: 10px; font-size: 22px; margin: 6px 0 10px; }
   .lead { color: var(--on-surface-variant); line-height: 1.6; margin: 0 0 14px; }
   .plan, .howto { margin: 0 0 8px; padding-left: 22px; display: flex; flex-direction: column; gap: 12px; }
   .plan li, .howto li { padding-left: 4px; }
@@ -305,7 +305,7 @@
   .alt { margin-top: 12px; }
   .alt summary { cursor: pointer; color: var(--on-surface-variant); font-size: 14px; }
   .cmd { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-  .cmd code { flex: 1; background: var(--surface-container); padding: 8px 12px; border-radius: var(--corner-small); font-size: 13px; }
+  .cmd code { flex: 1; background: var(--surface-container); padding: 8px 12px; border-radius: var(--corner-small); font-size: 14px; }
   .status { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
   .small-spin { width: 12px; height: 12px; }
   .picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 6px 0 12px; }
@@ -314,8 +314,8 @@
     background: var(--surface-container); border: 2px solid transparent; border-radius: var(--corner-large); padding: 14px; color: var(--on-surface);
   }
   .pick.on { border-color: var(--primary); }
-  .pick b { font-size: 17px; }
-  .pick .state { margin-top: 6px; font-size: 13px; font-weight: 500; color: var(--primary); }
+  .pick b { font-size: 16px; }
+  .pick .state { margin-top: 6px; font-size: 14px; font-weight: 500; color: var(--primary); }
   .pick:disabled { opacity: .5; cursor: default; }
   .progress { background: var(--surface-container); border-radius: var(--corner-medium); padding: 12px 14px; margin-bottom: 10px; }
   progress { width: 100%; height: 6px; accent-color: var(--primary); }

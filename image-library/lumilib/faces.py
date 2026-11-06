@@ -451,11 +451,13 @@ def refresh_covers(conn: sqlite3.Connection) -> None:
 
 
 def recluster(conn: sqlite3.Connection, cfg: Config, progress=None, stop=None) -> FaceResult:
-    """重新分群：保留已命名的人物與手動指定，其餘重新計算。"""
+    """重新分群：保留已命名、隱藏的人物與所有手動指定，其餘重新計算。"""
     conn.execute(
-        "UPDATE faces SET person_id = NULL WHERE manual = 0 AND person_id IN (SELECT id FROM persons WHERE name IS NULL OR name = '')"
+        "UPDATE faces SET person_id = NULL WHERE manual = 0 AND person_id IN "
+        "(SELECT id FROM persons WHERE (name IS NULL OR name = '') AND hidden = 0)"
     )
-    conn.execute("DELETE FROM persons WHERE (name IS NULL OR name = '') AND id NOT IN (SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL)")
+    conn.execute("DELETE FROM persons WHERE (name IS NULL OR name = '') AND hidden = 0 "
+                 "AND id NOT IN (SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL)")
     return cluster_faces(conn, cfg, progress, stop)
 
 
@@ -533,7 +535,8 @@ def merge_persons(conn: sqlite3.Connection, target: int, sources: list[int]) -> 
         other = conn.execute(f"SELECT name FROM persons WHERE id IN ({marks}) AND name IS NOT NULL AND name != '' LIMIT 1", sources).fetchone()
         if other:
             conn.execute("UPDATE persons SET name = ? WHERE id = ?", (other["name"], target))
-    conn.execute(f"UPDATE faces SET person_id = ? WHERE person_id IN ({marks})", [target, *sources])
+    # 合併是使用者的決定：標為手動，之後「重新分群」不會把它拆回去
+    conn.execute(f"UPDATE faces SET person_id = ?, manual = 1 WHERE person_id IN (?, {marks})", [target, target, *sources])
     conn.execute(f"DELETE FROM persons WHERE id IN ({marks})", sources)
     refresh_covers(conn)
     _refresh_person_images(conn, target)
@@ -571,6 +574,47 @@ def remove_images_from_person(conn: sqlite3.Connection, person_id: int, image_id
     refresh_covers(conn)
     conn.commit()
     return len(rows)
+
+
+def move_images(conn: sqlite3.Connection, person_id: int, image_ids: list[int],
+                to_person: int | None = None, new_name: str | None = None) -> dict:
+    """把這個人物在指定照片裡的臉移到另一個人物，或拆成一個新人物（new_name）。
+    都標為手動，之後自動分群不會改回來。回傳 {person_id, moved, snapshot}（snapshot 用來復原）。"""
+    ids = [int(i) for i in image_ids]
+    if not ids:
+        return {"person_id": to_person, "moved": 0, "snapshot": None}
+    rows = conn.execute(
+        f"SELECT id, image_id, person_id, manual, excluded FROM faces WHERE person_id = ? AND image_id IN ({','.join('?' * len(ids))})",
+        [person_id, *ids],
+    ).fetchall()
+    created = None
+    if new_name is not None:
+        now = db.now_iso()
+        created = to_person = conn.execute("INSERT INTO persons (name, created_at, updated_at) VALUES (?, ?, ?)",
+                                           (new_name.strip() or None, now, now)).lastrowid
+    elif to_person is None or conn.execute("SELECT 1 FROM persons WHERE id = ?", (to_person,)).fetchone() is None:
+        raise ValueError("找不到要移過去的人物")
+    conn.executemany("UPDATE faces SET person_id = ?, manual = 1, excluded = 0 WHERE id = ?", [(to_person, r["id"]) for r in rows])
+    for image_id in {r["image_id"] for r in rows}:
+        db.refresh_search_text(conn, image_id)
+    refresh_covers(conn)
+    conn.commit()
+    snap = {"faces": [(r["id"], r["person_id"], r["manual"], r["excluded"]) for r in rows], "to": to_person, "created": created}
+    return {"person_id": to_person, "moved": len(rows), "snapshot": snap}
+
+
+def undo_move(conn: sqlite3.Connection, snap: dict) -> None:
+    conn.executemany("UPDATE faces SET person_id = ?, manual = ?, excluded = ? WHERE id = ? AND person_id = ?",
+                     [(pid, manual, excluded, fid, snap["to"]) for fid, pid, manual, excluded in snap["faces"]])
+    if snap.get("created"):
+        conn.execute("DELETE FROM persons WHERE id = ? AND id NOT IN (SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL)",
+                     (snap["created"],))
+    for (image_id,) in conn.execute(
+            f"SELECT DISTINCT image_id FROM faces WHERE id IN ({','.join('?' * len(snap['faces'])) or 'NULL'})",
+            [f[0] for f in snap["faces"]]).fetchall():
+        db.refresh_search_text(conn, image_id)
+    refresh_covers(conn)
+    conn.commit()
 
 
 DEFAULT_GROUPS = ["家人", "朋友", "同事", "客戶", "模特兒"]

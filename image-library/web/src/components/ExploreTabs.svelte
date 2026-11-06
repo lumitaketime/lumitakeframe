@@ -25,7 +25,7 @@
 {/if}
 
 <style>
-  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--outline-variant); margin: -4px 0 18px; overflow-x: auto; scrollbar-width: none; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--outline-variant); margin: -4px 0 18px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
   .tabs a {
     padding: 8px 16px 10px; text-decoration: none; color: var(--on-surface-variant); font-weight: 500; white-space: nowrap;
     border-bottom: 2px solid transparent; margin-bottom: -1px;

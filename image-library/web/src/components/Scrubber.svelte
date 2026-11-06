@@ -106,7 +106,7 @@
   }
   .bubble {
     position: absolute; right: 60px; transform: translateY(-50%); background: var(--on-surface); color: var(--surface);
-    border-radius: var(--corner-small); padding: 5px 10px; font-size: 13px; white-space: nowrap; pointer-events: none; z-index: 5;
+    border-radius: var(--corner-small); padding: 5px 10px; font-size: 14px; white-space: nowrap; pointer-events: none; z-index: 5;
     font-variant-numeric: tabular-nums;
   }
   @media (max-width: 760px) {

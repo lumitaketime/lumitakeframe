@@ -377,7 +377,7 @@
 
 <style>
   .loading { display: flex; align-items: center; gap: 10px; color: var(--on-surface-variant); padding: 24px 0; }
-  .where { margin: 0 0 12px; font-size: 13px; color: var(--on-surface-variant); }
+  .where { margin: 0 0 12px; font-size: 14px; color: var(--on-surface-variant); }
   .form { display: flex; flex-direction: column; gap: 4px; color: var(--on-surface); }
   section { display: flex; flex-direction: column; gap: 10px; padding: 14px 0; border-top: 1px solid var(--outline-variant); }
   section:first-child { border-top: 0; padding-top: 0; }
@@ -396,7 +396,7 @@
   .num { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--on-surface-variant); }
   .num .input { width: 72px; min-height: 40px; padding: 8px 10px; }
   .num.wide .input { width: 140px; }
-  .tz .sub { font-size: 13px; color: var(--on-surface-variant); }
+  .tz .sub { font-size: 14px; color: var(--on-surface-variant); }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
   .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .field.span { grid-column: 1 / -1; }
@@ -426,7 +426,7 @@
   .diffs li { padding: 10px 16px; display: flex; flex-direction: column; gap: 4px; }
   .diffs li + li { border-top: 1px solid var(--outline-variant); }
   .fname { font-weight: 500; font-size: 14px; }
-  .d { display: grid; grid-template-columns: 72px minmax(0, 1fr) 16px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 13px; color: var(--on-surface-variant); }
+  .d { display: grid; grid-template-columns: 72px minmax(0, 1fr) 16px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 14px; color: var(--on-surface-variant); }
   .d .from { text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .d .to { color: var(--on-surface); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .foot { margin-right: auto; }

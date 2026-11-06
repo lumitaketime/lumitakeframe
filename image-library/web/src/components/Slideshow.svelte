@@ -124,8 +124,8 @@
   .controls.hidden { opacity: 0; pointer-events: none; }
   .controls button { border: 0; background: none; color: #fff; display: flex; padding: 6px; border-radius: 50%; cursor: pointer; }
   .controls button:hover { background: rgba(255,255,255,.15); }
-  .controls select { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: var(--corner-full); padding: 3px 8px; font-size: 13px; }
+  .controls select { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: var(--corner-full); padding: 3px 8px; font-size: 14px; }
   .controls select option { color: #000; }
-  .count { font-size: 13px; min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; opacity: .8; }
+  .count { font-size: 14px; min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; opacity: .8; }
   @media (prefers-reduced-motion: reduce) { img { transition: none; } }
 </style>

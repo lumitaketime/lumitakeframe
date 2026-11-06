@@ -6,9 +6,11 @@
   import { app, selection } from "../lib/state.svelte.js";
   import { addToAlbum, analyzeAssets, moveAssets, removeFromAlbum, setFavorite, trashAssets } from "../lib/actions.js";
   import { api } from "../lib/api.js";
-  import { toast, refresh } from "../lib/state.svelte.js";
+  import { toast, refresh, showDialog } from "../lib/state.svelte.js";
+  import { navigate } from "../lib/router.svelte.js";
+  import { undoable } from "../lib/undo.svelte.js";
   import {
-    mdiFileExportOutline, mdiFileDocumentEditOutline, mdiPound, mdiClose, mdiHeartOutline, mdiImageAlbum, mdiFolderMoveOutline, mdiCreation, mdiDeleteOutline, mdiImageRemoveOutline, mdiImageOutline, mdiAccountRemoveOutline, mdiStarOutline, mdiStar, mdiFlagRemove, mdiLayers,
+    mdiFileExportOutline, mdiFileDocumentEditOutline, mdiPound, mdiClose, mdiHeartOutline, mdiImageAlbum, mdiFolderMoveOutline, mdiCreation, mdiDeleteOutline, mdiImageRemoveOutline, mdiImageOutline, mdiAccountRemoveOutline, mdiAccountArrowRightOutline, mdiStarOutline, mdiStar, mdiFlagRemove, mdiLayers,
   } from "../lib/icons.js";
   import { LABEL_COLORS, LABEL_KEYS, LABEL_NAMES } from "../lib/format.js";
 
@@ -46,6 +48,20 @@
     toast(`已從這個人物移除 ${ids.length} 張，之後也不會自動歸回`);
     refresh();
     return res;
+  }
+
+  // 移到另一個人物，或拆成新人物（在選擇視窗輸入新名字）；可以復原
+  async function moveToPerson() {
+    const target = await showDialog("person", { exclude: personId, allowNew: true, title: `把 ${ids.length} 張照片中的這個人移到…` });
+    if (!target) return "keep";
+    const body = target.id ? { ids, to: target.id } : { ids, name: target.name };
+    const res = await api(`/api/people/${personId}/move`, { body });
+    const back = personId;
+    undoable(target.id ? `已移到「${target.name || "未命名"}」（${res.moved} 張臉）` : `已拆成新人物「${target.name}」`, async () => {
+      await api("/api/people/move/undo", { body: { undo: res.undo } });
+      navigate(`/people/${back}`, { replace: true });
+    });
+    refresh();
   }
 
   async function run(fn) {
@@ -103,6 +119,7 @@
     <button class="icon-btn" title="設為資料夾封面" aria-label="設為資料夾封面" onclick={() => run(setFolderCover)}><Icon path={mdiImageOutline} /></button>
   {/if}
   {#if personId}
+    <button class="icon-btn" title="移到其他人物，或拆成新人物" aria-label="移到其他人物" onclick={() => run(moveToPerson)}><Icon path={mdiAccountArrowRightOutline} /></button>
     <button class="icon-btn" title="不是這個人" onclick={() => run(notThisPerson)}><Icon path={mdiAccountRemoveOutline} /></button>
   {/if}
   <button class="btn soft small export" onclick={() => (exporting = true)} title="匯出交件（尺寸、浮水印、移除 GPS、重新命名）"><Icon path={mdiFileExportOutline} size={18} />匯出</button>
@@ -144,7 +161,7 @@
   .rate-menu .row { display: flex; gap: 4px; align-items: center; }
   .rate-menu button {
     border: 0; background: var(--surface-container); color: var(--on-surface); border-radius: var(--corner-small); padding: 6px 8px; cursor: pointer;
-    display: flex; align-items: center; gap: 2px; font-size: 13px;
+    display: flex; align-items: center; gap: 2px; font-size: 14px;
   }
   .rate-menu button:hover { background: var(--surface-container-highest); }
   .rate-menu button :global(svg) { color: #f5c518; }

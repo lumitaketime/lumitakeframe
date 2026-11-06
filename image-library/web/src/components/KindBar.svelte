@@ -50,6 +50,6 @@
   .item.on { background: var(--secondary-container); color: var(--on-secondary-container); }
   .sw { width: 12px; height: 12px; border-radius: 3px; grid-row: span 3; align-self: start; margin-top: 4px; }
   .lbl { font-size: 14px; font-weight: 500; }
-  .v { font-size: 13px; font-variant-numeric: tabular-nums; }
+  .v { font-size: 14px; font-variant-numeric: tabular-nums; }
   .n { font-size: 12px; color: var(--on-surface-variant); }
 </style>
