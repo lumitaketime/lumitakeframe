@@ -272,8 +272,6 @@ V2_COLUMNS = [
     ("place_en", "TEXT"),
     ("country", "TEXT"),
     ("label", "TEXT"),
-    ("label_text", "TEXT"),
-    ("xmp_mtime", "REAL"),
     ("stack_id", "INTEGER"),
     ("stack_top", "INTEGER NOT NULL DEFAULT 1"),
     ("phash", "TEXT"),
@@ -308,7 +306,7 @@ CREATE INDEX IF NOT EXISTS idx_images_status_size ON images(status, size);
 META_FIELDS = (
     "width", "height", "taken_at", "tz_offset", "camera", "lens", "lat", "lon", "altitude",
     "orientation", "duration", "fps", "codec", "aperture", "exposure_time", "iso", "focal_length",
-    "focal_35", "rating", "keywords", "title", "caption", "artist", "copyright", "software", "label", "label_text",
+    "focal_35", "rating", "keywords", "title", "caption", "artist", "copyright", "software", "label",
 )
 
 

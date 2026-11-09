@@ -240,30 +240,28 @@
     }
   }
 
-  // ---- 星等、顏色標籤（與 Lightroom 相同的快捷鍵）----
-  async function setXmp(fields) {
+  // ---- 星等、顏色標籤（快捷鍵和 Lightroom 一樣；只存在圖庫裡，不寫入檔案）----
+  async function setMarks(fields) {
     if (!detail) return;
     try {
-      const d = await api(`/api/assets/${detail.id}/xmp`, { body: fields });
+      const d = await api(`/api/assets/${detail.id}/marks`, { body: fields });
       detail = d;
       const cur = viewer.list[viewer.index];
       if (cur) {
         cur.rating = d.rating || 0;
         cur.label = d.label;
       }
-      if (d.written_to === "sidecar") toast("已寫入 Lightroom 的 .xmp", "info", 1500);
-      else if (d.written_to === "embedded") toast("已寫入檔案的 XMP", "info", 1500);
     } catch (e) {
       toast(e.message, "error");
     }
   }
 
   function rate(n) {
-    setXmp({ rating: detail?.rating === n ? 0 : n });
+    setMarks({ rating: detail?.rating === n ? 0 : n });
   }
 
   function labelOf(key) {
-    setXmp({ label: detail?.label === key ? "" : key });
+    setMarks({ label: detail?.label === key ? "" : key });
   }
 
   // ---- 疊放 ----
@@ -281,11 +279,11 @@
   function onkey(e) {
     if (e.target.closest?.("input:not([type=range]), textarea, select")) return;
     if (!e.metaKey && !e.ctrlKey && !e.altKey) {
-      if ("012345".includes(e.key) && e.key.length === 1) return setXmp({ rating: Number(e.key) });
+      if ("012345".includes(e.key) && e.key.length === 1) return setMarks({ rating: Number(e.key) });
       const labelKey = { 6: "red", 7: "yellow", 8: "green", 9: "blue" }[e.key];
       if (labelKey) return labelOf(labelKey);
-      if (e.key === "x") return setXmp({ rating: -1 });
-      if (e.key === "u" && detail?.rating === -1) return setXmp({ rating: 0 });
+      if (e.key === "x") return setMarks({ rating: -1 });
+      if (e.key === "u" && detail?.rating === -1) return setMarks({ rating: 0 });
     }
     if ((e.key === "+" || e.key === "=") && !isVideo) return setZoom(zoom * 1.25);
     if ((e.key === "-" || e.key === "_") && !isVideo) return setZoom(zoom / 1.25);
@@ -550,7 +548,7 @@
       {/if}
       {#if detail && !isVideo && app.server?.ui?.viewer_rating_bar !== 0}
         <div class="rate-bar" class:hidden={!show}>
-          <button class="reject" class:on={detail.rating === -1} title="拒絕（X）" onclick={() => setXmp({ rating: detail.rating === -1 ? 0 : -1 })}>
+          <button class="reject" class:on={detail.rating === -1} title="拒絕（X）" onclick={() => setMarks({ rating: detail.rating === -1 ? 0 : -1 })}>
             <Icon path={mdiFlagRemove} size={20} />
           </button>
           {#each [1, 2, 3, 4, 5] as n (n)}

@@ -65,6 +65,18 @@ def media_kind(path: str | Path) -> tuple[str, bool] | None:
     return None
 
 
+def sidecar_path(path: Path) -> Path | None:
+    """同名的 .xmp 附屬檔（IMG_1.xmp 或 IMG_1.CR3.xmp，不分大小寫），沒有就回傳 None。"""
+    try:
+        names = {p.name.lower(): p for p in path.parent.iterdir()}
+    except OSError:
+        return None
+    for cand in (path.stem + ".xmp", path.name + ".xmp"):
+        if cand.lower() in names:
+            return names[cand.lower()]
+    return None
+
+
 def _bundled_tool_dirs() -> list[Path]:
     """Mac App 內建的工具：LUMILIB_TOOLS 或打包後執行檔旁的 tools/。"""
     dirs = []
@@ -347,10 +359,9 @@ def normalize_exiftool(raw: dict, media_type: str) -> dict:
     meta["rating"] = int(rating) if rating else None
     label_raw = _str(raw.get("Label"))
     if label_raw:
-        from .xmp import normalize_label
+        from .ratings import normalize_label
 
         meta["label"] = normalize_label(label_raw)
-        meta["label_text"] = label_raw
     meta["keywords"] = _keywords(raw)
     meta["title"] = _str(raw.get("Title"))
     meta["caption"] = _str(raw.get("Description")) or _str(raw.get("ImageDescription")) or _str(raw.get("Caption-Abstract"))

@@ -118,7 +118,7 @@
             <span class="ic raw"><Icon path={mdiCameraOutline} size={20} /></span>
             <div class="grow">
               <b>{count(raw)} 張 RAW</b>
-              <span>{o.rawToJpeg ? "轉成 JPEG，依下方設定輸出" : `交付原始檔${info.raw_xmp ? "，連同 Lightroom 的 .xmp" : ""}，不轉檔、不縮圖`}</span>
+              <span>{o.rawToJpeg ? "轉成 JPEG，依下方設定輸出" : "交付原始檔，不轉檔、不縮圖（同名的 .xmp 附屬檔會一起附上）"}</span>
             </div>
             <button class="btn text small" onclick={() => (o.rawToJpeg = !o.rawToJpeg)}>{o.rawToJpeg ? "改回交原檔" : "改成轉 JPEG"}</button>
           </li>

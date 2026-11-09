@@ -73,12 +73,12 @@
     return { update: fit, destroy: () => node.removeEventListener("input", fit) };
   }
 
-  // ---- 我的標籤：直接新增、移除，RAW 會寫入 .xmp ----
+  // ---- 我的標籤：直接新增、移除（只存在圖庫裡）----
   async function setTags(list, message) {
     try {
-      const x = await api(`/api/assets/${detail.id}/xmp`, { body: { keywords: list } });
+      await api(`/api/assets/${detail.id}/marks`, { body: { keywords: list } });
       onchange?.(await api(`/api/assets/${detail.id}`));
-      toast(message + (x.written_to === "sidecar" ? "（已寫入 .xmp）" : x.written_to === "embedded" ? "（已寫入檔案）" : ""));
+      toast(message);
       refresh();
     } catch (e) {
       toast(e.message, "error");
@@ -235,7 +235,7 @@
             <button class="chip add" onclick={() => (addingTag = true)}><Icon path={mdiTagOutline} size={16} />新增標籤</button>
           {/if}
         </div>
-        <p class="muted tiny">和 AI 關鍵字一起被搜尋；RAW 會寫入 .xmp，Lightroom 看得到。</p>
+        <p class="muted tiny">和 AI 關鍵字一起被搜尋；只存在圖庫裡，不會改動檔案。</p>
       </div>
 
       <h4>詳細資料</h4>

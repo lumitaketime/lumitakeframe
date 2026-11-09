@@ -61,10 +61,6 @@ DEFAULTS = {
     "onboarded": 0,
     # 圖庫開著時避免 Mac 閒置睡眠（接電源時），手機才能持續連線
     "keep_awake": 1,
-    # Lightroom 同步：星等、顏色標籤、關鍵字寫回 .xmp（RAW）
-    "xmp_sync": 1,
-    # 也寫入 JPEG／HEIC／TIFF 檔案內嵌的 XMP（會修改原檔）
-    "xmp_embed": 0,
     # RAW+JPEG 與連拍疊放
     "dup_threshold": 6,  # 重複照片的相似度門檻（越小越嚴格）
     "screen_png_rule": 1,  # 沒有相機資訊的 PNG 視為截圖
@@ -133,8 +129,6 @@ class Config:
     grid_style: str = DEFAULTS["grid_style"]
     onboarded: int = DEFAULTS["onboarded"]
     keep_awake: int = DEFAULTS["keep_awake"]
-    xmp_sync: int = DEFAULTS["xmp_sync"]
-    xmp_embed: int = DEFAULTS["xmp_embed"]
     dup_threshold: int = DEFAULTS["dup_threshold"]
     screen_png_rule: int = DEFAULTS["screen_png_rule"]
     large_files_limit: int = DEFAULTS["large_files_limit"]

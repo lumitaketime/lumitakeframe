@@ -110,7 +110,7 @@ def keyword_counts(conn: sqlite3.Connection, source: str = "all", year: str | No
                    limit: int = 300) -> list[dict]:
     """關鍵字雲：依出現在幾張照片排序（同一張照片同一個詞只算一次，不分大小寫）。
 
-    source：all（全部）、ai（AI 關鍵字）、mine（我的關鍵字＋Lightroom）。
+    source：all（全部）、ai（AI 關鍵字）、mine（我的關鍵字＋檔案內原有的關鍵字）。
     """
     cols = {"ai": ["tags"], "mine": ["keywords", "user_tags"]}.get(source, ["tags", "keywords", "user_tags"])
     where = "status = 'ok'"

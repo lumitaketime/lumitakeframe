@@ -483,6 +483,23 @@ class ServerTests(LibraryTestCase):
         kw = self.client.get(f"/api/assets/{ids[0]}").json()["keywords"]
         self.assertEqual(kw, ["交件"])
 
+    def test_marks_library_only(self):
+        """星等、顏色標籤與拒絕（單張與批次）只寫進圖庫，硬碟上的檔案一個位元都不變。"""
+        self.post("/api/jobs", {"kind": "scan"})
+        wait_jobs(self.client)
+        before = {p: p.read_bytes() for p in self.photos.rglob("*") if p.is_file()}
+        ids = [a["id"] for a in self.client.get("/api/search", params={"q": "type:photo"}).json()["results"]]
+        d = self.post(f"/api/assets/{ids[0]}/marks", {"rating": 4, "label": "red"}).json()
+        self.assertEqual((d["rating"], d["label"]), (4, "red"))
+        self.assertNotIn("written_to", d)
+        self.assertEqual(self.post(f"/api/assets/{ids[0]}/marks", {"label": "orange"}).status_code, 400)
+        r = self.post("/api/assets/bulk", {"ids": ids, "action": "rating", "value": -1}).json()
+        self.assertEqual((r["done"], r["errors"]), (len(ids), []))
+        self.assertEqual(self.client.get("/api/search", params={"q": "is:rejected"}).json()["total"], len(ids))
+        after = {p: p.read_bytes() for p in self.photos.rglob("*") if p.is_file()}
+        self.assertEqual(after, before)
+        self.assertIn(self.post(f"/api/assets/{ids[0]}/xmp", {"rating": 5}).status_code, (404, 405))  # 舊的寫回 API 已移除
+
     def test_search_scope(self):
         rid = self.client.get("/api/folders").json()["roots"][0]["id"]
         every = self.client.get("/api/search", params={"q": "type:photo"}).json()

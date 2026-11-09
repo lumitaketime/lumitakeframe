@@ -130,10 +130,9 @@ class _Pending:
 
 
 def _process_batch(conn: sqlite3.Connection, cfg: Config, root: sqlite3.Row, batch: list[_Pending],
-                   result: ScanResult, now: str) -> list[tuple[int, Path]]:
+                   result: ScanResult, now: str) -> None:
     metas = read_metadata_batch([p.path for p in batch])
     set_meta = ", ".join(f"{f} = ?" for f in db.META_FIELDS)
-    touched: list[tuple[int, Path]] = []
     for item in batch:
         meta = metas.get(item.path)
         err = None
@@ -180,19 +179,6 @@ def _process_batch(conn: sqlite3.Connection, cfg: Config, root: sqlite3.Row, bat
             conn.execute("UPDATE images SET error = ? WHERE id = ?", (err, image_id))
             result.errors.append(f"{item.rel}: {err}")
         db.refresh_search_text(conn, image_id)
-        touched.append((image_id, item.path))
-    conn.commit()
-    return touched
-
-
-def _apply_sidecars(conn: sqlite3.Connection, queue: list[tuple[int, Path, float]]) -> None:
-    from .xmp import apply_sidecar, read_sidecars
-
-    infos = read_sidecars([side for _, side, _ in queue])
-    for image_id, side, mtime in queue:
-        info = infos.get(side)
-        if info is not None:
-            apply_sidecar(conn, image_id, info, mtime)
     conn.commit()
 
 
@@ -215,29 +201,6 @@ def scan_root(
     exclude = cfg.home.resolve() if cfg.home.exists() else None
     batch: list[_Pending] = []
     stopped = False
-    dir_names: dict[Path, dict[str, str]] = {}
-    xmp_queue: list[tuple[int, Path, float]] = []
-
-    def queue_sidecar(image_id: int, path: Path, known_mtime) -> None:
-        """有 Lightroom 附屬檔且有變動（或第一次看到）就排入讀取。"""
-        names = dir_names.get(path.parent)
-        if names is None:
-            try:
-                names = {n.lower(): n for n in os.listdir(path.parent)}
-            except OSError:
-                names = {}
-            dir_names[path.parent] = names
-        for cand in (path.stem + ".xmp", path.name + ".xmp"):
-            real = names.get(cand.lower())
-            if real:
-                side = path.parent / real
-                try:
-                    m = side.stat().st_mtime
-                except OSError:
-                    return
-                if known_mtime != m:
-                    xmp_queue.append((image_id, side, m))
-                return
 
     for count, path in enumerate(iter_media_files(root_path, exclude), 1):
         if stop is not None and stop.is_set():
@@ -260,7 +223,6 @@ def scan_root(
                 result.updated += 1
             else:
                 result.unchanged += 1
-            queue_sidecar(row["id"], path, row["xmp_mtime"])
         else:
             try:
                 fp = fingerprint(path, size)
@@ -287,22 +249,15 @@ def scan_root(
                     batch.append(_Pending(path, rel, size, mtime, fp, kind, None))
 
         if len(batch) >= BATCH:
-            for image_id, p in _process_batch(conn, cfg, root, batch, result, now):
-                queue_sidecar(image_id, p, None)
+            _process_batch(conn, cfg, root, batch, result, now)
             batch = []
-        if len(xmp_queue) >= BATCH:
-            _apply_sidecars(conn, xmp_queue)
-            xmp_queue.clear()
         if count % 200 == 0:
             conn.commit()
             if progress:
                 progress(f"{root['name']}：已檢查 {count} 個檔案，新增 {result.added}")
 
     if batch:
-        for image_id, p in _process_batch(conn, cfg, root, batch, result, now):
-            queue_sidecar(image_id, p, None)
-    if xmp_queue:
-        _apply_sidecars(conn, xmp_queue)
+        _process_batch(conn, cfg, root, batch, result, now)
 
     if not stopped:  # 中途停止時不能判定其他檔案遺失
         for rel, row in existing.items():

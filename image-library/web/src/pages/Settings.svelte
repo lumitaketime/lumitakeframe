@@ -31,7 +31,7 @@
     { id: "ai", label: "AI 分析", sub: "模型、時機、提示詞", icon: mdiCreation, members: ["ai"] },
     { id: "recog", label: "辨識", sub: "人臉、寵物", icon: mdiFaceRecognition, members: ["faces", "pets"] },
     { id: "search", label: "搜尋", sub: "同義詞、圖像搜尋", icon: mdiImageSearchOutline, members: ["search"] },
-    { id: "organize", label: "整理與 Lightroom", sub: "判定標準、.xmp、疊放", icon: mdiStar, members: ["lightroom", "tools"] },
+    { id: "organize", label: "整理與疊放", sub: "判定標準、星等、疊放", icon: mdiStar, members: ["rating", "tools"] },
     { id: "system", label: "系統", sub: "手機、儲存空間、進階", icon: mdiTuneVariant, members: ["phone", "storage", "advanced"] },
   ];
   // 桌機沒有指定分類時顯示第一個；手機先顯示分類清單
@@ -941,24 +941,13 @@
     </section>
     {/if}
     {#if current === "organize"}
-    <div class="anchor" id="sec-lightroom"></div>
-    <!-- Lightroom 與疊放 -->
-    <section class="card" id="lightroom">
-      <h2><Icon path={mdiStar} />Lightroom 同步與疊放</h2>
+    <div class="anchor" id="sec-rating"></div>
+    <!-- 星等與疊放 -->
+    <section class="card" id="rating">
+      <h2><Icon path={mdiStar} />星等與疊放</h2>
       {#if settings}
-        <label class="toggle">
-          <input type="checkbox" checked={!!settings.xmp_sync}
-            onchange={async (e) => { settings = await api("/api/settings", { body: { xmp_sync: e.currentTarget.checked ? 1 : 0 } }); }} />
-          星等、顏色標籤、關鍵字寫回 RAW 的 .xmp 附屬檔
-        </label>
-        <label class="toggle">
-          <input type="checkbox" checked={!!settings.xmp_embed}
-            onchange={async (e) => { settings = await api("/api/settings", { body: { xmp_embed: e.currentTarget.checked ? 1 : 0 } }); }} />
-          也寫入 JPEG／HEIC／TIFF 檔案本身（會修改原檔；Lightroom 不讀這些格式的 .xmp）
-        </label>
-        <p class="muted small">在 Lightroom Classic：「目錄設定 → 中繼資料」勾選「自動將變更寫入 XMP」，兩邊的修改才會互相看到；
-          Lightroom 看到本程式的修改需要對照片按「中繼資料 → 從檔案讀取中繼資料」。
-          檢視照片時可用與 Lightroom 相同的快捷鍵：0–5 星等、6–9 顏色、X 拒絕、U 取消拒絕。</p>
+        <p class="muted small">星等、顏色標籤與拒絕只存在圖庫裡，不會改動硬碟上的檔案。
+          檢視照片時可用快捷鍵：0–5 星等、6–9 顏色、X 拒絕、U 取消拒絕。</p>
         <label class="toggle">
           <input type="checkbox" checked={!!settings.viewer_rating_bar}
             onchange={async (e) => { settings = await api("/api/settings", { body: { viewer_rating_bar: e.currentTarget.checked ? 1 : 0 } }); refresh(); }} />

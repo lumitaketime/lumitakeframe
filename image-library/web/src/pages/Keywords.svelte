@@ -45,7 +45,7 @@
   <div class="chips bar">
     <div class="chips">
       <button class="chip" class:on={source === "all"} onclick={() => (source = "all")}>全部</button>
-      <button class="chip" class:on={source === "mine"} onclick={() => (source = "mine")}>我的與 Lightroom</button>
+      <button class="chip" class:on={source === "mine"} onclick={() => (source = "mine")}>我的與檔案內</button>
       <button class="chip" class:on={source === "ai"} onclick={() => (source = "ai")}>AI 關鍵字</button>
     </div>
     <span class="spacer"></span>
@@ -58,7 +58,7 @@
   {#if !data}
     <Loading kind="spinner" label="正在整理關鍵字…" />
   {:else if !list.length}
-    <div class="empty"><h2>還沒有關鍵字</h2><p>AI 分析後、或在照片加上關鍵字（含 Lightroom 匯入的）後，這裡會依出現次數整理你最常拍的內容。</p></div>
+    <div class="empty"><h2>還沒有關鍵字</h2><p>AI 分析後、或在照片加上關鍵字（含照片檔案裡原本就有的）後，這裡會依出現次數整理你最常拍的內容。</p></div>
   {:else if view === "cloud"}
     <div class="cloud">
       {#each cloud as k (k.tag)}
@@ -68,7 +68,7 @@
         </button>
       {/each}
     </div>
-    <p class="muted tiny">字越大代表出現在越多照片；藍色是你自己或 Lightroom 加的關鍵字。點任何一個看照片。</p>
+    <p class="muted tiny">字越大代表出現在越多照片；藍色是你自己加的、或照片檔案裡原本就有的關鍵字。點任何一個看照片。</p>
   {:else}
     <ol class="rank">
       {#each list as k, i (k.tag)}

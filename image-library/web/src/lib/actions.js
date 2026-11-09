@@ -44,7 +44,7 @@ export async function moveAssets(ids) {
 export async function trashAssets(ids) {
   const ok = await confirm(
     `移到垃圾桶？`,
-    `${ids.length} 個檔案會移到 macOS 的垃圾桶（外接硬碟則是該硬碟的垃圾桶），清空前都可以還原。Lightroom 的 .xmp 附屬檔會一起移動。`,
+    `${ids.length} 個檔案會移到 macOS 的垃圾桶（外接硬碟則是該硬碟的垃圾桶），清空前都可以還原。同名的 .xmp、.aae 附屬檔會一起移動。`,
     { ok: "移到垃圾桶", danger: true },
   );
   if (!ok) return [];

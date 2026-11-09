@@ -64,7 +64,7 @@ def _read_current(paths: list[Path]) -> dict[str, dict]:
 
 def current_values(conn: sqlite3.Connection, ids: list[int]) -> list[dict]:
     """每張照片目前的值（以檔案為準，讀不到時用圖庫資料）。RAW 以 .xmp 附屬檔的值優先。"""
-    from .xmp import sidecar_path
+    from .media import sidecar_path
 
     rows = [db.get_image(conn, i) for i in ids]
     rows = [r for r in rows if r is not None]
@@ -305,8 +305,27 @@ def _rename_file(conn: sqlite3.Connection, image, new_stem: str) -> str | None:
     return rel
 
 
+def _refresh_identity(conn: sqlite3.Connection, cfg: Config, image, path: Path) -> None:
+    """檔案內容改了：更新大小、時間與指紋，沿用縮圖與所有分析（避免下次掃描當成新檔案）。"""
+    from .media import thumb_path
+    from .scanner import fingerprint
+
+    st = path.stat()
+    new_fp = fingerprint(path, st.st_size)
+    old_thumb = thumb_path(cfg.thumbs_dir, image["fingerprint"])
+    if new_fp != image["fingerprint"] and old_thumb.exists():
+        target = thumb_path(cfg.thumbs_dir, new_fp)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        old_thumb.replace(target)
+    conn.execute(
+        "UPDATE images SET size = ?, mtime = ?, fingerprint = ? WHERE id = ?",
+        (st.st_size, st.st_mtime, new_fp, image["id"]),
+    )
+    conn.commit()
+
+
 def _write_one(conn: sqlite3.Connection, cfg: Config, image, cur: dict, new: dict) -> None:
-    from .xmp import _refresh_identity, sidecar_path
+    from .media import sidecar_path
 
     if not new:
         return
@@ -328,7 +347,6 @@ def _write_one(conn: sqlite3.Connection, cfg: Config, image, cur: dict, new: dic
             et.execute("-o", str(side), *common, *args, str(path))
         if not side.exists():
             raise RuntimeError("無法建立 .xmp 附屬檔（資料夾可能是唯讀）")
-        conn.execute("UPDATE images SET xmp_mtime = ? WHERE id = ?", (side.stat().st_mtime, image["id"]))
     elif kind == "embedded":
         et.execute("-overwrite_original", "-P", *common, *args, str(path))
         _refresh_identity(conn, cfg, image, path)

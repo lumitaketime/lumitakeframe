@@ -40,7 +40,7 @@ SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "pet_enabled", "pet_model", "pet_similarity", "pet_min_photos", "query_rewrite", "clip_enabled", "clip_model",
-    "keep_awake", "xmp_sync", "xmp_embed", "stack_enabled", "burst_seconds",
+    "keep_awake", "stack_enabled", "burst_seconds",
     "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "blur_threshold", "under_luma", "over_percent", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
@@ -459,10 +459,10 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     def _render(image, path: Path, max_side: int):
         return load_image(path, image["media_type"], bool(image["is_raw"]), max_side, image["duration"], image["orientation"])
 
-    @app.post("/api/assets/{image_id:int}/xmp")
-    def set_xmp(image_id: int, body: dict = Body(...)):
-        """星等（-1 拒絕～5）、顏色標籤、關鍵字；依設定寫回 Lightroom 的 .xmp。"""
-        from .xmp import write
+    @app.post("/api/assets/{image_id:int}/marks")
+    def set_marks(image_id: int, body: dict = Body(...)):
+        """星等（-1 拒絕～5）、顏色標籤、關鍵字；只存在圖庫裡，不寫入檔案。"""
+        from . import ratings
 
         c = conn()
         try:
@@ -471,12 +471,10 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             if isinstance(kws, str):
                 kws = kws.replace("，", ",").replace("、", ",").split(",")
             try:
-                where = write(c, cfg, image_id, rating=body.get("rating"), label=body.get("label"), keywords=kws)
-            except (RuntimeError, MediaError) as exc:
-                raise HTTPException(500, f"已更新圖庫，但寫回檔案失敗：{exc}")
-            data = detail(c, db.get_image(c, image_id))
-            data["written_to"] = where
-            return data
+                ratings.update(c, image_id, rating=body.get("rating"), label=body.get("label"), keywords=kws)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc))
+            return detail(c, db.get_image(c, image_id))
         finally:
             c.close()
 
@@ -570,19 +568,19 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 res = fileops.move_images(c, ids, int(body["root_id"]), str(body.get("folder", "")))
                 return {"done": len(res.done), "ids": res.done, "errors": res.errors}
             if action in ("rating", "label"):
-                from .xmp import write
+                from . import ratings
 
                 value = body.get("value")
                 errors = []
                 for i in ids:
                     try:
-                        write(c, cfg, i, **({"rating": int(value or 0)} if action == "rating" else {"label": value or ""}))
-                    except Exception as exc:  # 個別檔案寫回失敗不影響其他
+                        ratings.update(c, i, **({"rating": int(value or 0)} if action == "rating" else {"label": value or ""}))
+                    except ValueError as exc:  # 個別項目失敗不影響其他
                         errors.append(str(exc))
                 return {"done": len(ids), "errors": errors[:5]}
             if action in ("add_tags", "remove_tags"):
-                # 批次加上或移除我的關鍵字（#標籤）；RAW 會寫入 .xmp，和 Lightroom 同步
-                from .xmp import write
+                # 批次加上或移除我的關鍵字（#標籤）；只存在圖庫裡
+                from . import ratings
 
                 tags = [str(t).strip().lstrip("#").strip() for t in (body.get("tags") or []) if str(t).strip().lstrip("#").strip()]
                 if not tags:
@@ -601,9 +599,9 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                     if new == current:
                         continue
                     try:
-                        write(c, cfg, i, keywords=new)
+                        ratings.update(c, i, keywords=new)
                         changed += 1
-                    except Exception as exc:  # 個別檔案寫回失敗不影響其他
+                    except ValueError as exc:  # 個別項目失敗不影響其他
                         errors.append(str(exc))
                 return {"done": changed, "errors": errors[:5]}
             if action == "stack":
@@ -1953,18 +1951,17 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     def export_inspect(body: dict = Body(...)):
         """匯出前先看選了什麼：幾張 RAW、幾張一般照片、幾部影片（影片不匯出）。"""
         ids = [int(i) for i in body.get("ids", [])][:20000]
-        out = {"total": len(ids), "raw": 0, "photo": 0, "video": 0, "raw_xmp": 0}
+        out = {"total": len(ids), "raw": 0, "photo": 0, "video": 0}
         c = conn()
         try:
             for start in range(0, len(ids), 500):
                 chunk = ids[start:start + 500]
                 marks = ",".join("?" * len(chunk))
-                for r in c.execute(f"SELECT media_type, is_raw, xmp_mtime FROM images WHERE id IN ({marks})", chunk):
+                for r in c.execute(f"SELECT media_type, is_raw FROM images WHERE id IN ({marks})", chunk):
                     if r["media_type"] == "video":
                         out["video"] += 1
                     elif r["is_raw"]:
                         out["raw"] += 1
-                        out["raw_xmp"] += 1 if r["xmp_mtime"] else 0
                     else:
                         out["photo"] += 1
             return out

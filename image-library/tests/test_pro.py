@@ -1,10 +1,8 @@
-"""攝影師功能：Lightroom XMP 同步、疊放、重複照片、智慧相簿、那年今日。"""
+"""攝影師功能：星等與標籤（只存在圖庫）、疊放、重複照片、智慧相簿、那年今日。"""
 
 import json
 import shutil
-import subprocess
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
@@ -48,78 +46,76 @@ class Base(unittest.TestCase):
         return self.conn.execute("SELECT * FROM images WHERE rel_path LIKE ?", (f"%{name}",)).fetchone()
 
 
-@unittest.skipUnless(HAS_EXIFTOOL, "需要 exiftool")
-class XmpTests(Base):
-    def test_raw_sidecar_created_updated_and_read_back(self):
-        from lumilib import xmp
+class RatingTests(Base):
+    """星等、顏色標籤、關鍵字只存在圖庫裡，不能寫入或建立硬碟上的任何檔案。"""
+
+    def files(self):
+        return {p.relative_to(self.photos).as_posix(): p.read_bytes() for p in self.photos.rglob("*") if p.is_file()}
+
+    def test_rating_label_keywords_library_only(self):
+        from lumilib import ratings
 
         Image.new("RGB", (40, 30)).save(self.photos / "DSC_0001.tif")
         (self.photos / "DSC_0001.tif").rename(self.photos / "DSC_0001.ARW")
+        jpeg(self.photos / "p.jpg")
         scan_all(self.conn, self.cfg)
-        raw = self.image("DSC_0001.ARW")
-        where = xmp.write(self.conn, self.cfg, raw["id"], rating=4, label="red", keywords=["作品集", "婚禮"])
-        self.assertEqual(where, "sidecar")
-        side = self.photos / "DSC_0001.xmp"
-        self.assertTrue(side.exists())
-        info = xmp.read_sidecars([side])[side]
-        self.assertEqual((info["rating"], info["label"], info["keywords"]), (4, "red", ["作品集", "婚禮"]))
-        # Lightroom 改了 .xmp（中文版寫「綠色」）：RAW 沒變，重新掃描也要讀到
-        time.sleep(0.05)
-        subprocess.run(["exiftool", "-q", "-overwrite_original", "-XMP-xmp:Rating=5", "-XMP-xmp:Label=綠色",
-                        "-XMP-dc:Subject=精選", str(side)], check=True)
-        scan_all(self.conn, self.cfg)
+        before = self.files()
+        raw, jpg = self.image("DSC_0001.ARW"), self.image("p.jpg")
+        ratings.update(self.conn, raw["id"], rating=4, label="red", keywords=["作品集", "婚禮"])
+        ratings.update(self.conn, jpg["id"], rating=5, label="blue")
+        self.assertEqual(self.files(), before)  # 沒有建立 .xmp，也沒有改動原檔
         row = self.image("DSC_0001.ARW")
-        self.assertEqual((row["rating"], row["label"], row["label_text"]), (5, "green", "綠色"))
-        self.assertEqual(db.json_list(row["keywords"]), ["精選"])
-        self.assertEqual(search(self.conn, "rating:5 label:綠")["total"], 1)
-        self.assertEqual(search(self.conn, "精選")["total"], 1)
-        # 寫回時沿用 Lightroom 的中文標籤文字
-        xmp.write(self.conn, self.cfg, raw["id"], rating=3)
-        self.assertEqual(xmp.read_sidecars([side])[side]["label_text"], "綠色")
+        self.assertEqual((row["rating"], row["label"]), (4, "red"))
+        self.assertEqual(db.json_list(row["keywords"]), ["作品集", "婚禮"])
+        self.assertEqual(search(self.conn, "rating:4 label:紅")["total"], 1)
+        self.assertEqual(search(self.conn, "婚禮")["total"], 1)
+        # 重新掃描不會清掉圖庫裡的星等
+        scan_all(self.conn, self.cfg)
+        self.assertEqual(self.image("p.jpg")["rating"], 5)
 
     def test_reject_and_clear(self):
-        from lumilib import xmp
+        from lumilib import ratings
 
         Image.new("RGB", (40, 30)).save(self.photos / "a.tif")
         (self.photos / "a.tif").rename(self.photos / "a.NEF")
         scan_all(self.conn, self.cfg)
         image_id = self.image("a.NEF")["id"]
-        xmp.write(self.conn, self.cfg, image_id, rating=-1)
+        ratings.update(self.conn, image_id, rating=-1)
         self.assertEqual(search(self.conn, "is:rejected")["total"], 1)
-        xmp.write(self.conn, self.cfg, image_id, rating=0, label="")
+        ratings.update(self.conn, image_id, rating=0, label="")
         row = db.get_image(self.conn, image_id)
         self.assertEqual((row["rating"], row["label"]), (None, None))
 
-    def test_jpeg_library_only_by_default_then_embedded(self):
-        from lumilib import xmp
+    def test_invalid_values(self):
+        from lumilib import ratings
 
         jpeg(self.photos / "p.jpg")
         scan_all(self.conn, self.cfg)
-        row = self.image("p.jpg")
-        self.conn.execute("UPDATE images SET description = '測試描述', analyzed_at = '2026-01-01' WHERE id = ?", (row["id"],))
-        self.conn.commit()
-        before = (self.photos / "p.jpg").read_bytes()
-        self.assertEqual(xmp.write(self.conn, self.cfg, row["id"], rating=2), "library")
-        self.assertEqual((self.photos / "p.jpg").read_bytes(), before)  # 預設不動原檔
-        self.cfg.xmp_embed = 1
-        self.assertEqual(xmp.write(self.conn, self.cfg, row["id"], rating=5, label="blue"), "embedded")
-        out = subprocess.run(["exiftool", "-s3", "-XMP:Rating", "-XMP:Label", str(self.photos / "p.jpg")],
-                             capture_output=True, text=True).stdout.split()
-        self.assertEqual(out, ["5", "Blue"])
-        # 檔案內容變了，但重新掃描不能當成新檔案、不能清掉 AI 分析
-        [res] = scan_all(self.conn, self.cfg)
-        self.assertEqual((res.added, res.updated), (0, 0))
-        self.assertEqual(db.get_image(self.conn, row["id"])["description"], "測試描述")
-        self.assertEqual(len(list(self.cfg.thumbs_dir.rglob("*.webp"))), 1)
+        image_id = self.image("p.jpg")["id"]
+        with self.assertRaises(ValueError):
+            ratings.update(self.conn, image_id, rating=6)
+        with self.assertRaises(ValueError):
+            ratings.update(self.conn, image_id, label="orange")
 
     def test_label_names(self):
-        from lumilib.xmp import label_text, normalize_label
+        from lumilib.ratings import normalize_label
 
         self.assertEqual(normalize_label("紅色"), "red")
         self.assertEqual(normalize_label("Purple"), "purple")
         self.assertIsNone(normalize_label("Custom"))
-        self.assertEqual(label_text("red", "紅色"), "紅色")
-        self.assertEqual(label_text("blue", "紅色"), "Blue")
+
+    @unittest.skipUnless(HAS_EXIFTOOL, "需要 exiftool")
+    def test_scan_ignores_sidecar(self):
+        """旁邊的 .xmp 不再被讀取，只讀照片檔案本身的中繼資料。"""
+        Image.new("RGB", (40, 30)).save(self.photos / "DSC_0002.tif")
+        (self.photos / "DSC_0002.tif").rename(self.photos / "DSC_0002.ARW")
+        (self.photos / "DSC_0002.xmp").write_text(
+            '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+            '<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="5" xmp:Label="Red"/></rdf:RDF></x:xmpmeta>',
+            encoding="utf-8")
+        scan_all(self.conn, self.cfg)
+        row = self.image("DSC_0002.ARW")
+        self.assertEqual((row["rating"], row["label"]), (None, None))
 
 
 class StackTests(Base):

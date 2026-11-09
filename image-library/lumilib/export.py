@@ -1,7 +1,7 @@
 """批次匯出交件：縮成指定長邊的 JPEG，可加文字浮水印、移除 GPS、依規則重新命名。
 
 - 原始照片不會被修改，輸出到另一個資料夾。
-- RAW 檔預設直接複製原始檔（交 RAW 就是要給原檔），連同 Lightroom 的 .xmp 一起，只依規則改檔名；
+- RAW 檔預設直接複製原始檔（交 RAW 就是要給原檔），有同名的 .xmp 附屬檔就一起附上，只依規則改檔名；
   也可以選擇轉成 JPEG（使用相機內嵌的預覽圖，部分機型尺寸較小）。
 - 保留拍攝資訊（相機、鏡頭、時間）與色彩描述檔；方向已經轉正，所以寫入「方向＝正常」。
 """
@@ -115,10 +115,10 @@ def _exif_bytes(path: Path, strip_gps: bool, keep_exif: bool) -> tuple[bytes | N
 
 
 def _copy_raw(src: Path, out: Path, strip_gps: bool) -> None:
-    """複製原始 RAW（保留時間），有 Lightroom 的 .xmp 附屬檔就一起複製並改成相同檔名。"""
+    """複製原始 RAW（保留時間），有同名的 .xmp 附屬檔就一起複製並改成相同檔名。"""
     import shutil
 
-    from .xmp import sidecar_path
+    from .media import sidecar_path
 
     shutil.copy2(src, out)
     side = sidecar_path(src)

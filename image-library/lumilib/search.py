@@ -14,7 +14,7 @@
     type:video / type:photo / type:raw
     person:媽媽          人物（人臉辨識後命名的人）
     place:恆春           地點（依 GPS 換算的城鎮）
-    rating:4            四星以上；is:rejected 被拒絕（Lightroom 的 X）
+    rating:4            四星以上；is:rejected 被拒絕（檢視器按 X）
     label:red / label:紅 顏色標籤
     group:家人           人物分類（家人、同事、客戶…）
     focal:24-70 aperture:1.4 iso:3200-12800  焦段（等效 35mm）、光圈、ISO
@@ -118,7 +118,7 @@ def _filter_sql(query: Query, include_terms: bool, groups: list[list[str]] | Non
             where.append("i.rating >= ?")
             params.append(int(value))
         elif key == "label":
-            from .xmp import normalize_label
+            from .ratings import normalize_label
 
             where.append("i.label = ?")
             params.append(normalize_label(value) or {"紅": "red", "黃": "yellow", "綠": "green", "藍": "blue", "紫": "purple"}.get(value, low))

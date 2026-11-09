@@ -121,10 +121,10 @@
     toast(`已選取 ${list.length} 張，可以在上方選擇要做什麼`);
   }
 
-  /** 全部標為拒絕（Lightroom 的 X），附「復原」 */
+  /** 全部標為拒絕（檢視器的 X），附「復原」 */
   async function rejectAll(list) {
     if (!list.length) return;
-    const ok = await confirm(`把 ${list.length} 張標為「拒絕」？`, "拒絕會同步到 Lightroom（X 標記），照片不會被刪除，隨時可以復原。", { ok: "標為拒絕" });
+    const ok = await confirm(`把 ${list.length} 張標為「拒絕」？`, "拒絕只是圖庫裡的標記，照片不會被刪除，隨時可以復原。", { ok: "標為拒絕" });
     if (!ok) return;
     busy = true;
     const before = new Map();

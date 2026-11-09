@@ -260,7 +260,7 @@
         <li class:done={ai?.ready || pullJob}><Icon path={ai?.ready || pullJob ? mdiCheck : mdiClose} size={18} />AI 模型：{ai?.ready ? `${ai.model} 已就緒` : pullJob ? `${chosen} 下載中` : "尚未下載"}</li>
       </ul>
       <p class="small">AI 分析在背景進行，右上角會顯示進度，可以隨時停止。每張約數秒，照片很多時會花上幾個小時，可以讓 Mac 開著慢慢跑。</p>
-      <p class="small muted">還可以在設定裡打開：人臉辨識、手機與平板連線、Lightroom 同步、照片呈現方式（依比例或正方形）。</p>
+      <p class="small muted">還可以在設定裡打開：人臉辨識、手機與平板連線、照片呈現方式（依比例或正方形）。</p>
       {#if chosenInfo && !ai?.ready && !pullJob}<p class="small muted">已選擇 {chosen}，下載完成後就會開始分析。</p>{/if}
       <div class="actions">
         <button class="btn ghost" onclick={back}>上一步</button>

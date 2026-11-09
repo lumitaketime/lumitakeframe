@@ -170,14 +170,14 @@
           <tr><td><code>貓 沙發</code></td><td>同時包含兩個關鍵字（描述、關鍵字、圖中文字、檔名、資料夾）</td></tr>
           <tr><td><code>"日落 海邊"</code></td><td>完整片語</td></tr>
           <tr><td><code>-狗</code></td><td>排除</td></tr>
-          <tr><td><code>tag:作品集</code></td><td>只找關鍵字（AI、Lightroom 關鍵字、手動標籤）</td></tr>
+          <tr><td><code>tag:作品集</code></td><td>只找關鍵字（AI 關鍵字、檔案內原有的關鍵字、手動標籤）</td></tr>
           <tr><td><code>folder:婚禮</code></td><td>資料夾路徑</td></tr>
           <tr><td><code>camera:x-t5</code>　<code>lens:56mm</code></td><td>相機、鏡頭</td></tr>
           <tr><td><code>year:2024</code>　<code>after:2024-05-01</code>　<code>before:2024-06-01</code></td><td>拍攝日期</td></tr>
           <tr><td><code>type:video</code>　<code>type:raw</code>　<code>ext:heic</code></td><td>檔案類型</td></tr>
           <tr><td><code>person:媽媽</code></td><td>人物（人臉辨識後命名）</td></tr>
           <tr><td><code>place:恆春</code>　或直接輸入 <code>京都</code></td><td>地點（依 GPS 自動換算，不需連網）</td></tr>
-          <tr><td><code>rating:4</code>　<code>label:紅</code>　<code>is:rejected</code></td><td>星等（以上）、顏色標籤、被拒絕（與 Lightroom 同步）</td></tr>
+          <tr><td><code>rating:4</code>　<code>label:紅</code>　<code>is:rejected</code></td><td>星等（以上）、顏色標籤、被拒絕</td></tr>
           <tr><td><code>is:favorite</code>　<code>is:pending</code>　<code>is:missing</code></td><td>狀態</td></tr>
         </tbody>
       </table>

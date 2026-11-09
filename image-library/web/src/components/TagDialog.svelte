@@ -2,7 +2,7 @@
   import { slider } from "../lib/slider.js";
   /**
    * 批次加上（或移除）我的標籤，例如 #嘉義車站。
-   * 標籤和 AI 關鍵字一起被搜尋，也會出現在關鍵字雲；RAW 會寫入 .xmp，Lightroom 看得到。
+   * 標籤和 AI 關鍵字一起被搜尋，也會出現在關鍵字雲；只存在圖庫裡，不會改動檔案。
    */
   import Modal from "./Modal.svelte";
   import Icon from "./Icon.svelte";
@@ -94,7 +94,7 @@
         </div>
       </div>
     {/if}
-    <p class="hint">標籤會和 AI 關鍵字一起被搜尋，也會出現在關鍵字雲。RAW 檔會寫入 .xmp，Lightroom 讀取中繼資料後就看得到。</p>
+    <p class="hint">標籤會和 AI 關鍵字一起被搜尋，也會出現在關鍵字雲。標籤只存在圖庫裡，不會改動硬碟上的檔案。</p>
   </div>
   {#snippet actions()}
     <button class="btn ghost" onclick={() => onclose?.(false)}>取消</button>
