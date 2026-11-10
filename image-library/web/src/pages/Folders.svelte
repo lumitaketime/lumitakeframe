@@ -8,9 +8,9 @@
   import { reorder, sortCards, moveKey } from "../lib/reorder.js";
   import { api, thumbUrl } from "../lib/api.js";
   import { route, navigate, link } from "../lib/router.svelte.js";
-  import { app, showDialog, toast, refresh } from "../lib/state.svelte.js";
+  import { app, toast, refresh } from "../lib/state.svelte.js";
   import { analyzeAssets } from "../lib/actions.js";
-  import { mdiFolderOutline, mdiFolderOpenOutline, mdiFolderPlusOutline, mdiCreation, mdiHarddisk, mdiContentCopy, mdiImageOutline, mdiSort, mdiStar, mdiStarOutline } from "../lib/icons.js";
+  import { mdiFolderOutline, mdiFolderOpenOutline, mdiCreation, mdiHarddisk, mdiContentCopy, mdiImageOutline, mdiSort, mdiStar, mdiStarOutline } from "../lib/icons.js";
   import { count } from "../lib/format.js";
 
   let { rootId = null } = $props();
@@ -99,18 +99,6 @@
   }
 
   const open = (p) => navigate(`/folders/${rootId}${p ? `?path=${encodeURIComponent(p)}` : ""}`);
-
-  async function newFolder() {
-    const name = await showDialog("prompt", { title: "新增資料夾", placeholder: "資料夾名稱", ok: "建立", value: "" });
-    if (!name?.trim()) return;
-    try {
-      const created = await api("/api/folders", { body: { root_id: rootId, path: path ? `${path}/${name.trim()}` : name.trim() } });
-      toast(`已在硬碟上建立「${name.trim()}」，把照片搬進來後就會出現在這裡`);
-      open(created.path);
-    } catch (e) {
-      toast(e.message, "error");
-    }
-  }
 
   async function revealFolder() {
     try {
@@ -204,7 +192,6 @@
           ...(path ? [{ label: data.root.name, href: `/folders/${rootId}` }] : []),
           ...data.crumbs.slice(0, -1).map((c) => ({ label: c.name, href: `/folders/${rootId}?path=${encodeURIComponent(c.path)}` }))]}
         menu={[
-          { label: "新增資料夾", icon: mdiFolderPlusOutline, run: newFolder, disabled: !data.root.online },
           { label: "AI 分析這個資料夾", icon: mdiCreation, run: analyzeFolder },
           { label: app.server?.local ? "在 Finder 中打開" : "在 Mac 上打開", icon: mdiFolderOpenOutline, run: revealFolder, disabled: !data.root.online },
           { label: "複製路徑", icon: mdiContentCopy, run: copyPath },

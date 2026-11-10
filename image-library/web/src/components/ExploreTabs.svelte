@@ -1,14 +1,12 @@
 <script>
   import { slider } from "../lib/slider.js";
-  /** 探索頁的分頁：總覽、人物、器材、關鍵字（在「功能與選單」關掉的不顯示）。 */
+  /** 探索頁的分頁：總覽、人物、關鍵字（在「功能與選單」關掉的不顯示）。 */
   import { app } from "../lib/state.svelte.js";
   import { route, link } from "../lib/router.svelte.js";
 
   const TABS = [
     { href: "/explore", label: "總覽", fixed: true },
     { href: "/people", label: "人物" },
-    { href: "/pets", label: "寵物" },
-    { href: "/gear", label: "器材" },
     { href: "/keywords", label: "關鍵字" },
   ];
   const hidden = $derived(new Set((app.server?.ui?.nav_hidden || "").split(",").filter(Boolean)));

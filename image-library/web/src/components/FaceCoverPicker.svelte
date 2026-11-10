@@ -1,7 +1,6 @@
 <script>
   /**
-   * 人物、寵物的封面：列出偵測到的每一張臉（清楚的排前面），點一張當作封面。
-   * kind="person" 用人臉縮圖，kind="pet" 用寵物縮圖。
+   * 人物的封面：列出偵測到的每一張臉（清楚的排前面），點一張當作封面。
    */
   import Modal from "./Modal.svelte";
   import Loading from "./Loading.svelte";
@@ -16,9 +15,9 @@
   let faces = $state(null);
   let saving = $state(false);
 
-  const thumb = (faceId) => (kind === "pet" ? `/api/pet-thumbs/${faceId}` : `/api/faces/${faceId}/thumb`);
+  const thumb = (faceId) => `/api/faces/${faceId}/thumb`;
   // svelte-ignore state_referenced_locally
-  api(kind === "pet" ? `/api/petid/${id}/faces` : `/api/people/${id}/faces`).then((f) => (faces = f)).catch(() => (faces = []));
+  api(`/api/people/${id}/faces`).then((f) => (faces = f)).catch(() => (faces = []));
 
   async function save() {
     saving = true;
@@ -37,8 +36,8 @@
       {#key picked}{#if picked}<img src={thumb(picked)} alt="" />{/if}{/key}
     </div>
     <div class="info">
-      <b>{name || (kind === "pet" ? "這隻寵物" : "這個人物")}</b>
-      <span>點下面任何一張臉，當作{kind === "pet" ? "牠" : "這個人"}在人物、搜尋建議和探索裡的頭像。</span>
+      <b>{name || "這個人物"}</b>
+      <span>點下面任何一張臉，當作這個人在人物、搜尋建議和探索裡的頭像。</span>
     </div>
   </div>
   {#if !faces}

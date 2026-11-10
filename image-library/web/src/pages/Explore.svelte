@@ -62,18 +62,15 @@
       </ExpandGrid>
     {/if}
 
-    {#if data.places?.length || data.gps}
+    {#if data.places?.length}
       <h2 class="section-title">地點</h2>
-      {#if data.places?.length}
-        <ExpandGrid min={156} items={data.places} key={(p) => p.value}>
-          {#snippet item(p)}
-          <button class="tile" onclick={() => go(`place:${q(p.value)}`)}>
-            <img src={thumbUrl({ id: p.cover })} alt="" loading="lazy" /><span>{p.value}<small>{p.count.toLocaleString()}</small></span>
-          </button>
-          {/snippet}
-        </ExpandGrid>
-      {/if}
-      {#if data.gps}<a class="map-link" href="/map" use:link>在地圖上瀏覽 {data.gps.toLocaleString()} 個有 GPS 的項目 →</a>{/if}
+      <ExpandGrid min={156} items={data.places} key={(p) => p.value}>
+        {#snippet item(p)}
+        <button class="tile" onclick={() => go(`place:${q(p.value)}`)}>
+          <img src={thumbUrl({ id: p.cover })} alt="" loading="lazy" /><span>{p.value}<small>{p.count.toLocaleString()}</small></span>
+        </button>
+        {/snippet}
+      </ExpandGrid>
     {/if}
 
     {#if data.years.length}
@@ -87,22 +84,6 @@
       </ExpandGrid>
     {/if}
 
-    {#if data.cameras.length}
-      <h2 class="section-title"><a href="/gear" use:link class="more">相機與鏡頭 →</a></h2>
-      <div class="chips">
-        {#each data.cameras as c (c.value)}
-          <button class="chip" onclick={() => navigate(`/gear?camera=${encodeURIComponent(c.value)}`)}>{c.value}<span class="muted">{c.count}</span></button>
-        {/each}
-      </div>
-    {/if}
-    {#if data.lenses.length}
-      <h2 class="section-title">鏡頭</h2>
-      <div class="chips">
-        {#each data.lenses as l (l.value)}
-          <button class="chip" onclick={() => navigate(`/gear?lens=${encodeURIComponent(l.value)}`)}>{l.value}<span class="muted">{l.count}</span></button>
-        {/each}
-      </div>
-    {/if}
   {/if}
 </div>
 
@@ -115,10 +96,8 @@
     background: linear-gradient(transparent, rgba(0,0,0,.7)); font-size: 14px; display: flex; flex-direction: column;
   }
   .tile small { font-weight: 400; opacity: .8; font-size: 12px; }
-  .chip span { margin-left: 4px; font-size: 12px; }
   .more { color: var(--on-surface); text-decoration: none; }
   .person { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; color: var(--on-surface); font-size: 14px; }
   .person img { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; background: var(--surface-container); }
   .person span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .map-link { margin-top: 10px; display: inline-block; padding: 14px 18px; background: var(--surface-container); border-radius: var(--radius); text-decoration: none; }
 </style>

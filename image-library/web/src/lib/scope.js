@@ -1,8 +1,8 @@
 /**
- * 搜尋範圍：在資料夾、相簿、人物、寵物、截圖與文件等頁面打字時，預設只搜尋這一頁的照片。
+ * 搜尋範圍：在資料夾、相簿、人物、截圖與文件等頁面打字時，預設只搜尋這一頁的照片。
  * key 會原封不動送到後端 /api/search?scope=…，後端回傳正式名稱（例如相簿名）。
  */
-const TOOL_LABELS = { screens: "截圖與文件", blurry: "模糊照片", exposure: "曝光問題" };
+const TOOL_LABELS = { screens: "截圖與文件" };
 
 export function routeScope(route, server) {
   const seg = route.path.split("/").filter(Boolean);
@@ -16,7 +16,6 @@ export function routeScope(route, server) {
   if (page === "albums" && a === "smart" && b) return { key: `smart:${b}`, label: "這個智慧相簿" };
   if (page === "albums" && a) return { key: `album:${a}`, label: "這個相簿" };
   if (page === "people" && a) return { key: `person:${a}`, label: "這個人物" };
-  if (page === "pets" && a === "id" && b) return { key: `pet:${b}`, label: "這隻寵物" };
   if (page === "favorites") return { key: "favorites", label: "我的最愛" };
   if (page === "videos") return { key: "videos", label: "影片" };
   if (page === "tools" && TOOL_LABELS[a]) return { key: `tool:${a}`, label: TOOL_LABELS[a] };

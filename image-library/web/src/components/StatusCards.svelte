@@ -4,18 +4,10 @@
    * 整張卡可以點，會跳到對應的設定；有進度的顯示進度條；需要處理的換成提醒底色並附一鍵處理。
    */
   import Icon from "./Icon.svelte";
-  import { api } from "../lib/api.js";
-  import { app, refresh, toast } from "../lib/state.svelte.js";
+  import { app } from "../lib/state.svelte.js";
   import { navigate } from "../lib/router.svelte.js";
   import { count, eta } from "../lib/format.js";
   import { mdiCreation, mdiFaceRecognition, mdiImageMultipleOutline, mdiHarddisk, mdiAlertOutline } from "../lib/icons.js";
-
-  let pets = $state(null);
-
-  $effect(() => {
-    app.refreshKey;
-    api("/api/pets").then((d) => (pets = d)).catch(() => {});
-  });
 
   const s = $derived(app.server);
   const st = $derived(s?.stats || {});
@@ -27,8 +19,8 @@
   // AI：正在分析就顯示這次工作的進度，否則顯示整個圖庫分析了多少
   const aiJob = $derived(jobOf("analyze", "index"));
   const aiPct = $derived(aiJob?.total ? pct(aiJob.done, aiJob.total) : pct(st.analyzed || 0, (st.analyzed || 0) + (st.pending || 0)));
-  // 辨識：人臉找過的照片比例；正在跑人臉或寵物時顯示那個工作的進度
-  const recogJob = $derived(jobOf("faces", "pets", "pet_model", "cluster", "pet_cluster"));
+  // 辨識：人臉找過的照片比例；正在跑人臉時顯示那個工作的進度
+  const recogJob = $derived(jobOf("faces", "cluster", "face_model"));
   const facePct = $derived(recogJob?.total ? pct(recogJob.done, recogJob.total) : pct((st.photos || 0) - (st.faces_pending || 0), st.photos || 0));
   // 圖庫：掃描中才有進度
   const scanJob = $derived(jobOf("scan"));
@@ -41,18 +33,6 @@
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       go(href);
-    }
-  }
-
-  async function startPets(e) {
-    e.stopPropagation();
-    try {
-      await api("/api/settings", { body: { pet_enabled: 1 } });
-      await api("/api/jobs", { body: { kind: pets.installed ? "pets" : "pet_model", model: pets.model || "standard" } });
-      toast(pets.installed ? "開始辨識寵物" : "開始下載寵物辨識模型，完成後會自動辨識");
-      refresh();
-    } catch (err) {
-      toast(err.message, "error");
     }
   }
 </script>
@@ -71,17 +51,16 @@
       {/if}
     </div>
 
-    <div class="st m3-state" class:warn={pets && !pets.installed} role="link" tabindex="0" onclick={() => go("/settings/recog")} onkeydown={(e) => key(e, "/settings/recog")}>
+    <div class="st m3-state" role="link" tabindex="0" onclick={() => go("/settings/recog")} onkeydown={(e) => key(e, "/settings/recog")}>
       <span class="ic"><Icon path={mdiFaceRecognition} size={20} /></span>
       <div class="txt">
-        <b>{count(st.people || 0)} 位人物{pets?.pets?.length ? ` · ${count(pets.pets.length)} 隻寵物` : ""}</b>
-        <span>{recogJob ? `${recogJob.label}${eta(recogJob.eta) ? `（剩 ${eta(recogJob.eta)}）` : ""}：${recogJob.message || ""}` : pets && !pets.installed ? "寵物辨識模型還沒下載（約 124 MB）" : st.faces_pending ? `${count(st.faces_pending)} 張還沒找人臉` : "人臉與寵物都已整理"}</span>
+        <b>{count(st.people || 0)} 位人物</b>
+        <span>{recogJob ? `${recogJob.label}${eta(recogJob.eta) ? `（剩 ${eta(recogJob.eta)}）` : ""}：${recogJob.message || ""}` : st.faces_pending ? `${count(st.faces_pending)} 張還沒找人臉` : "人臉都已整理"}</span>
       </div>
       {#if facePct !== null}
         <div class="bar" class:live={!!recogJob} role="progressbar" aria-valuenow={facePct} aria-valuemin="0" aria-valuemax="100" aria-label="辨識進度"><span style:width="{facePct}%"></span></div>
         <span class="pct">{facePct}%</span>
       {/if}
-      {#if pets && !pets.installed && !recogJob}<button class="btn text small act" onclick={startPets}>下載寵物模型</button>{/if}
     </div>
 
     <div class="st m3-state" role="link" tabindex="0" onclick={() => go("/settings/library")} onkeydown={(e) => key(e, "/settings/library")}>
@@ -134,6 +113,5 @@
   .bar.indeterminate span { position: absolute; animation: indet 1.4s cubic-bezier(.4, 0, .2, 1) infinite; }
   @keyframes indet { from { left: -40%; } to { left: 100%; } }
   .pct { font-size: 12px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; justify-self: end; }
-  .act { grid-column: 2 / 4; justify-self: start; margin-left: -12px; color: inherit; font-weight: 500; }
   @media (prefers-reduced-motion: reduce) { .bar span { transition: none; } .bar.indeterminate span { animation: none; left: 0; } }
 </style>

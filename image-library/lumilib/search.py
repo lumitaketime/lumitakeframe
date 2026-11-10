@@ -17,7 +17,6 @@
     rating:4            四星以上；is:rejected 被拒絕（檢視器按 X）
     label:red / label:紅 顏色標籤
     group:家人           人物分類（家人、同事、客戶…）
-    focal:24-70 aperture:1.4 iso:3200-12800  焦段（等效 35mm）、光圈、ISO
     is:favorite / is:pending / is:failed / is:analyzed / is:missing
 """
 
@@ -30,7 +29,7 @@ from dataclasses import dataclass, field
 
 from . import db
 
-FILTER_KEYS = {"tag", "folder", "camera", "lens", "ext", "year", "after", "before", "root", "is", "type", "album", "person", "place", "rating", "label", "group", "focal", "aperture", "f", "iso"}
+FILTER_KEYS = {"tag", "folder", "camera", "lens", "ext", "year", "after", "before", "root", "is", "type", "album", "person", "place", "rating", "label", "group"}
 
 
 @dataclass
@@ -92,22 +91,6 @@ def _filter_sql(query: Query, include_terms: bool, groups: list[list[str]] | Non
                 where.append("i.media_type = 'photo'")
             elif low == "raw":
                 where.append("i.is_raw = 1")
-        elif key in ("focal", "aperture", "f", "iso"):
-            # focal:24-70、focal:35、aperture:1.2-2、f:1.4、iso:3200-12800
-            expr = {"focal": "COALESCE(i.focal_35, i.focal_length)", "aperture": "i.aperture", "f": "i.aperture", "iso": "i.iso"}[key]
-            lo, _, hi = value.lstrip("fF/").partition("-")
-            try:
-                lo_v = float(lo)
-                hi_v = float(hi) if hi else None
-            except ValueError:
-                continue
-            if hi_v is None:
-                tol = {"focal": 1, "iso": 0}.get(key, 0.06)
-                where.append(f"{expr} BETWEEN ? AND ?")
-                params += [lo_v - tol, lo_v + tol]
-            else:
-                where.append(f"{expr} BETWEEN ? AND ?")
-                params += [lo_v, hi_v]
         elif key == "group":
             where.append(
                 "i.id IN (SELECT f.image_id FROM faces f JOIN persons p ON p.id = f.person_id "
@@ -340,7 +323,7 @@ def search(
     scored = {r["id"]: [keyword_score(r, query.terms, groups), r, "keyword"] for r in rows}
     modes = ["keyword"]
 
-    # 人名、寵物名直接從人物與寵物資料比對（不依賴搜尋索引），並排在前面
+    # 人名直接從人物資料比對（不依賴搜尋索引），並排在前面
     named = name_matches(conn, query.terms)
     if named:
         for image_id in named & set(scored):
@@ -412,13 +395,13 @@ def search(
 
 
 def name_matches(conn: sqlite3.Connection, terms: list[str]) -> set[int]:
-    """每個詞都對得上某個人名或寵物名時，回傳同時符合的照片；否則空集合。"""
+    """每個詞都對得上某個人名時，回傳同時符合的照片；否則空集合。"""
     if not terms:
         return set()
     result: set[int] | None = None
     for term in terms:
         like = _like(term.lower())
-        # 先在人物、寵物表（小）找名字，再用索引取照片；不要整張人臉表逐筆比對
+        # 先在人物表（小）找名字，再用索引取照片；不要整張人臉表逐筆比對
         pids = [r[0] for r in conn.execute(
             "SELECT id FROM persons WHERE name IS NOT NULL AND lower(name) LIKE ? ESCAPE '\\'", (like,))]
         ids = set()
@@ -426,15 +409,6 @@ def name_matches(conn: sqlite3.Connection, terms: list[str]) -> set[int]:
             chunk = pids[start:start + 900]
             ids |= {r[0] for r in conn.execute(
                 f"SELECT DISTINCT image_id FROM faces WHERE person_id IN ({','.join('?' * len(chunk))})", chunk)}
-        try:
-            pet_ids = [r[0] for r in conn.execute(
-                "SELECT id FROM pets WHERE name IS NOT NULL AND lower(name) LIKE ? ESCAPE '\\'", (like,))]
-            for start in range(0, len(pet_ids), 900):
-                chunk = pet_ids[start:start + 900]
-                ids |= {r[0] for r in conn.execute(
-                    f"SELECT DISTINCT image_id FROM pet_detections WHERE pet_id IN ({','.join('?' * len(chunk))})", chunk)}
-        except sqlite3.OperationalError:
-            pass
         if not ids:
             return set()
         result = ids if result is None else result & ids
@@ -442,7 +416,7 @@ def name_matches(conn: sqlite3.Connection, terms: list[str]) -> set[int]:
 
 
 def suggest(conn: sqlite3.Connection, q: str, limit: int = 6) -> dict:
-    """搜尋框的即時建議：輸入第一個字就列出人物、寵物、相簿、地點、關鍵字、資料夾。開頭相符的排前面。"""
+    """搜尋框的即時建議：輸入第一個字就列出人物、相簿、地點、關鍵字、資料夾。開頭相符的排前面。"""
     text = q.strip().lower()
     if not text:
         people = conn.execute(
@@ -450,7 +424,7 @@ def suggest(conn: sqlite3.Connection, q: str, limit: int = 6) -> dict:
                JOIN faces f ON f.person_id = p.id WHERE p.hidden = 0 AND p.name IS NOT NULL AND p.name != ''
                GROUP BY p.id ORDER BY n DESC LIMIT 8"""
         ).fetchall()
-        return {"people": [dict(r) for r in people], "pets": [], "albums": [], "places": [], "tags": [], "folders": []}
+        return {"people": [dict(r) for r in people], "albums": [], "places": [], "tags": [], "folders": []}
     like, prefix = _like(text), text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
     order = "ORDER BY (lower(name) LIKE ? ESCAPE '\\') DESC, n DESC LIMIT ?"
     people = conn.execute(
@@ -458,14 +432,6 @@ def suggest(conn: sqlite3.Connection, q: str, limit: int = 6) -> dict:
             JOIN faces f ON f.person_id = p.id WHERE p.hidden = 0 AND p.name IS NOT NULL AND lower(p.name) LIKE ? ESCAPE '\\'
             GROUP BY p.id {order}""", (like, prefix, limit)
     ).fetchall()
-    try:
-        pets = conn.execute(
-            f"""SELECT p.id, p.name, p.cover_id AS cover, p.kind, COUNT(DISTINCT d.image_id) AS n FROM pets p
-                JOIN pet_detections d ON d.pet_id = p.id WHERE p.hidden = 0 AND p.name IS NOT NULL AND lower(p.name) LIKE ? ESCAPE '\\'
-                GROUP BY p.id {order}""", (like, prefix, limit)
-        ).fetchall()
-    except sqlite3.OperationalError:
-        pets = []
     albums = conn.execute(
         f"""SELECT a.id, a.name, COALESCE(a.cover_id, (SELECT ai.image_id FROM album_items ai WHERE ai.album_id = a.id LIMIT 1)) AS cover,
                    (SELECT COUNT(*) FROM album_items ai WHERE ai.album_id = a.id) AS n
@@ -486,7 +452,6 @@ def suggest(conn: sqlite3.Connection, q: str, limit: int = 6) -> dict:
     tags.sort(key=lambda t: (not t["name"].lower().startswith(text), -t["n"]))
     return {
         "people": [dict(r) for r in people],
-        "pets": [dict(r) for r in pets],
         "albums": [dict(r) for r in albums],
         "places": [dict(r) for r in places],
         "tags": tags[:limit],

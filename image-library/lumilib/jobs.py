@@ -23,13 +23,10 @@ from .scanner import scan_all
 LABELS = {
     "scan": "掃描", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
     "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
-    "pets": "寵物辨識", "pet_cluster": "寵物分群", "pet_model": "下載寵物辨識模型",
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
-    "dups": "尋找重複與相似照片", "stacks": "重新計算疊放",
-    "quality": "品質檢查（模糊、曝光）", "export": "匯出照片",
-    "exif": "修改照片資訊", "exif_undo": "復原照片資訊",
+    "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
 }
-LANES = {"analyze": "ai", "embed": "ai", "pull": "download", "face_model": "download", "clip_model": "download", "pet_model": "download"}
+LANES = {"analyze": "ai", "embed": "ai", "pull": "download", "face_model": "download", "clip_model": "download"}
 QUEUED_LANES = ("main", "ai")
 _ids = itertools.count(1)
 
@@ -215,9 +212,6 @@ class JobRunner:
             message = self._follow_up(message)
         elif job["kind"] == "pull" and not error:
             message = self._after_pull(job["options"].get("model"), message)
-        elif job["kind"] == "pet_model" and not error and self._pets_ready("auto"):
-            self.submit("pets")
-            message += "；開始辨識寵物"
         for fn in list(self.on_finish):
             try:
                 fn(job)
@@ -256,7 +250,7 @@ class JobRunner:
         return False
 
     def _follow_up(self, message: str) -> str:
-        """掃描完自動接著做：人臉、圖像索引、AI 分析（各自需要的模型都準備好才做）。"""
+        """掃描完自動接著做：人臉、圖像索引，以及開啟「自動分析」時的 AI 分析（各自需要的模型都準備好才做）。"""
         from .analyzer import ai_status
 
         try:
@@ -267,28 +261,8 @@ class JobRunner:
                 conn.close()
             if st["faces_pending"] and self._faces_ready("auto"):
                 self.submit("faces")
-            if self._pets_ready("auto"):
-                conn = db.connect(self.cfg.db_path)
-                try:
-                    need_pets = conn.execute(
-                        "SELECT 1 FROM images WHERE status = 'ok' AND media_type = 'photo' AND (pets_at IS NULL OR pets_model IS NOT ?) LIMIT 1",
-                        (self.cfg.pet_model,),
-                    ).fetchone()
-                finally:
-                    conn.close()
-                if need_pets:
-                    self.submit("pets")
             if st["images"] > st["clip_done"] and self._clip_ready("auto"):
                 self.submit("clip")
-            conn = db.connect(self.cfg.db_path)
-            try:
-                need_quality = conn.execute(
-                    "SELECT 1 FROM images WHERE status = 'ok' AND media_type = 'photo' AND quality_at IS NULL LIMIT 1"
-                ).fetchone()
-            finally:
-                conn.close()
-            if need_quality:
-                self.submit("quality")  # 本機計算，很快
             if self.cfg.auto_analyze and st["pending"]:
                 status = ai_status(self.client_factory(), self.cfg)
                 from .schedule import effective
@@ -331,13 +305,6 @@ class JobRunner:
         if kind == "faces":
             return True  # 明確要求時，未下載模型會回報錯誤
         return bool(self.cfg.face_enabled) and model_installed(self.cfg, self.cfg.face_model)
-
-    def _pets_ready(self, kind: str) -> bool:
-        from .petid import model_installed
-
-        if kind == "pets":
-            return True
-        return bool(self.cfg.pet_enabled) and model_installed(self.cfg, self.cfg.pet_model)
 
     def _clip_ready(self, kind: str) -> bool:
         from .clip import model_installed
@@ -382,25 +349,6 @@ class JobRunner:
                 download_model(self.cfg, name, lambda st, d, t: upd(
                     message=f"{name}：{_fmt_bytes(d)} / {_fmt_bytes(t)}" if t else st, done=d, total=t), stop)
                 parts.append(f"人臉模型 {name} 下載完成")
-            if kind in ("pets", "index") and not stop.is_set() and self._pets_ready(kind):
-                from .petid import cluster_pets, detect_pets
-
-                res = detect_pets(conn, self.cfg, ids=opts.get("ids"), stop=stop,
-                                  progress=lambda i, n, m: upd(done=i, total=n, message=f"寵物 {i}/{n}　{m}"))
-                c = cluster_pets(conn, self.cfg, stop=stop)
-                parts.append(f"寵物：處理 {res.scanned} 張、找到 {res.animals} 隻貓狗、新寵物 {c.pets_new} 隻")
-            if kind == "pet_cluster":
-                from .petid import recluster as pet_recluster
-
-                c = pet_recluster(conn, self.cfg, stop=stop)
-                parts.append(f"重新分群：新寵物 {c.pets_new} 隻、歸入 {c.assigned} 張")
-            if kind == "pet_model":
-                from .petid import download_model as download_pets
-
-                name = opts["model"]
-                download_pets(self.cfg, name, lambda st, d, t: upd(
-                    message=f"{st}：{_fmt_bytes(d)} / {_fmt_bytes(t)}" if t else st, done=d, total=t), stop)
-                parts.append("寵物辨識模型下載完成")
             if kind in ("clip", "index") and not stop.is_set() and self._clip_ready(kind):
                 from .clip import index_images
 
@@ -428,34 +376,12 @@ class JobRunner:
                     wait=lambda: self._wait_schedule(job),
                 )
                 parts.append(f"分析 {res.analyzed} 個、失敗 {res.failed} 個" + (f"、向量 {res.embedded} 個" if res.embedded else ""))
-            if kind == "exif":
-                from .exifedit import apply_edits
-
-                res = apply_edits(conn, self.cfg, opts["ids"], opts["changes"], stop=stop,
-                                  progress=lambda i, n, m: upd(done=i, total=n, message=f"{i}/{n}　{m}"))
-                job["result"] = res
-                parts.append(f"已修改 {res['done']} 張" + (f"、{len(res['errors'])} 張失敗" if res["errors"] else "")
-                             + (f"、{res['skipped']} 張不用改" if res["skipped"] else ""))
-                if res["errors"]:
-                    parts.append("；".join(res["errors"][:3]))
-            if kind == "exif_undo":
-                from .exifedit import undo_batch
-
-                res = undo_batch(conn, self.cfg, int(opts["batch"]), stop=stop,
-                                 progress=lambda i, n, m: upd(done=i, total=n, message=f"{i}/{n}"))
-                parts.append(f"已復原 {res['done']} 張" + (f"、{len(res['errors'])} 張失敗" if res["errors"] else ""))
             if kind == "dups":
                 from .organize import find_duplicates
 
                 res = find_duplicates(conn, self.cfg, stop=stop,
                                       progress=lambda i, n, m: upd(done=i, total=n, message=f"{m} {i}/{n}"))
                 parts.append(f"完全相同 {len(res['exact'])} 組、幾乎一樣 {len(res['similar'])} 組")
-            if kind == "quality":
-                from .quality import check_images
-
-                n = check_images(conn, self.cfg, ids=opts.get("ids"), redo=bool(opts.get("redo")), stop=stop,
-                                 progress=lambda i, t, m: upd(done=i, total=t, message=f"品質檢查 {i}/{t}　{m}"))
-                parts.append(f"檢查 {n} 張照片的清晰度與曝光")
             if kind == "export":
                 from .export import export_images
 

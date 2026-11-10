@@ -49,7 +49,7 @@ def _thumb_files(cfg: Config) -> dict[str, Path]:
     if not base.exists():
         return out
     for sub in base.iterdir():
-        if not sub.is_dir() or sub.name in ("faces", "pets"):
+        if not sub.is_dir() or sub.name in ("faces", "pets"):  # pets：舊版寵物辨識留下的縮圖
             continue
         for f in sub.iterdir():
             if f.suffix == ".webp":
@@ -69,21 +69,6 @@ def _orphan_face_thumbs(conn: sqlite3.Connection, cfg: Config) -> list[Path]:
     return out
 
 
-def _orphan_pet_thumbs(conn: sqlite3.Connection, cfg: Config) -> list[Path]:
-    pet_dir = cfg.thumbs_dir / "pets"
-    if not pet_dir.exists():
-        return []
-    try:
-        used = {r[0] for r in conn.execute("SELECT id FROM pet_detections")}
-    except sqlite3.OperationalError:
-        return []
-    out = []
-    for sub in pet_dir.iterdir():
-        if sub.is_dir():
-            out.extend(f for f in sub.iterdir() if f.stem.isdigit() and int(f.stem) not in used)
-    return out
-
-
 def _db_slack(conn: sqlite3.Connection, cfg: Config) -> int:
     """資料庫裡已刪除資料留下的空白，加上尚未併回的 WAL 記錄（壓縮後可釋放）。"""
     page_size = conn.execute("PRAGMA page_size").fetchone()[0]
@@ -95,7 +80,7 @@ def reclaimable(conn: sqlite3.Connection, cfg: Config) -> dict:
     """清理前先估算：可以刪掉哪些快取、能釋放多少空間。"""
     used_fps = {r[0] for r in conn.execute("SELECT fingerprint FROM images")}
     thumbs = [p for fp, p in _thumb_files(cfg).items() if fp not in used_fps]
-    faces = _orphan_face_thumbs(conn, cfg) + _orphan_pet_thumbs(conn, cfg)
+    faces = _orphan_face_thumbs(conn, cfg)
     t_bytes = sum(_file_size(p) for p in thumbs)
     f_bytes = sum(_file_size(p) for p in faces)
     slack = _db_slack(conn, cfg)
@@ -135,8 +120,7 @@ def usage(conn: sqlite3.Connection, cfg: Config, ollama_models: list[dict] | Non
         models.append({"kind": "ollama", "name": m["name"], "bytes": m.get("size") or 0, "roles": roles,
                        "detail": m.get("parameter_size") or ""})
     folders = (("face", cfg.home / "models", cfg.face_model, cfg.face_enabled, "人臉辨識"),
-               ("clip", cfg.home / "models" / "clip", cfg.clip_model, cfg.clip_enabled, "圖像搜尋"),
-               ("pet", cfg.home / "models" / "pets", cfg.pet_model, cfg.pet_enabled, "寵物辨識"))
+               ("clip", cfg.home / "models" / "clip", cfg.clip_model, cfg.clip_enabled, "圖像搜尋"))
     for kind, folder, active, enabled, role in folders:
         if not folder.exists():
             continue
@@ -173,7 +157,7 @@ def clean_orphans(conn: sqlite3.Connection, cfg: Config) -> dict:
             freed += _file_size(p)
             p.unlink(missing_ok=True)
             files += 1
-    for f in _orphan_face_thumbs(conn, cfg) + _orphan_pet_thumbs(conn, cfg):
+    for f in _orphan_face_thumbs(conn, cfg):
         freed += _file_size(f)
         f.unlink(missing_ok=True)
         files += 1
@@ -195,12 +179,9 @@ def remove_root(conn: sqlite3.Connection, cfg: Config, root_id: int) -> dict:
     other = {r[0] for r in conn.execute("SELECT fingerprint FROM images WHERE root_id != ?", (root_id,))}
     face_ids = [r[0] for r in conn.execute(
         "SELECT f.id FROM faces f JOIN images i ON i.id = f.image_id WHERE i.root_id = ?", (root_id,))]
-    pet_ids = [r[0] for r in conn.execute(
-        "SELECT d.id FROM pet_detections d JOIN images i ON i.id = d.image_id WHERE i.root_id = ?", (root_id,))]
     count = db.remove_root(conn, root_id)  # 照片紀錄、分析、人臉會一起刪除（資料庫的連鎖刪除）
     # 沒有臉的人物也移除
     conn.execute("DELETE FROM persons WHERE id NOT IN (SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL)")
-    conn.execute("DELETE FROM pets WHERE id NOT IN (SELECT DISTINCT pet_id FROM pet_detections WHERE pet_id IS NOT NULL)")
     conn.commit()
     freed = 0
     for fp in fps - other:
@@ -209,12 +190,6 @@ def remove_root(conn: sqlite3.Connection, cfg: Config, root_id: int) -> dict:
         p.unlink(missing_ok=True)
     for fid in face_ids:
         p = _face_thumb(cfg, fid)
-        freed += _file_size(p)
-        p.unlink(missing_ok=True)
-    from .petid import thumb_path as pet_thumb
-
-    for pid in pet_ids:
-        p = pet_thumb(cfg, pid)
         freed += _file_size(p)
         p.unlink(missing_ok=True)
     return {"removed": count, "freed": freed}
@@ -239,7 +214,9 @@ def delete_model_files(cfg: Config, kind: str, name: str) -> int:
     """刪除人臉或圖像搜尋模型的檔案，回傳釋放的位元組。"""
     if "/" in name or "\\" in name or name in ("", ".", ".."):
         raise ValueError("模型名稱不正確")
-    folder = {"face": cfg.home / "models" / name, "pet": cfg.home / "models" / "pets" / name}.get(kind, cfg.home / "models" / "clip" / name)
+    if kind not in ("face", "clip") or (kind == "face" and name in ("clip", "pets")):
+        raise ValueError("未知的模型類型")
+    folder = cfg.home / "models" / name if kind == "face" else cfg.home / "models" / "clip" / name
     size, _ = dir_size(folder)
     shutil.rmtree(folder, ignore_errors=True)
     return size

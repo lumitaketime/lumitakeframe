@@ -29,18 +29,6 @@ export async function removeFromAlbum(albumId, ids) {
   refresh();
 }
 
-export async function moveAssets(ids) {
-  const target = await showDialog("move", { count: ids.length });
-  if (!target) return false;
-  const res = await api("/api/assets/bulk", {
-    body: { ids, action: "move", root_id: target.root, folder: target.path },
-  });
-  if (res.errors?.length) toast(`有 ${res.errors.length} 個檔案無法搬移：${res.errors[0]}`, "error", 6000);
-  else toast(`已搬移 ${res.done} 個檔案到「${target.label}」`);
-  refresh();
-  return true;
-}
-
 export async function trashAssets(ids) {
   const ok = await confirm(
     `移到垃圾桶？`,

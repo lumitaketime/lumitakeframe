@@ -105,53 +105,6 @@ def lookup(points: list[tuple[float, float]]) -> list[dict]:
     return out
 
 
-def search_places(conn: sqlite3.Connection, q: str, limit: int = 8) -> list[dict]:
-    """依名稱找地點：圖庫裡去過的地方排前面，再補上離線地名資料。開頭相符的優先。"""
-    text = q.strip().lower()
-    if not text:
-        return []
-    out, seen = [], set()
-    text_db = text
-    like = "%" + text_db.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-    for r in conn.execute(
-        """SELECT place, country, AVG(lat) AS lat, AVG(lon) AS lon, COUNT(*) AS n FROM images
-           WHERE place IS NOT NULL AND place != '' AND lat IS NOT NULL AND (lower(place) LIKE ? ESCAPE '\\' OR lower(place_en) LIKE ? ESCAPE '\\')
-           GROUP BY place, country ORDER BY n DESC LIMIT ?""", (like, like, limit)
-    ):
-        seen.add((r["place"], r["country"]))
-        out.append({"name": r["place"], "country": COUNTRY_ZH.get(r["country"], r["country"] or ""), "lat": r["lat"], "lon": r["lon"],
-                    "photos": r["n"]})
-    if available() and len(out) < limit:
-        d = _load()
-        key_text = text.replace("臺", "台")  # 台、臺 視為相同
-        hits = []
-        for i, (en, zh) in enumerate(zip(d["en"], d["zh"])):
-            names = [n.replace("臺", "台") for n in (zh, en) if n]
-            best = None
-            for n in names:
-                low = n.lower()
-                if low.startswith(key_text):
-                    best = 0
-                    break
-                if key_text in low:
-                    best = 1
-            if best is not None:
-                hits.append((best, len(zh or en), i))
-        hits.sort()
-        for _, _, i in hits:
-            name = d["zh"][i] or d["en"][i]
-            key = (name, d["cc"][i])
-            if key in seen:
-                continue
-            seen.add(key)
-            cc = d["cc"][i]
-            out.append({"name": name, "country": COUNTRY_ZH.get(cc, d["country_en"].get(cc, cc)), "lat": d["lat"][i], "lon": d["lon"][i],
-                        "photos": 0, "en": d["en"][i]})
-            if len(out) >= limit:
-                break
-    return out
-
-
 def geocode_images(conn: sqlite3.Connection, progress=None) -> int:
     """替有 GPS 但還沒有地名的照片補上地名。"""
     if not available():

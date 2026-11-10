@@ -45,7 +45,7 @@ function overDrop(x, y) {
   return !!el?.closest?.("[data-pin-drop]");
 }
 
-/** Svelte action：use:pinnable={"blurry"} */
+/** Svelte action：use:pinnable={"screens"} */
 export function pinnable(node, key) {
   let timer = null;
   let start = null;

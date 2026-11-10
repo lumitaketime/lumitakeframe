@@ -1,4 +1,4 @@
-"""整理工具：品質檢查、截圖與文件、大檔案、批次匯出。"""
+"""整理工具：截圖與文件、大檔案、批次匯出。"""
 
 import shutil
 import tempfile
@@ -11,7 +11,6 @@ from PIL import Image, ImageDraw, ImageFilter
 from lumilib import db
 from lumilib.config import load_config
 from lumilib.export import export_images, output_name, watermark
-from lumilib.quality import blurry, check_images, exposure_problems
 from lumilib.scanner import scan_all
 from lumilib.tools import large_files, large_folders, screens_and_documents
 
@@ -53,14 +52,6 @@ class ToolsTests(unittest.TestCase):
 
     def names(self, rows):
         return {r["rel_path"].rsplit("/", 1)[-1] for r in rows}
-
-    def test_quality(self):
-        self.assertEqual(check_images(self.conn, self.cfg), 4)
-        self.assertEqual(self.names(blurry(self.conn)) - {"black.jpg", "Screenshot 2024-01-01.png"}, {"blurry.jpg"})
-        flags = {r["rel_path"].rsplit("/", 1)[-1]: f for r, f in exposure_problems(self.conn)}
-        self.assertEqual(flags.get("black.jpg"), "black")
-        self.assertNotIn("sharp.jpg", flags)
-        self.assertEqual(check_images(self.conn, self.cfg), 0)  # 已檢查過的不重做
 
     def test_screens_and_large(self):
         found = {r["rel_path"].rsplit("/", 1)[-1]: reason for r, reason in screens_and_documents(self.conn)}
@@ -106,16 +97,6 @@ class ToolsTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in dest.iterdir()), ["client_001.ARW", "client_001.xmp"])
         self.assertEqual((dest / "client_001.ARW").read_bytes(), raw.read_bytes())
 
-    def test_pets(self):
-        from lumilib.tools import pet_images, pets
-
-        self.conn.execute("UPDATE images SET analyzed_at = '2026-01-01', search_text = 'a black puppy on the floor 狗' WHERE rel_path LIKE '%sharp%'")
-        self.conn.commit()
-        kinds = {p["key"]: p for p in pets(self.conn)}
-        self.assertEqual(kinds["dog"]["count"], 1)
-        self.assertNotIn("cat", kinds)
-        self.assertEqual(len(pet_images(self.conn, "dog")), 1)
-
     def test_name_and_watermark(self):
         row = {"rel_path": "a/IMG_1.jpg", "taken_at": "2024-06-25T18:06:00", "sort_at": None, "camera": "ILCE 7M4"}
         self.assertEqual(output_name("{date}_{camera}_{seq}", row, 7, 120), "20240625_ILCE-7M4_007")
@@ -130,18 +111,19 @@ if __name__ == "__main__":
 
 
 class MigrationTests(unittest.TestCase):
-    def test_old_library_gets_quality_columns(self):
+    def test_old_library_gets_missing_columns(self):
         tmp = Path(tempfile.mkdtemp())
         try:
             path = tmp / "library.db"
             conn = db.connect(path)
-            conn.execute("ALTER TABLE images DROP COLUMN highlight")
+            conn.execute("ALTER TABLE images DROP COLUMN phash")
+            conn.execute("ALTER TABLE images DROP COLUMN thumb_ok")
             conn.execute("PRAGMA user_version = 7")
             conn.commit()
             conn.close()
             conn = db.connect(path)
             cols = {r[1] for r in conn.execute("PRAGMA table_info(images)")}
-            self.assertTrue({"quality_at", "sharpness", "highlight"} <= cols)
+            self.assertTrue({"phash", "thumb_ok"} <= cols)
             conn.close()
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

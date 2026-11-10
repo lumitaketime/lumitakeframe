@@ -15,7 +15,7 @@
   let loading = $state(false);
   let busy = $state("");
 
-  const KIND = { ollama: "AI 模型（Ollama）", face: "人臉辨識模型", clip: "圖像搜尋模型", pet: "寵物辨識模型" };
+  const KIND = { ollama: "AI 模型（Ollama）", face: "人臉辨識模型", clip: "圖像搜尋模型" };
 
   async function load() {
     loading = true;
@@ -203,7 +203,7 @@
       </div>
       <ul class="reclaim-list">
         {#if o.thumbs.files}<li><span>沒有照片使用的縮圖（照片已刪除或搬走）</span><span>{count(o.thumbs.files)} 個 · {bytes(o.thumbs.bytes)}</span></li>{/if}
-        {#if o.face_thumbs.files}<li><span>不再使用的人臉與寵物縮圖（重新辨識後留下的）</span><span>{count(o.face_thumbs.files)} 個 · {bytes(o.face_thumbs.bytes)}</span></li>{/if}
+        {#if o.face_thumbs.files}<li><span>不再使用的人臉縮圖（重新辨識後留下的）</span><span>{count(o.face_thumbs.files)} 個 · {bytes(o.face_thumbs.bytes)}</span></li>{/if}
         {#if o.database.bytes >= 1024 * 1024}<li><span>資料庫裡刪除資料後的空白</span><span>{bytes(o.database.bytes)}</span></li>{/if}
       </ul>
       <p class="muted small">只刪除本程式產生的快取，照片、分析結果與人物都不受影響。</p>

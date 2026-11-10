@@ -10,7 +10,6 @@
   import Icon from "../components/Icon.svelte";
   import JobList from "../components/JobList.svelte";
   import StoragePanel from "../components/StoragePanel.svelte";
-  import QualitySettings from "../components/QualitySettings.svelte";
   import { api } from "../lib/api.js";
   import { app, refresh, showDialog, toast } from "../lib/state.svelte.js";
   import { link } from "../lib/router.svelte.js";
@@ -19,7 +18,7 @@
   import {
     mdiHarddisk, mdiRefresh, mdiPencilOutline, mdiDeleteOutline, mdiPlus, mdiCreation, mdiCheck, mdiDownload,
     mdiCellphone, mdiStop, mdiThemeLightDark, mdiServerNetwork, mdiAlertCircleOutline, mdiFaceRecognition,
-    mdiImageSearchOutline, mdiStar, mdiTuneVariant, mdiArrowLeft, mdiPaw, mdiViewDashboardOutline, mdiDatabaseOutline, mdiToolboxOutline, filled,
+    mdiImageSearchOutline, mdiStar, mdiTuneVariant, mdiArrowLeft, mdiViewDashboardOutline, mdiDatabaseOutline, mdiToolboxOutline, filled,
   } from "../lib/icons.js";
 
 
@@ -29,7 +28,7 @@
   const SECTIONS = [
     { id: "library", label: "圖庫", sub: "資料夾、外觀與選單", icon: mdiHarddisk, members: ["library", "look", "features"] },
     { id: "ai", label: "AI 分析", sub: "模型、時機、提示詞", icon: mdiCreation, members: ["ai"] },
-    { id: "recog", label: "辨識", sub: "人臉、寵物", icon: mdiFaceRecognition, members: ["faces", "pets"] },
+    { id: "recog", label: "辨識", sub: "人臉", icon: mdiFaceRecognition, members: ["faces"] },
     { id: "search", label: "搜尋", sub: "同義詞、圖像搜尋", icon: mdiImageSearchOutline, members: ["search"] },
     { id: "organize", label: "整理與疊放", sub: "判定標準、星等、疊放", icon: mdiStar, members: ["rating", "tools"] },
     { id: "system", label: "系統", sub: "手機、儲存空間、進階", icon: mdiTuneVariant, members: ["phone", "storage", "advanced"] },
@@ -37,7 +36,7 @@
   // 桌機沒有指定分類時顯示第一個；手機先顯示分類清單
   const groupOf = (id) => SECTIONS.find((c) => c.id === id || c.members.includes(id))?.id;
   const current = $derived(section === "about" ? "about" : groupOf(section) || (winWidth > 760 ? "library" : ""));
-  // 從舊網址或其他頁面連進來（例如 /settings/pets）：捲到那個區塊
+  // 從舊網址或其他頁面連進來（例如 /settings/faces）：捲到那個區塊
   $effect(() => {
     const target = section;
     if (!target || SECTIONS.some((c) => c.id === target) || target === "about") return;
@@ -47,14 +46,11 @@
 
   const FEATURES = [
     { href: "/explore", label: "探索", hint: "依地點、物品、場景瀏覽" },
-    { href: "/map", label: "地圖", hint: "有 GPS 的照片顯示在地圖上" },
     { href: "/favorites", label: "我的最愛", hint: "按愛心收藏的作品" },
     { href: "/videos", label: "影片", hint: "只看影片" },
     { href: "/people", label: "人物", hint: "人臉辨識；關掉時也會停止在背景偵測人臉" },
-    { href: "/pets", label: "寵物", hint: "依 AI 分析整理狗、貓、鳥等寵物照片" },
-    { href: "/gear", label: "器材", hint: "依相機、鏡頭、焦段篩選" },
     { href: "/keywords", label: "關鍵字", hint: "常拍內容的關鍵字雲" },
-    { href: "/tools", label: "整理工具", hint: "模糊與曝光檢查、截圖與文件、大檔案、重複照片" },
+    { href: "/tools", label: "整理工具", hint: "截圖與文件、大檔案、重複照片" },
   ];
   const hiddenSet = $derived(new Set((settings?.nav_hidden || "").split(",").filter(Boolean)));
 
@@ -71,13 +67,11 @@
     settings = await api("/api/settings", { body: { vision_model: name } });
     await job("pull", { model: name });
     models = await api("/api/models");
-    toast(`開始下載 ${name}，完成後會自動開始分析`);
+    toast(settings?.auto_analyze ? `開始下載 ${name}，完成後會自動開始分析` : `開始下載 ${name}，完成後就可以開始分析`);
   }
 
   let roots = $state([]);
   let faceModels = $state([]);
-  let petModels = $state([]);
-  let petInfo = $state(null);
   let ollamaUrl = $state("");
   let ollamaTest = $state("");
   let prompt = $state("");
@@ -153,8 +147,6 @@
   function loadExtra() {
     api("/api/faces/models").then((m) => (faceModels = m));
     loadSched();
-    api("/api/pets/models").then((m) => (petModels = m));
-    api("/api/pets").then((d) => (petInfo = d)).catch(() => {});
     api("/api/clip/models").then((m) => (clipModels = m));
   }
 
@@ -204,7 +196,7 @@
       Object.assign(extra, { schedule_start: schedStatus.start, schedule_end: schedStatus.end, schedule_ac: schedStatus.ac ? 1 : 0 });
     }
     await saveSched({ analyze_schedule: mode, ...extra });
-    toast(mode === "ask" ? "掃描到新照片時會先問你要不要分析" : mode === "schedule" ? "已改成依排程分析" : "有新照片就會開始分析");
+    toast(mode === "ask" ? "掃描到新照片時會先問你要不要分析" : mode === "schedule" ? "已改成依排程分析" : "分析不限時段，隨時都可以進行");
   }
   function toggleDay(d) {
     const set = new Set(sched.days.split(""));
@@ -214,25 +206,6 @@
       return;
     }
     saveSched({ schedule_days: [...set].sort().join("") });
-  }
-
-  async function usePetModel(name) {
-    if (settings.pet_model !== name && petInfo?.pets?.length) {
-      const ok = await confirm("切換寵物模型？", "不同模型的特徵不相容，會清除目前認出的寵物（包含名字），之後重新辨識。", { ok: "切換", danger: true });
-      if (!ok) return;
-    }
-    settings = await api("/api/settings", { body: { pet_model: name } });
-    loadExtra();
-    refresh();
-  }
-
-  async function clearPets() {
-    const ok = await confirm("刪除所有寵物資料？", "會刪除認出的貓狗、特徵與名字。照片本身不受影響，之後可以重新辨識。", { ok: "全部刪除", danger: true });
-    if (!ok) return;
-    await api("/api/pets/clear", { body: {} });
-    toast("寵物資料已刪除");
-    loadExtra();
-    refresh();
   }
 
   async function clearFaces() {
@@ -529,7 +502,7 @@
       <div class="sched">
         <span class="label">什麼時候分析</span>
         <div class="seg3" role="radiogroup" aria-label="分析時機" use:slider>
-          {#each [["always", "隨時", "有新照片就開始"], ["schedule", "依排程", "指定星期、時段與條件"], ["ask", "每次先問我", "掃描到新照片時先詢問"]] as [v, label, hint] (v)}
+          {#each [["always", "隨時", "不限時段"], ["schedule", "依排程", "指定星期、時段與條件"], ["ask", "每次先問我", "掃描到新照片時先詢問"]] as [v, label, hint] (v)}
             <button role="radio" aria-checked={sched.mode === v} class:on={sched.mode === v} onclick={() => setMode(v)}>
               <b>{label}</b><span>{hint}</span>
             </button>
@@ -817,73 +790,6 @@
       {:else}<Loading kind="rows" count={2} />{/if}
     </section>
     {/if}
-    {#if current === "recog"}
-    <div class="anchor" id="sec-pets"></div>
-    <!-- 寵物辨識 -->
-    <section class="card" id="pets">
-      <SectionTitle icon={mdiPaw} title="寵物辨識">找出照片裡的貓和狗，依長相認出是哪一隻，像人物一樣命名、搜尋。全部在這台電腦上運算，特徵只存在本機。花色很像的同品種毛孩可能被分在一起，可以在寵物頁合併或移出照片。</SectionTitle>
-      {#if settings}
-        <label class="toggle">
-          <input type="checkbox" checked={!!settings.pet_enabled}
-            onchange={async (e) => { settings = await api("/api/settings", { body: { pet_enabled: e.currentTarget.checked ? 1 : 0 } }); }} />
-          掃描新照片時自動辨識寵物
-        </label>
-        <div class="models">
-          {#each petModels as m (m.name)}
-            {@const active = settings.pet_model === m.name}
-            <div class="model" class:active>
-              <div class="mhead"><b>{m.label}</b></div>
-              <div class="tiny muted">下載約 {m.download_mb} MB</div>
-              <p class="small">{m.note}</p>
-              <div class="row">
-                {#if !m.installed}
-                  <button class="btn small soft" disabled={!!downloads[m.name]} onclick={() => job("pet_model", { model: m.name })}>
-                    <Icon path={mdiDownload} size={16} />{dlText(m.name) || "下載"}
-                  </button>
-                {/if}
-                {#if active}
-                  <span class="using"><Icon path={mdiCheck} size={18} />使用中</span>
-                {:else if m.installed}
-                  <button class="btn small" onclick={() => usePetModel(m.name)}>使用</button>
-                {:else}
-                  <button class="btn small ghost" onclick={() => usePetModel(m.name)}>選用</button>
-                {/if}
-                {#if m.installed && !active}
-                  <button class="icon-btn" title="刪除模型" onclick={() => deleteExtraModel("pets", m.name)}><Icon path={mdiDeleteOutline} size={20} /></button>
-                {/if}
-              </div>
-            </div>
-          {/each}
-        </div>
-        <div class="row wrap">
-          <label class="field">辨識嚴格度
-            <select class="input" value={String(settings.pet_similarity)}
-              onchange={(e) => saveSetting("pet_similarity", Number(e.currentTarget.value))}>
-              <option value="55">寬鬆（容易合在一起）</option>
-              <option value="62">標準（建議）</option>
-              <option value="70">嚴格（同一隻可能分成好幾組）</option>
-            </select>
-          </label>
-          <label class="field">出現幾次才建立寵物
-            <select class="input" value={String(settings.pet_min_photos)}
-              onchange={(e) => saveSetting("pet_min_photos", Number(e.currentTarget.value))}>
-              {#each [1, 2, 3, 5] as n (n)}<option value={String(n)}>{n} 次</option>{/each}
-            </select>
-          </label>
-        </div>
-        <JobList kinds={["pets", "pet_cluster", "pet_model"]} compact />
-        {#if petInfo}
-          <p class="small">已認出 {count(petInfo.pets.length)} 隻寵物；尚未辨識 {count(petInfo.pending)} 張照片。</p>
-        {:else}<Loading kind="rows" count={2} />{/if}
-        <div class="row wrap">
-          <button class="btn" disabled={!petModels.find((m) => m.active)?.installed} onclick={() => job("pets")}>辨識寵物</button>
-          <button class="btn ghost" onclick={() => job("pet_cluster")}>重新分群</button>
-          <button class="btn ghost danger-text" onclick={clearPets}>刪除所有寵物資料</button>
-        </div>
-        <p class="muted tiny">換了「辨識嚴格度」後按「重新分群」套用；已命名的寵物與你手動更正的結果會保留。模型：YOLOX（Apache-2.0）、DINOv2（Apache-2.0）。</p>
-      {:else}<Loading kind="rows" count={2} />{/if}
-    </section>
-    {/if}
     {#if current === "search"}
     <div class="anchor" id="sec-search"></div>
     <!-- 智慧搜尋 -->
@@ -1032,8 +938,6 @@
     <div class="anchor" id="sec-tools"></div>
       <section class="card">
         <SectionTitle icon={mdiToolboxOutline} title="整理工具的判定標準">每個整理工具的判斷方式都在這裡調整，全部在這台 Mac 上計算，不用 AI。調整後，「整理工具」的清單會立刻更新。</SectionTitle>
-        <h3 class="tool-h">模糊照片與曝光問題</h3>
-        <QualitySettings />
         {#if settings}
           <h3 class="tool-h">重複照片</h3>
           <div class="row wrap">

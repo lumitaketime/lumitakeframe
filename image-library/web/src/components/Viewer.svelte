@@ -3,15 +3,14 @@
   import { findThumb, fly, heroDuration } from "../lib/hero.js";
   import Icon from "./Icon.svelte";
   import InfoPanel from "./InfoPanel.svelte";
-  import ExifDialog from "./ExifDialog.svelte";
   import { api, originalUrl, previewUrl, thumbUrl } from "../lib/api.js";
   import { app, viewer, refresh, toast, isMacApp } from "../lib/state.svelte.js";
-  import { addToAlbum, analyzeAssets, moveAssets, reveal, setFavorite, trashAssets, copyText } from "../lib/actions.js";
+  import { addToAlbum, analyzeAssets, reveal, setFavorite, trashAssets, copyText } from "../lib/actions.js";
   import { LABEL_COLORS, LABEL_KEYS, LABEL_NAMES } from "../lib/format.js";
   import {
     mdiArrowLeft, mdiChevronLeft, mdiChevronRight, mdiDeleteOutline, mdiDotsVertical, mdiDownload, mdiFolderOpenOutline,
-    mdiHeart, mdiHeartOutline, mdiInformationOutline, mdiImageAlbum, mdiFolderMoveOutline, mdiCreation, mdiContentCopy,
-    mdiMagnifyPlusOutline, mdiMagnifyMinusOutline, mdiStar, mdiStarOutline, mdiFlagRemove, mdiLayers, mdiFileDocumentEditOutline,
+    mdiHeart, mdiHeartOutline, mdiInformationOutline, mdiImageAlbum, mdiCreation, mdiContentCopy,
+    mdiMagnifyPlusOutline, mdiMagnifyMinusOutline, mdiStar, mdiStarOutline, mdiFlagRemove, mdiLayers,
     mdiFullscreen, mdiFullscreenExit,
   } from "../lib/icons.js";
 
@@ -90,7 +89,6 @@
     };
   });
   let pushed = false;
-  let editingExif = $state(false);
   // 開關動畫：opening＝照片從縮圖長出來；closing＝縮回縮圖
   let phase = $state("opening");
   let stageEl = $state();
@@ -230,13 +228,6 @@
       viewer.list.splice(viewer.index, 1);
       if (!viewer.list.length) close();
       else if (viewer.index >= viewer.list.length) viewer.index = viewer.list.length - 1;
-    }
-  }
-
-  async function move() {
-    menu = false;
-    if (detail && (await moveAssets([detail.id]))) {
-      detail = await api(`/api/assets/${detail.id}`);
     }
   }
 
@@ -463,9 +454,7 @@
         {#if menu}
           <div class="menu" role="menu">
             <button onclick={() => { menu = false; reveal(item.id); }}><Icon path={mdiFolderOpenOutline} size={20} />{app.server?.local ? "在 Finder 中顯示" : "在 Mac 上顯示"}</button>
-            <button onclick={() => { menu = false; editingExif = true; }}><Icon path={mdiFileDocumentEditOutline} size={20} />編輯資訊</button>
             <button onclick={() => { menu = false; addToAlbum([item.id]).then(() => api(`/api/assets/${item.id}`).then((d) => (detail = d))); }}><Icon path={mdiImageAlbum} size={20} />加到相簿</button>
-            <button onclick={move}><Icon path={mdiFolderMoveOutline} size={20} />搬移到資料夾</button>
             <button onclick={() => { menu = false; analyzeAssets([item.id]); }}><Icon path={mdiCreation} size={20} />重新 AI 分析</button>
             <button onclick={() => { menu = false; detail && copyText(detail.path); }}><Icon path={mdiContentCopy} size={20} />複製檔案路徑</button>
             {#if !isMacApp}
@@ -590,9 +579,6 @@
   {/if}
 </div>
 
-{#if editingExif && item}
-  <ExifDialog ids={[item.id]} onclose={() => { editingExif = false; }} />
-{/if}
 
 <style>
   .viewer {

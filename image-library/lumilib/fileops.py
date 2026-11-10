@@ -1,13 +1,12 @@
-"""真正動到硬碟檔案的操作：移到垃圾桶、搬移、建立資料夾、在 Finder 顯示。
+"""動到硬碟檔案的操作：移到垃圾桶（使用者確認後）、在 Finder 顯示。
 
 - 刪除一律「移到垃圾桶」（macOS 的垃圾桶，外接硬碟則是該硬碟的垃圾桶），可以還原。
-- 搬移與刪除會一併處理同名的附屬檔（Lightroom .xmp、iPhone .aae），避免編輯紀錄遺失。
-- 目的地只能是已登錄的資料夾內部，不能跳出去。
+  之後會由「待刪除清單」取代。
+- 刪除會一併處理同名的附屬檔（Lightroom .xmp、iPhone .aae），避免留下孤立的編輯紀錄。
 """
 
 from __future__ import annotations
 
-import shutil
 import sqlite3
 import subprocess
 import sys
@@ -98,73 +97,6 @@ def safe_folder(root_path: Path, folder: str) -> Path:
     if target != root_path.resolve() and root_path.resolve() not in target.parents:
         raise ValueError("目的地必須在圖庫資料夾內")
     return target
-
-
-def create_folder(conn: sqlite3.Connection, root_id: int, folder: str) -> str:
-    root = db.get_root(conn, root_id)
-    if root is None:
-        raise ValueError("找不到資料夾")
-    root_path = Path(root["path"])
-    if not root_path.is_dir():
-        raise ValueError("硬碟未連接")
-    target = safe_folder(root_path, folder)
-    target.mkdir(parents=True, exist_ok=True)
-    return target.relative_to(root_path.resolve()).as_posix() if target != root_path.resolve() else ""
-
-
-def _unique(target: Path) -> Path:
-    if not target.exists():
-        return target
-    stem, suffix = target.stem, target.suffix
-    for n in range(1, 10_000):
-        candidate = target.with_name(f"{stem} ({n}){suffix}")
-        if not candidate.exists():
-            return candidate
-    raise RuntimeError("目的地同名檔案過多")
-
-
-def move_images(conn: sqlite3.Connection, image_ids: list[int], root_id: int, folder: str) -> OpResult:
-    result = OpResult()
-    root = db.get_root(conn, root_id)
-    if root is None:
-        raise ValueError("找不到目的地資料夾")
-    root_path = Path(root["path"]).resolve()
-    if not root_path.is_dir():
-        raise ValueError("目的地硬碟未連接")
-    target_dir = safe_folder(root_path, folder)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    for image_id in image_ids:
-        image = db.get_image(conn, int(image_id))
-        if image is None:
-            continue
-        src = db.absolute_path(conn, image)
-        try:
-            if not src.exists():
-                raise FileNotFoundError("找不到檔案（硬碟可能未連接）")
-            if src.parent.resolve() == target_dir:
-                result.done.append(image["id"])
-                continue
-            dest = _unique(target_dir / src.name)
-            extras = sidecars(src)
-            shutil.move(str(src), str(dest))
-            for extra in extras:
-                suffix = extra.name[len(src.stem):] if extra.name.startswith(src.stem) else extra.suffix
-                try:
-                    shutil.move(str(extra), str(_unique(dest.with_name(dest.stem + suffix))))
-                except OSError:
-                    pass
-        except Exception as exc:
-            result.errors.append(f"{image['rel_path']}: {exc}")
-            continue
-        rel = dest.relative_to(root_path).as_posix()
-        conn.execute(
-            "UPDATE images SET root_id = ?, rel_path = ?, folder = ?, mtime = ?, status = 'ok' WHERE id = ?",
-            (root["id"], rel, db.folder_of(rel), dest.stat().st_mtime, image["id"]),
-        )
-        db.refresh_search_text(conn, image["id"])
-        result.done.append(image["id"])
-    conn.commit()
-    return result
 
 
 def reveal(path: Path, select: bool = True) -> None:

@@ -2,26 +2,24 @@
   import Icon from "./Icon.svelte";
   import ExportDialog from "./ExportDialog.svelte";
   import TagDialog from "./TagDialog.svelte";
-  import ExifDialog from "./ExifDialog.svelte";
   import { app, selection } from "../lib/state.svelte.js";
-  import { addToAlbum, analyzeAssets, moveAssets, removeFromAlbum, setFavorite, trashAssets } from "../lib/actions.js";
+  import { addToAlbum, analyzeAssets, removeFromAlbum, setFavorite, trashAssets } from "../lib/actions.js";
   import { api } from "../lib/api.js";
   import { toast, refresh, showDialog } from "../lib/state.svelte.js";
   import { navigate } from "../lib/router.svelte.js";
   import { undoable } from "../lib/undo.svelte.js";
   import {
-    mdiFileExportOutline, mdiFileDocumentEditOutline, mdiPound, mdiClose, mdiHeartOutline, mdiImageAlbum, mdiFolderMoveOutline, mdiCreation, mdiDeleteOutline, mdiImageRemoveOutline, mdiImageOutline, mdiAccountRemoveOutline, mdiAccountArrowRightOutline, mdiStarOutline, mdiStar, mdiFlagRemove, mdiLayers,
+    mdiFileExportOutline, mdiPound, mdiClose, mdiHeartOutline, mdiImageAlbum, mdiCreation, mdiDeleteOutline, mdiImageRemoveOutline, mdiImageOutline, mdiAccountRemoveOutline, mdiAccountArrowRightOutline, mdiStarOutline, mdiStar, mdiFlagRemove, mdiLayers,
   } from "../lib/icons.js";
   import { LABEL_COLORS, LABEL_KEYS, LABEL_NAMES } from "../lib/format.js";
 
   let rateMenu = $state(false);
   let exporting = $state(false);
   let tagging = $state(false);
-  let editing = $state(false);
 
   async function bulk(action, value) {
     const res = await api("/api/assets/bulk", { body: { ids, action, value } });
-    toast(res.errors?.length ? `已更新，但有 ${res.errors.length} 個檔案無法寫回：${res.errors[0]}` : `已更新 ${ids.length} 個項目`, res.errors?.length ? "error" : "info");
+    toast(res.errors?.length ? `已更新，但有 ${res.errors.length} 個項目無法更新：${res.errors[0]}` : `已更新 ${ids.length} 個項目`, res.errors?.length ? "error" : "info");
     refresh();
     rateMenu = false;
   }
@@ -123,8 +121,6 @@
     <button class="icon-btn" title="不是這個人" onclick={() => run(notThisPerson)}><Icon path={mdiAccountRemoveOutline} /></button>
   {/if}
   <button class="btn soft small export" onclick={() => (exporting = true)} title="匯出交件（尺寸、浮水印、移除 GPS、重新命名）"><Icon path={mdiFileExportOutline} size={18} />匯出</button>
-  <button class="icon-btn" title="編輯資訊（檔名、時間、相機、地點、版權）" aria-label="編輯資訊" onclick={() => (editing = true)}><Icon path={mdiFileDocumentEditOutline} /></button>
-  <button class="icon-btn" title="搬移到資料夾" onclick={() => run(() => moveAssets(ids))}><Icon path={mdiFolderMoveOutline} /></button>
   {#if ids.length > 1}
     <button class="icon-btn" title="疊放在一起" onclick={() => run(stackSelected)}><Icon path={mdiLayers} /></button>
   {/if}
@@ -132,9 +128,6 @@
   <button class="icon-btn" title="移到垃圾桶" onclick={() => run(async () => ((await trashAssets(ids)).length ? null : "keep"))}><Icon path={mdiDeleteOutline} /></button>
 </div>
 
-{#if editing}
-  <ExifDialog {ids} onclose={(done) => { editing = false; if (done) selection.clear(); }} />
-{/if}
 {#if tagging}
   <TagDialog {ids} onclose={() => (tagging = false)} />
 {/if}

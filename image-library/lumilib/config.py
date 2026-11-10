@@ -32,12 +32,8 @@ DEFAULTS = {
     "lan": 0,
     # 啟動時自動掃描新增的檔案
     "scan_on_start": 1,
-    # 掃描後自動用 AI 分析新照片（Ollama 與視覺模型都準備好時）
-    "auto_analyze": 1,
-    # 整理工具的判定標準：模糊（清晰度低於多少）、欠曝（平均亮度低於多少）、過曝（過亮像素超過幾 %）
-    "blur_threshold": 45,
-    "under_luma": 25,
-    "over_percent": 45,
+    # 掃描後自動用 AI 分析新照片（預設關閉：檔案量大時不逐一交給 AI，需要時再手動開始或在設定開啟）
+    "auto_analyze": 0,
     # AI 描述的詳細程度：standard 標準、fast 快速（描述較短、關鍵字較少，約快一倍）
     "analysis_detail": "standard",
     # AI 分析時段：always 隨時、ac 只在接電源、night 只在夜間、ac_night 兩者都要
@@ -70,10 +66,6 @@ DEFAULTS = {
     "stack_enabled": 1,
     "burst_seconds": 2,
     # 人臉辨識
-    "pet_enabled": 0,
-    "pet_model": "standard",
-    "pet_similarity": 62,  # 寵物相似度門檻（百分比）
-    "pet_min_photos": 2,  # 出現幾次以上才建立寵物
     "face_enabled": 0,
     "face_model": "buffalo_l",
     "face_similarity": 50,  # 相似度門檻（百分比），越高越嚴格
@@ -110,9 +102,6 @@ class Config:
     lan: int = DEFAULTS["lan"]
     scan_on_start: int = DEFAULTS["scan_on_start"]
     auto_analyze: int = DEFAULTS["auto_analyze"]
-    blur_threshold: int = DEFAULTS["blur_threshold"]
-    under_luma: int = DEFAULTS["under_luma"]
-    over_percent: int = DEFAULTS["over_percent"]
     analysis_detail: str = DEFAULTS["analysis_detail"]
     analyze_schedule: str = DEFAULTS["analyze_schedule"]
     night_start: int = DEFAULTS["night_start"]
@@ -136,10 +125,6 @@ class Config:
     folder_sort: str = DEFAULTS["folder_sort"]
     stack_enabled: int = DEFAULTS["stack_enabled"]
     burst_seconds: int = DEFAULTS["burst_seconds"]
-    pet_enabled: int = DEFAULTS["pet_enabled"]
-    pet_model: str = DEFAULTS["pet_model"]
-    pet_similarity: int = DEFAULTS["pet_similarity"]
-    pet_min_photos: int = DEFAULTS["pet_min_photos"]
     face_enabled: int = DEFAULTS["face_enabled"]
     face_model: str = DEFAULTS["face_model"]
     face_similarity: int = DEFAULTS["face_similarity"]

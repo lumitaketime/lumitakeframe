@@ -243,7 +243,7 @@
             <p class="tiny muted">下載時可以繼續使用電腦；關掉這個視窗也會在背景繼續。</p>
           </div>
         {:else if ai?.ready}
-          <div class="ok"><Icon path={mdiCheck} /><div><b>{ai.model} 已就緒</b><p class="small">掃描到的照片會自動開始分析。</p></div></div>
+          <div class="ok"><Icon path={mdiCheck} /><div><b>{ai.model} 已就緒</b><p class="small">需要時到「設定 → AI 分析」開始分析；也可以在那裡開啟「掃描到新照片後自動 AI 分析」。</p></div></div>
         {/if}
         <p class="tiny muted">之後可在「設定 → AI 分析」換成其他模型，包含 Gemma 4、Qwen3-VL 的各種大小。</p>
       {/if}
@@ -261,7 +261,7 @@
       </ul>
       <p class="small">AI 分析在背景進行，右上角會顯示進度，可以隨時停止。每張約數秒，照片很多時會花上幾個小時，可以讓 Mac 開著慢慢跑。</p>
       <p class="small muted">還可以在設定裡打開：人臉辨識、手機與平板連線、照片呈現方式（依比例或正方形）。</p>
-      {#if chosenInfo && !ai?.ready && !pullJob}<p class="small muted">已選擇 {chosen}，下載完成後就會開始分析。</p>{/if}
+      {#if chosenInfo && !ai?.ready && !pullJob}<p class="small muted">已選擇 {chosen}，下載完成後就可以開始分析。</p>{/if}
       <div class="actions">
         <button class="btn ghost" onclick={back}>上一步</button>
         <button class="btn" onclick={finish}>開始使用</button>

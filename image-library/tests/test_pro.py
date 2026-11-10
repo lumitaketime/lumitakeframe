@@ -210,7 +210,7 @@ class SmartAndMemoryTests(Base):
         self.assertEqual([(m["year"], m["years_ago"]) for m in mem], [(2023, 3), (2021, 5)])
 
 
-class GearKeywordGroupTests(Base):
+class KeywordGroupTests(Base):
     def setUp(self):
         super().setUp()
         specs = [("a.jpg", "X-T5", "XF56mm", 85, 1.2, 160), ("b.jpg", "X-T5", "XF16mm", 24, 2.8, 3200),
@@ -223,25 +223,8 @@ class GearKeywordGroupTests(Base):
                               (lens or None, focal, ap, iso, name))
         self.conn.commit()
 
-    def test_gear_stats_and_exact_filters(self):
-        from lumilib import gear
-
-        st = gear.stats(self.conn)
-        self.assertEqual([(c["name"], c["count"]) for c in st["cameras"]][0], ("FUJIFILM X-T5", 2))
-        self.assertEqual({l["name"]: l["count"] for l in st["lenses"]}, {"XF56mm": 2, "XF16mm": 1})
-        tele = next(b for b in st["focal"] if b["label"] == "中望遠")
-        self.assertEqual(tele["count"], 2)
-        # 完全比對：X-T5 不會包含 X-T50
-        self.assertEqual(len(gear.assets(self.conn, camera="FUJIFILM X-T5")), 2)
-        self.assertEqual(len(gear.assets(self.conn, lens="XF56mm", aperture="0-1.3")), 1)
-        self.assertEqual(len(gear.assets(self.conn, iso="800-12800")), 2)  # 區間不含下限、含上限（與統計分組一致）
-        # 搜尋語法的範圍篩選
-        self.assertEqual(search(self.conn, "focal:24-50")["total"], 2)
-        self.assertEqual(search(self.conn, "f:1.4")["total"], 1)
-        self.assertEqual(search(self.conn, "iso:3200-12800")["total"], 2)
-
     def test_keyword_counts(self):
-        from lumilib import gear
+        from lumilib import keywords as gear
 
         for name, tags, kws in (("a.jpg", ["海邊", "人像"], ["作品集"]), ("b.jpg", ["海邊", "Beach"], []),
                                 ("c.jpg", ["beach"], ["作品集", "海邊"])):

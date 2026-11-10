@@ -125,13 +125,23 @@ class AutoAnalyzeTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         make_photo(self.tmp / "photos" / "a.jpg", (230, 30, 30))
-        self.cfg = load_config(self.tmp / "home", vision_model="qwen2.5vl:7b")
+        # 預設不自動分析；這組測試檢查「開啟自動分析」時的行為
+        self.cfg = load_config(self.tmp / "home", vision_model="qwen2.5vl:7b", auto_analyze=1)
         conn = db.connect(self.cfg.db_path)
         db.add_root(conn, self.tmp / "photos")
         conn.close()
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_default_does_not_auto_analyze(self):
+        self.assertEqual(load_config(self.tmp / "other").auto_analyze, 0)
+        self.cfg.auto_analyze = 0
+        done = self.run_scan(ReadyClient)
+        self.assertNotIn("analyze", done)
+        conn = db.connect(self.cfg.db_path)
+        self.assertEqual(db.stats(conn)["analyzed"], 0)
+        conn.close()
 
     def run_scan(self, client_cls):
         runner = JobRunner(self.cfg, client_cls)
@@ -145,7 +155,7 @@ class AutoAnalyzeTests(unittest.TestCase):
     def test_scan_then_analyze_when_ready(self):
         done = self.run_scan(ReadyClient)
         self.assertIn("analyze", done)
-        self.assertIn("quality", done)  # 掃描後也會自動做品質檢查
+        self.assertNotIn("quality", done)  # 品質檢查已移除
         conn = db.connect(self.cfg.db_path)
         self.assertEqual(db.stats(conn)["analyzed"], 1)
         conn.close()

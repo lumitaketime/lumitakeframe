@@ -18,13 +18,9 @@
   import Folders from "./pages/Folders.svelte";
   import Albums from "./pages/Albums.svelte";
   import Album from "./pages/Album.svelte";
-  import MapPage from "./pages/MapPage.svelte";
   import People from "./pages/People.svelte";
   import Duplicates from "./pages/Duplicates.svelte";
   import Tools from "./pages/Tools.svelte";
-  import Pets from "./pages/Pets.svelte";
-  import Pet from "./pages/Pet.svelte";
-  import Gear from "./pages/Gear.svelte";
   import Keywords from "./pages/Keywords.svelte";
   import SmartAlbum from "./pages/SmartAlbum.svelte";
   import Person from "./pages/Person.svelte";
@@ -35,13 +31,13 @@
   import { route, navigate, link } from "./lib/router.svelte.js";
   import { TOOLS, pinnedKeys, toolByKey } from "./lib/toolkit.js";
   import { drag, unpin } from "./lib/pin.svelte.js";
-  import { undoLast, undoable } from "./lib/undo.svelte.js";
+  import { undoLast } from "./lib/undo.svelte.js";
   import { fadeThrough } from "./lib/motion.js";
   // 設定的各分類是同一頁的不同區塊：換分類不重建整頁（避免閃一下、狀態卡重新載入）
   const routeKey = $derived(route.path.startsWith("/settings") ? "/settings" : route.path);
   import { rubberBand, installShake } from "./lib/alive.js";
   import {
-    mdiImageMultipleOutline, mdiCompassOutline, mdiMapOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
+    mdiImageMultipleOutline, mdiCompassOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
     mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiContentDuplicate,
     mdiChevronRight, mdiChevronDown, mdiToolboxOutline, mdiMenu, mdiPinOutline, mdiArrowLeft,
     filled,
@@ -52,7 +48,6 @@
     { id: "library", label: "圖庫", items: [
       { href: "/", label: "照片", icon: mdiImageMultipleOutline, mobile: true, fixed: true },
       { href: "/explore", label: "探索", icon: mdiCompassOutline, mobile: true },
-      { href: "/map", label: "地圖", icon: mdiMapOutline },
     ] },
     { id: "organize", label: "整理", items: [
       { href: "/folders", label: "資料夾", icon: mdiFolderOutline, mobile: true, fixed: true },
@@ -65,8 +60,8 @@
     ] },
   ];
   const NAV = NAV_GROUPS.flatMap((g) => g.items);
-  // 人物、器材、關鍵字整合在「探索」的分頁裡
-  const EXPLORE_PAGES = ["/explore", "/people", "/pets", "/gear", "/keywords"];
+  // 人物、關鍵字整合在「探索」的分頁裡
+  const EXPLORE_PAGES = ["/explore", "/people", "/keywords"];
 
   const hidden = $derived(new Set((app.server?.ui?.nav_hidden || "").split(",").filter(Boolean)));
   const visible = (n) => n.fixed || !hidden.has(n.href);
@@ -190,7 +185,7 @@
   });
 
   // 完成通知：使用者自己啟動、會跑一陣子的工作，結束時跳出 Snackbar
-  const NOTIFY = new Set(["export", "pull", "face_model", "clip_model", "quality", "dups", "cluster", "exif_undo", "pet_model"]);
+  const NOTIFY = new Set(["export", "pull", "face_model", "clip_model", "dups", "cluster"]);
   let seenJob = null;
   function notifyFinished(recent) {
     const ids = recent.map((j) => j.id);
@@ -201,10 +196,7 @@
     for (const j of [...recent].reverse()) {
       if (j.id <= seenJob) continue;
       if (j.error) toast(`${j.label}失敗：${j.error}`, "error");
-      else if (j.kind === "exif" && j.result?.batch) {
-        const batch = j.result.batch;
-        undoable(`${j.label}完成：${j.message}`, () => api("/api/jobs", { body: { kind: "exif_undo", batch } }));
-      } else if (j.kind === "export" && j.result?.dest && app.server?.local) {
+      else if (j.kind === "export" && j.result?.dest && app.server?.local) {
         const dest = j.result.dest;
         toast(j.message, "info", 10000, { label: "在 Finder 中顯示", run: () => api("/api/reveal-path", { body: { path: dest } }).catch((e) => toast(e.message, "error")) });
       } else if (NOTIFY.has(j.kind)) toast(`${j.label}完成：${j.message}`, "info", 6000);
@@ -222,7 +214,7 @@
   }
 
   // 這些工作結束時不會改變照片內容，不必重新載入頁面（四萬張以上時重新載入很有感）
-  const NO_RELOAD = new Set(["pull", "face_model", "clip_model", "pet_model", "export", "delete_model"]);
+  const NO_RELOAD = new Set(["pull", "face_model", "clip_model", "export", "delete_model"]);
   let lastSnap = "";
   let seenFinish = null;
 
@@ -419,14 +411,8 @@
           <Folders rootId={seg[1] ? Number(seg[1]) : null} />
         {:else if page === "albums" && seg[1] === "smart" && seg[2]}
           <SmartAlbum id={Number(seg[2])} />
-        {:else if page === "gear"}
-          <Gear />
         {:else if page === "keywords"}
           <Keywords />
-        {:else if page === "pets" && seg[1] === "id" && seg[2]}
-          <Pet id={Number(seg[2])} />
-        {:else if page === "pets"}
-          <Pets kind={seg[1] || ""} />
         {:else if page === "tools"}
           <Tools sub={seg[1] || ""} />
         {:else if page === "duplicates"}
@@ -439,8 +425,6 @@
           <Person id={Number(seg[1])} />
         {:else if page === "people"}
           <People />
-        {:else if page === "map"}
-          <MapPage />
         {:else if page === "settings"}
           <Settings section={seg[1] || ""} />
         {:else}

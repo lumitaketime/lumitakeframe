@@ -2,7 +2,7 @@
   /**
    * 頂欄搜尋框＋建議面板（參考 Google 相簿）：
    * - 還沒輸入：最近的搜尋、我的最愛／影片捷徑、常出現的人物頭像
-   * - 輸入第一個字起：人物、寵物、相簿、地點、關鍵字、資料夾，開頭相符的排前面
+   * - 輸入第一個字起：人物、相簿、地點、關鍵字、資料夾，開頭相符的排前面
    * 上下鍵選擇、Enter 開啟、Esc 關閉。
    */
   import Icon from "./Icon.svelte";
@@ -101,7 +101,6 @@
     out.push({ kind: "query", label: text, run: () => go(text) });
     if (!sugg) return out;
     for (const p of sugg.people) out.push({ kind: "person", label: p.name, sub: `人物 · ${p.n} 張`, img: `/api/faces/${p.cover}/thumb`, run: () => to(`/people/${p.id}`) });
-    for (const p of sugg.pets) out.push({ kind: "pet", label: p.name, sub: `寵物 · ${p.n} 張`, img: `/api/pet-thumbs/${p.cover}`, run: () => to(`/pets/id/${p.id}`) });
     for (const a of sugg.albums) out.push({ kind: "album", label: a.name, sub: `相簿 · ${a.n} 張`, img: a.cover ? thumbUrl({ id: a.cover }) : null, icon: mdiImageAlbum, run: () => to(`/albums/${a.id}`) });
     for (const p of sugg.places) out.push({ kind: "place", label: p.name, sub: `地點 · ${p.n} 張`, icon: mdiMapMarkerOutline, run: () => go(`place:${p.name}`) });
     for (const t of sugg.tags) out.push({ kind: "tag", label: t.name, sub: `關鍵字 · ${t.n} 張`, icon: mdiPound, run: () => go(t.name) });
@@ -228,7 +227,7 @@
             onkeydown={(e) => e.key === "Enter" && it.run()}
           >
             {#if it.img}
-              <span class="av" class:round={it.kind === "person" || it.kind === "pet"}>{it.label.slice(0, 1)}<img src={it.img} alt="" onerror={(e) => e.currentTarget.remove()} /></span>
+              <span class="av" class:round={it.kind === "person"}>{it.label.slice(0, 1)}<img src={it.img} alt="" onerror={(e) => e.currentTarget.remove()} /></span>
             {:else}
               <span class="ic"><Icon path={it.kind === "recent" ? mdiHistory : it.kind === "query" ? mdiMagnify : it.icon} /></span>
             {/if}

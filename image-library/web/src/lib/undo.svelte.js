@@ -1,5 +1,5 @@
 /**
- * 可以後悔的動作：合併人物、寵物等。
+ * 可以後悔的動作：合併人物等。
  * 完成後跳出通知（15 秒、滑鼠停在上面時不會消失）附「復原」，也可以按 ⌘Z（Windows：Ctrl+Z）。
  */
 import { toast, dismissToast, refresh } from "./state.svelte.js";

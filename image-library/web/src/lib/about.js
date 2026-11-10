@@ -24,13 +24,9 @@ export const THIRD_PARTY = [
   ["Pillow、NumPy", "MIT-CMU / BSD"],
   ["ONNX Runtime", "MIT"],
   ["ExifTool（Phil Harvey）", "Artistic License / GPL"],
-  ["Leaflet 地圖元件", "BSD-2-Clause"],
-  ["OpenStreetMap 地圖與地點搜尋（Nominatim）", "© OpenStreetMap 貢獻者，ODbL"],
   ["GeoNames 離線地名資料", "CC BY 4.0"],
   ["Material Design Icons、Roboto 字型", "Apache-2.0"],
   ["Ollama 與所選的 AI 模型（例如 Gemma）", "MIT／各模型自己的授權條款"],
   ["InsightFace 人臉模型", "僅限非商業研究用途"],
-  ["YOLOX 寵物偵測模型", "Apache-2.0"],
-  ["DINOv2 寵物特徵模型", "Apache-2.0"],
   ["CLIP 圖像搜尋模型（多語言）", "MIT 等，依所選模型"],
 ];

@@ -86,38 +86,6 @@ CREATE TABLE IF NOT EXISTS faces (
     created_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS pets (
-    id INTEGER PRIMARY KEY,
-    name TEXT,
-    kind TEXT NOT NULL,
-    cover_id INTEGER,
-    hidden INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS pet_detections (
-    id INTEGER PRIMARY KEY,
-    image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
-    pet_id INTEGER REFERENCES pets(id) ON DELETE SET NULL,
-    kind TEXT NOT NULL,
-    x1 REAL, y1 REAL, x2 REAL, y2 REAL,
-    score REAL,
-    embedding BLOB NOT NULL,
-    model TEXT NOT NULL,
-    manual INTEGER NOT NULL DEFAULT 0,
-    excluded INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS edit_batches (
-    id INTEGER PRIMARY KEY,
-    created_at TEXT NOT NULL,
-    label TEXT,
-    items TEXT NOT NULL,
-    undone INTEGER NOT NULL DEFAULT 0
-);
-
 CREATE TABLE IF NOT EXISTS settings_kv (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -264,8 +232,6 @@ V2_COLUMNS = [
     ("thumb_ok", "INTEGER NOT NULL DEFAULT 0"),
     ("faces_at", "TEXT"),
     ("faces_model", "TEXT"),
-    ("pets_at", "TEXT"),
-    ("pets_model", "TEXT"),
     ("clip", "BLOB"),
     ("clip_model", "TEXT"),
     ("place", "TEXT"),
@@ -275,13 +241,6 @@ V2_COLUMNS = [
     ("stack_id", "INTEGER"),
     ("stack_top", "INTEGER NOT NULL DEFAULT 1"),
     ("phash", "TEXT"),
-    # 照片品質檢查（模糊、曝光），本機計算、不用 AI
-    ("quality_at", "TEXT"),
-    ("sharpness", "REAL"),
-    ("luma", "REAL"),
-    ("dark_frac", "REAL"),
-    ("bright_frac", "REAL"),
-    ("highlight", "REAL"),
 ]
 
 INDEXES = """
@@ -293,8 +252,6 @@ CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite);
 CREATE INDEX IF NOT EXISTS idx_album_items_image ON album_items(image_id);
 CREATE INDEX IF NOT EXISTS idx_faces_image ON faces(image_id);
 CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id);
-CREATE INDEX IF NOT EXISTS idx_pet_det_image ON pet_detections(image_id);
-CREATE INDEX IF NOT EXISTS idx_pet_det_pet ON pet_detections(pet_id);
 CREATE INDEX IF NOT EXISTS idx_images_stack ON images(stack_id);
 CREATE INDEX IF NOT EXISTS idx_images_root_status_sort ON images(root_id, status, sort_at);
 CREATE INDEX IF NOT EXISTS idx_images_status_top_sort ON images(status, stack_top, sort_at);
@@ -339,10 +296,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         fixed = split_keywords(json_list(row["keywords"]))
         conn.execute("UPDATE images SET keywords = ? WHERE id = ?", (json.dumps(fixed, ensure_ascii=False), row["id"]))
         refresh_search_text(conn, row["id"])
-    # v10：有命名人物或寵物的照片重建搜尋索引，舊版本留下的索引可能沒有名字
+    # v10：有命名人物的照片重建搜尋索引，舊版本留下的索引可能沒有名字
     for row in conn.execute(
         "SELECT DISTINCT f.image_id FROM faces f JOIN persons p ON p.id = f.person_id WHERE p.name IS NOT NULL AND p.name != ''"
-        " UNION SELECT DISTINCT d.image_id FROM pet_detections d JOIN pets p ON p.id = d.pet_id WHERE p.name IS NOT NULL AND p.name != ''"
     ).fetchall():
         refresh_search_text(conn, row[0])
     if "folder" not in existing:  # 從 v1 升級：補齊資料夾與排序時間
@@ -444,14 +400,6 @@ def refresh_search_text(conn: sqlite3.Connection, image_id: int) -> None:
             (image_id,),
         ).fetchall()
         data["people"] = [p["name"] for p in people if p["name"]] + [g for p in people for g in json_list(p["groups"])]
-        try:
-            pets = conn.execute(
-                "SELECT DISTINCT p.name FROM pet_detections d JOIN pets p ON p.id = d.pet_id WHERE d.image_id = ? AND p.name IS NOT NULL",
-                (image_id,),
-            ).fetchall()
-            data["people"] += [p["name"] for p in pets]
-        except sqlite3.OperationalError:
-            pass  # 舊資料庫尚未建立寵物表
         if data.get("country"):
             from .places import country_names
 

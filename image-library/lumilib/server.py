@@ -39,9 +39,9 @@ LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
-    "pet_enabled", "pet_model", "pet_similarity", "pet_min_photos", "query_rewrite", "clip_enabled", "clip_model",
+    "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "blur_threshold", "under_luma", "over_percent", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -124,7 +124,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         return _is_loopback(client) and _is_loopback(_host_only(request.headers.get("host", "")))
 
     # ---- 保護 ----
-    # 較重的統計頁（探索、整理工具、器材、關鍵字、人物、寵物…）的結果暫存起來；
+    # 較重的統計頁（探索、整理工具、關鍵字、人物…）的結果暫存起來；
     # 使用者做了任何修改（非 GET 請求）或背景工作完成時立刻清掉，畫面不會看到舊資料。
     # 資料只會經由這兩條路改變，所以可以放心存久一點（10 分鐘，「回憶」也跟著日期換）。
     import functools
@@ -418,10 +418,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         from .organize import stack_members
         from .places import country_names
 
-        from .petid import image_pets
-
         data["stack"] = [summarize(m) for m in stack_members(c, image["stack_id"])] if image["stack_id"] else []
-        data["pets"] = [p for p in image_pets(c, image["id"]) if p["pet_id"]]
         data["country_name"] = country_names(image["country"])[0] if image["country"] else ""
         data.update(
             faces=[{"id": f["id"], "person_id": f["person_id"], "name": f["name"],
@@ -563,9 +560,6 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 return {"done": len(ids)}
             if action == "trash":
                 res = fileops.trash_images(c, ids, **({"trash": trash} if trash else {}))
-                return {"done": len(res.done), "ids": res.done, "errors": res.errors}
-            if action == "move":
-                res = fileops.move_images(c, ids, int(body["root_id"]), str(body.get("folder", "")))
                 return {"done": len(res.done), "ids": res.done, "errors": res.errors}
             if action in ("rating", "label"):
                 from . import ratings
@@ -739,38 +733,15 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
-    # ---- 器材與關鍵字 ----
-    @app.get("/api/gear")
-    @memo(600, warm=True)
-    def gear_stats():
-        from . import gear
-
-        c = conn()
-        try:
-            return gear.stats(c)
-        finally:
-            c.close()
-
-    @app.get("/api/gear/assets")
-    def gear_assets(camera: str | None = None, lens: str | None = None, focal: str | None = None,
-                    aperture: str | None = None, iso: str | None = None):
-        from . import gear
-
-        c = conn()
-        try:
-            rows = gear.assets(c, camera=camera, lens=lens, focal=focal, aperture=aperture, iso=iso)
-            return {"count": len(rows), "assets": [summarize(r) for r in rows]}
-        finally:
-            c.close()
-
+    # ---- 關鍵字 ----
     @app.get("/api/keywords")
     @memo(600, warm=True)
     def keywords(source: str = "all", year: str | None = None, limit: int = 300):
-        from . import gear
+        from . import keywords as kw
 
         c = conn()
         try:
-            return {"keywords": gear.keyword_counts(c, source, year, max(10, min(limit, 1000))), "years": gear.years(c)}
+            return {"keywords": kw.keyword_counts(c, source, year, max(10, min(limit, 1000))), "years": kw.years(c)}
         finally:
             c.close()
 
@@ -1184,25 +1155,15 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 row = c.execute("SELECT name FROM persons WHERE id = ?", (pid,)).fetchone()
                 if row:
                     return ("i.id IN (SELECT image_id FROM faces WHERE person_id = ?)", [pid], f"「{row['name'] or '未命名人物'}」的照片", "")
-            elif kind == "pet":
-                pid = int(rest)
-                row = c.execute("SELECT name FROM pets WHERE id = ?", (pid,)).fetchone()
-                if row:
-                    return ("i.id IN (SELECT image_id FROM pet_detections WHERE pet_id = ?)", [pid], f"「{row['name'] or '未命名寵物'}」的照片", "")
             elif kind == "favorites":
                 return ("i.favorite = 1", [], "我的最愛", "")
             elif kind == "videos":
                 return ("i.media_type = 'video'", [], "影片", "")
             elif kind == "tool":
-                from .quality import blurry, exposure_problems
                 from .tools import screens_and_documents
 
                 if rest == "screens":
                     ids, label = [r["id"] for r, _ in screens_and_documents(c, png_rule=bool(cfg.screen_png_rule))], "截圖與文件"
-                elif rest == "blurry":
-                    ids, label = [r["id"] for r in blurry(c, float(cfg.blur_threshold))], "模糊照片"
-                elif rest == "exposure":
-                    ids, label = [r["id"] for r, _ in exposure_problems(c, under_luma=cfg.under_luma, over_frac=cfg.over_percent / 100)], "曝光問題"
                 else:
                     ids, label = None, ""
                 if ids is not None:
@@ -1314,23 +1275,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "people": list_persons(c)[:24],
                 "tags": [{"value": t, "count": n, "cover": covers.get(t)} for t, n in tags if covers.get(t)],
                 "scenes": grouped("scene", 16),
-                "cameras": grouped("camera"),
-                "lenses": grouped("lens"),
                 "years": [{"value": r["value"], "count": r["count"], "cover": r["id"]} for r in years],
-                "gps": c.execute("SELECT COUNT(*) FROM images WHERE status = 'ok' AND lat IS NOT NULL").fetchone()[0],
             }
-        finally:
-            c.close()
-
-    @app.get("/api/map")
-    def map_points():
-        """地圖用：[[id, lat, lon], ...]，資料量小，十萬筆也能一次載入。"""
-        c = conn()
-        try:
-            rows = c.execute(
-                "SELECT id, lat, lon FROM images WHERE status = 'ok' AND lat IS NOT NULL ORDER BY sort_at DESC"
-            ).fetchall()
-            return [[r["id"], r["lat"], r["lon"]] for r in rows]
         finally:
             c.close()
 
@@ -1438,32 +1384,6 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 c.execute("DELETE FROM folder_covers WHERE root_id = ? AND path = ?", (root_id, path))
             c.commit()
             return {"ok": True}
-        finally:
-            c.close()
-
-    @app.get("/api/fs/dirs")
-    def fs_dirs(root: int, path: str = ""):
-        """搬移時選擇目的地：列出硬碟上真實存在的子資料夾（包含還沒有照片的）。"""
-        c = conn()
-        try:
-            r = db.get_root(c, root)
-        finally:
-            c.close()
-        if r is None:
-            raise HTTPException(404, "找不到資料夾")
-        base = fileops.safe_folder(Path(r["path"]), path)
-        if not base.is_dir():
-            raise HTTPException(404, "資料夾不存在或硬碟未連接")
-        names = sorted(
-            (p.name for p in base.iterdir() if p.is_dir() and not p.name.startswith(".")), key=str.lower
-        )
-        return {"root": r["id"], "path": path.strip("/"), "dirs": names}
-
-    @app.post("/api/folders")
-    def make_folder(body: dict = Body(...)):
-        c = conn()
-        try:
-            return {"path": fileops.create_folder(c, int(body["root_id"]), str(body.get("path", "")))}
         finally:
             c.close()
 
@@ -1594,48 +1514,19 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     @app.get("/api/tools/summary")
     @memo(600, warm=True)
     def tools_summary():
-        from .quality import blurry, exposure_problems
         from .tools import screens_and_documents
 
         c = conn()
         try:
-            q = c.execute(
-                "SELECT COUNT(*), SUM(quality_at IS NOT NULL) FROM images WHERE status = 'ok' AND media_type = 'photo'"
-            ).fetchone()
             from .organize import load_duplicates
 
             dups = load_duplicates(c, cfg)
             return {
-                "photos": q[0] or 0, "quality_done": q[1] or 0,
-                "blurry": len(blurry(c, float(cfg.blur_threshold))),
-                "exposure": len(exposure_problems(c, under_luma=cfg.under_luma, over_frac=cfg.over_percent / 100)),
                 "screens": len(screens_and_documents(c, png_rule=bool(cfg.screen_png_rule))),
                 "biggest": c.execute("SELECT COALESCE(SUM(size), 0) FROM images WHERE status = 'ok'").fetchone()[0],
                 "videos_bytes": c.execute("SELECT COALESCE(SUM(size), 0) FROM images WHERE status = 'ok' AND media_type = 'video'").fetchone()[0],
                 "dups": (len(dups["exact"]) + len(dups["similar"])) if dups else None,
             }
-        finally:
-            c.close()
-
-    @app.get("/api/tools/blurry")
-    def tools_blurry(threshold: float | None = None):
-        from .quality import blurry
-
-        c = conn()
-        try:
-            t = float(threshold) if threshold is not None else float(cfg.blur_threshold)
-            return [{**summarize(r), "sharpness": r["sharpness"]} for r in blurry(c, t)]
-        finally:
-            c.close()
-
-    @app.get("/api/tools/exposure")
-    def tools_exposure():
-        from .quality import EXPOSURE_LABELS, exposure_problems
-
-        c = conn()
-        try:
-            return [{**summarize(r), "flag": flag, "reason": EXPOSURE_LABELS[flag]}
-                    for r, flag in exposure_problems(c, under_luma=cfg.under_luma, over_frac=cfg.over_percent / 100)]
         finally:
             c.close()
 
@@ -1695,257 +1586,11 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
-    @app.get("/api/pets")
-    @memo(600, warm=True)
-    def pets_list():
-        from .petid import list_pets, model_installed
-        from .tools import pets
-
-        c = conn()
-        try:
-            pending = c.execute(
-                "SELECT COUNT(*) FROM images WHERE status = 'ok' AND media_type = 'photo' AND (pets_at IS NULL OR pets_model IS NOT ?)",
-                (cfg.pet_model,),
-            ).fetchone()[0]
-            return {
-                "kinds": pets(c),
-                "pets": list_pets(c),
-                "hidden": sum(1 for p in list_pets(c, include_hidden=True) if p["hidden"]),
-                "enabled": bool(cfg.pet_enabled),
-                "installed": model_installed(cfg, cfg.pet_model),
-                "model": cfg.pet_model,
-                "pending": pending,
-            }
-        finally:
-            c.close()
-
-    @app.get("/api/pets/models")
-    def pet_models():
-        from .petid import models_status
-
-        return models_status(cfg)
-
-    @app.post("/api/pets/models/delete")
-    def delete_pet_model(body: dict = Body(...)):
-        from .petid import PET_MODELS, delete_model
-
-        if body.get("name") not in PET_MODELS:
-            raise HTTPException(400, "未知的寵物模型")
-        delete_model(cfg, body["name"])
-        return {"ok": True}
-
-    @app.post("/api/pets/clear")
-    def clear_pets_data():
-        from .petid import clear_all
-
-        c = conn()
-        try:
-            return {"cleared": clear_all(c, cfg)}
-        finally:
-            c.close()
-
-    @app.get("/api/pet-thumbs/{det_id:int}")
-    def pet_thumb(det_id: int):
-        from .petid import thumb_path
-
-        target = thumb_path(cfg, det_id)
-        if not target.exists():
-            raise HTTPException(404, "找不到寵物縮圖")
-        return FileResponse(target, media_type="image/webp", headers={"Cache-Control": "private, max-age=31536000, immutable"})
-
-    @app.get("/api/petid/all")
-    def pets_all():
-        from .petid import list_pets
-
-        c = conn()
-        try:
-            return list_pets(c, include_hidden=True)
-        finally:
-            c.close()
-
-    @app.get("/api/petid/{pet_id:int}")
-    def pet_detail(pet_id: int):
-        from .petid import KIND_LABELS, pet_image_ids
-
-        c = conn()
-        try:
-            pet = c.execute("SELECT * FROM pets WHERE id = ?", (pet_id,)).fetchone()
-            if pet is None:
-                raise HTTPException(404, "找不到這隻寵物")
-            ids = pet_image_ids(c, pet_id)
-            rows = []
-            for start in range(0, len(ids), 500):
-                chunk = ids[start:start + 500]
-                rows += c.execute(
-                    f"SELECT * FROM images WHERE id IN ({','.join('?' * len(chunk))}) AND status = 'ok'", chunk
-                ).fetchall()
-            rows.sort(key=lambda r: r["sort_at"] or "", reverse=True)
-            return {"id": pet["id"], "name": pet["name"] or "", "kind": pet["kind"], "kind_label": KIND_LABELS.get(pet["kind"], ""),
-                    "cover": pet["cover_id"], "hidden": bool(pet["hidden"]), "assets": [summarize(r) for r in rows]}
-        finally:
-            c.close()
-
-    @app.get("/api/petid/{pet_id:int}/faces")
-    def pet_faces(pet_id: int, limit: int = 600):
-        """選封面用：這隻寵物每一次被偵測到的樣子。"""
-        c = conn()
-        try:
-            rows = c.execute(
-                "SELECT d.id, d.image_id, d.score, i.sort_at FROM pet_detections d JOIN images i ON i.id = d.image_id "
-                "WHERE d.pet_id = ? AND i.status = 'ok' ORDER BY d.score DESC, i.sort_at DESC LIMIT ?",
-                (pet_id, max(1, min(limit, 3000))),
-            ).fetchall()
-            return [{"id": r["id"], "image_id": r["image_id"], "score": r["score"], "at": r["sort_at"]} for r in rows]
-        finally:
-            c.close()
-
-    @app.post("/api/petid/{pet_id:int}")
-    def edit_pet(pet_id: int, body: dict = Body(...)):
-        """改名（同名的另一隻會合併）、隱藏、把照片移出。"""
-        from .petid import merge_pets, remove_images, rename_pet, set_hidden
-
-        c = conn()
-        try:
-            pet = c.execute("SELECT * FROM pets WHERE id = ?", (pet_id,)).fetchone()
-            if pet is None:
-                raise HTTPException(404, "找不到這隻寵物")
-            out: dict = {"id": pet_id}
-            if "name" in body:
-                name = str(body["name"] or "").strip()[:60]
-                same = c.execute("SELECT id FROM pets WHERE name = ? AND id != ?", (name, pet_id)).fetchone() if name else None
-                if same:
-                    from .petid import merge_snapshot as pet_snapshot
-
-                    snap = pet_snapshot(c, same["id"], [pet_id])
-                    merge_pets(c, same["id"], [pet_id])
-                    out = {"id": same["id"], "merged": True, "undo": keep_undo("pets", snap)}
-                else:
-                    rename_pet(c, pet_id, name)
-            if "hidden" in body:
-                set_hidden(c, pet_id, bool(body["hidden"]))
-            if body.get("cover_id"):
-                det = c.execute("SELECT 1 FROM pet_detections WHERE id = ? AND pet_id = ?", (int(body["cover_id"]), pet_id)).fetchone()
-                if det is None:
-                    raise HTTPException(400, "這張不屬於這隻寵物")
-                c.execute("UPDATE pets SET cover_id = ? WHERE id = ?", (int(body["cover_id"]), pet_id))
-                c.commit()
-            if body.get("remove"):
-                out["removed"] = remove_images(c, pet_id, [int(i) for i in body["remove"]][:MAX_IDS])
-            return out
-        finally:
-            c.close()
-
-    @app.post("/api/petid/merge")
-    def merge_pet_ids(body: dict = Body(...)):
-        from .petid import merge_pets, merge_snapshot as pet_snapshot
-
-        target, sources = int(body["target"]), [int(i) for i in body.get("sources") or [] if int(i) != int(body["target"])]
-        c = conn()
-        try:
-            snap = pet_snapshot(c, target, sources)
-            merge_pets(c, target, sources)
-            return {"ok": True, "undo": keep_undo("pets", snap)}
-        finally:
-            c.close()
-
-    @app.post("/api/petid/unmerge")
-    def unmerge_pet_ids(body: dict = Body(...)):
-        from .petid import unmerge_pets
-
-        snap = take_undo("pets", body.get("undo"))
-        c = conn()
-        try:
-            return {"restored": unmerge_pets(c, snap)}
-        finally:
-            c.close()
-
-    @app.get("/api/pets/{key}")
-    def pets_kind(key: str):
-        from .tools import PET_KINDS, pet_images
-
-        label = next((lbl for k, lbl, _ in PET_KINDS if k == key), None)
-        if label is None:
-            raise HTTPException(404, "找不到這個分類")
-        c = conn()
-        try:
-            return {"key": key, "label": label, "assets": [summarize(r) for r in pet_images(c, key)]}
-        finally:
-            c.close()
-
     @app.get("/api/export/defaults")
     def export_defaults():
         from .export import default_dest
 
         return {"dest": str(default_dest().parent)}
-
-    @app.post("/api/exif/inspect")
-    def exif_inspect(body: dict = Body(...)):
-        """EXIF 編輯器：選取的照片目前的值（不同的欄位標「多個值」）。"""
-        from .exifedit import inspect
-
-        ids = [int(i) for i in body.get("ids") or []][:MAX_IDS]
-        c = conn()
-        try:
-            return inspect(c, ids)
-        finally:
-            c.close()
-
-    @app.post("/api/exif/preview")
-    def exif_preview(body: dict = Body(...)):
-        """套用前預覽：哪些照片、哪些欄位會從什麼改成什麼。"""
-        from .exifedit import preview
-
-        ids = [int(i) for i in body.get("ids") or []][:MAX_IDS]
-        c = conn()
-        try:
-            return preview(c, ids, dict(body.get("changes") or {}))
-        except ValueError as exc:
-            raise HTTPException(400, str(exc))
-        finally:
-            c.close()
-
-    @app.get("/api/places/search")
-    def places_search(q: str = ""):
-        """地點搜尋：先找圖庫裡去過的地方，再找離線地名資料。"""
-        from .places import search_places
-
-        c = conn()
-        try:
-            found = search_places(c, q[:40])
-        finally:
-            c.close()
-        if len(found) < 5 and len(q.strip()) >= 2:
-            found += online_places(q.strip()[:80], {(round(p["lat"], 2), round(p["lon"], 2)) for p in found})
-        return found[:10]
-
-    def online_places(q: str, seen: set) -> list[dict]:
-        """離線地名找不到的地標（車站、景點）用 OpenStreetMap 搜尋；連不上就只用離線結果。"""
-        import json as _json
-        import urllib.parse
-        import urllib.request
-
-        from . import net
-
-        url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
-            {"q": q, "format": "jsonv2", "limit": 6, "accept-language": "zh-TW,zh,en"})
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": f"Lumitake-Library/{__version__} (photo library)"})
-            with net.urlopen(req, timeout=6) as resp:
-                data = _json.loads(resp.read().decode("utf-8"))
-        except Exception:  # noqa: BLE001
-            return []
-        out = []
-        for d in data:
-            try:
-                lat, lon = float(d["lat"]), float(d["lon"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            if (round(lat, 2), round(lon, 2)) in seen:
-                continue
-            parts = [x.strip() for x in str(d.get("display_name") or "").split(",") if x.strip()]
-            out.append({"name": d.get("name") or (parts[0] if parts else q), "country": "、".join(parts[1:3]),
-                        "lat": lat, "lon": lon, "photos": 0, "online": True})
-        return out
 
     @app.post("/api/export/inspect")
     def export_inspect(body: dict = Body(...)):
@@ -2023,7 +1668,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         if kind == "ollama":
             client_factory().delete(name)
             return {"ok": True}
-        if kind in ("face", "clip", "pet"):
+        if kind in ("face", "clip"):
             try:
                 return {"ok": True, "freed": delete_model_files(cfg, kind, name)}
             except ValueError as exc:
@@ -2049,22 +1694,13 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     def start_job(body: dict = Body(...)):
         kind = body.get("kind")
         opts = {k: body[k] for k in ("roots", "folder", "root_id", "album_id", "redo", "retry_failed") if body.get(k) is not None}
-        if kind in ("pull", "face_model", "clip_model", "pet_model"):
+        if kind in ("pull", "face_model", "clip_model"):
             opts = {"model": str(body["model"])}
         if kind == "export":
             ids = [int(i) for i in body.get("ids") or []][:MAX_IDS]
             if not ids:
                 raise HTTPException(400, "沒有選取照片")
             opts = {"ids": ids, "export": dict(body.get("options") or {})}
-        if kind == "exif":
-            ids = [int(i) for i in body.get("ids") or []][:MAX_IDS]
-            if not ids:
-                raise HTTPException(400, "沒有選取照片")
-            opts = {"ids": ids, "changes": dict(body.get("changes") or {})}
-        if kind == "exif_undo":
-            opts = {"batch": int(body.get("batch") or 0)}
-        if kind == "quality" and body.get("redo"):
-            opts = {"redo": True}
         return jobs().submit(kind, **opts)
 
     @app.post("/api/jobs/stop")
@@ -2108,17 +1744,6 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     @app.post("/api/settings")
     def save_settings(body: dict = Body(...)):
-        if "pet_model" in body and body["pet_model"] != cfg.pet_model:
-            from .petid import PET_MODELS
-            from .petid import clear_all as clear_pets
-
-            if body["pet_model"] not in PET_MODELS:
-                raise HTTPException(400, "未知的寵物模型")
-            c = conn()
-            try:
-                clear_pets(c, cfg)  # 不同模型的特徵無法比較，換模型就重新辨識
-            finally:
-                c.close()
         if "face_model" in body and body["face_model"] != cfg.face_model:
             from .faces import FACE_MODELS, clear_all
 

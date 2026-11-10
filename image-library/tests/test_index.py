@@ -172,7 +172,7 @@ class EtaTests(unittest.TestCase):
 
 
 class FaceCoverTests(unittest.TestCase):
-    def test_person_and_pet_cover(self):
+    def test_person_cover(self):
         from fastapi.testclient import TestClient
 
         from lumilib.config import load_config
@@ -191,10 +191,6 @@ class FaceCoverTests(unittest.TestCase):
         for fid, img, pid, score in [(10, a, 1, .9), (11, b, 1, .95), (12, b, 2, .8)]:
             conn.execute("INSERT INTO faces (id, image_id, person_id, score, embedding, model, created_at) VALUES (?, ?, ?, ?, x'00', 'm', ?)",
                          (fid, img, pid, score, now))
-        conn.execute("INSERT INTO pets (id, name, kind, created_at, updated_at) VALUES (1, '豆豆', 'dog', ?, ?)", (now, now))
-        for did, img in [(20, a), (21, b)]:
-            conn.execute("INSERT INTO pet_detections (id, image_id, pet_id, kind, score, embedding, model, created_at) VALUES (?, ?, 1, 'dog', .9, x'00', 'm', ?)",
-                         (did, img, now))
         conn.commit()
         conn.close()
         with TestClient(create_app(cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8765", client=("127.0.0.1", 1)) as c:
@@ -203,10 +199,6 @@ class FaceCoverTests(unittest.TestCase):
             self.assertEqual(c.post("/api/people/1", json={"cover_face_id": 12}).status_code, 400)  # 別人的臉
             c.post("/api/people/1", json={"cover_face_id": 10})
             self.assertEqual(c.get("/api/people/1").json()["cover_face_id"], 10)
-            self.assertEqual({f["id"] for f in c.get("/api/petid/1/faces").json()}, {20, 21})
-            self.assertEqual(c.post("/api/petid/1", json={"cover_id": 12}).status_code, 400)
-            c.post("/api/petid/1", json={"cover_id": 21})
-            self.assertEqual(c.get("/api/petid/1").json()["cover"], 21)
 
 
 class PeopleCorrectionTests(unittest.TestCase):

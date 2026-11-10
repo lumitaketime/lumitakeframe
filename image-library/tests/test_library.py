@@ -315,20 +315,6 @@ class FileOpsTests(LibraryTestCase):
         super().setUp()
         scan_all(self.conn, self.cfg)
 
-    def test_move_with_sidecars_and_conflicts(self):
-        car = self.image("car.jpg")
-        (self.photos / "2023 旅行" / "car.xmp").write_text("<xmp/>")
-        (self.photos / "作品集").mkdir()
-        make_photo(self.photos / "作品集" / "car.jpg", (1, 2, 3))  # 目的地已有同名檔
-        res = fileops.move_images(self.conn, [car["id"]], self.root["id"], "作品集")
-        self.assertEqual(res.done, [car["id"]])
-        moved = db.get_image(self.conn, car["id"])
-        self.assertEqual(moved["rel_path"], "作品集/car (1).jpg")
-        self.assertTrue((self.photos / "作品集" / "car (1).xmp").exists())
-        self.assertFalse((self.photos / "2023 旅行" / "car.jpg").exists())
-        [res] = scan_all(self.conn, self.cfg)
-        self.assertEqual((res.missing, res.moved), (0, 0))
-
     def test_raw_jpeg_pair_keeps_xmp_with_raw(self):
         folder = self.photos / "pair"
         make_photo(folder / "IMG_1.JPG", (5, 5, 5))
@@ -336,10 +322,6 @@ class FileOpsTests(LibraryTestCase):
         (folder / "IMG_1.xmp").write_text("<xmp/>")
         self.assertEqual(fileops.sidecars(folder / "IMG_1.JPG"), [])
         self.assertEqual(fileops.sidecars(folder / "IMG_1.CR3"), [folder / "IMG_1.xmp"])
-
-    def test_move_rejects_escape(self):
-        with self.assertRaises(ValueError):
-            fileops.move_images(self.conn, [self.image("car.jpg")["id"]], self.root["id"], "../outside")
 
     def test_trash_uses_trash_function(self):
         trashed = []
@@ -453,13 +435,12 @@ class ServerTests(LibraryTestCase):
         album = self.client.get(f"/api/albums/{res['album_id']}").json()
         self.assertEqual((album["name"], len(album["assets"])), ("夏日", 2))
 
-        self.assertEqual(self.post("/api/folders", {"root_id": rid, "path": "精選/2024"}).json()["path"], "精選/2024")
-        dirs = self.client.get("/api/fs/dirs", params={"root": rid, "path": "精選"}).json()["dirs"]
-        self.assertEqual(dirs, ["2024"])
-        res = self.post("/api/assets/bulk", {"ids": ids[:1], "action": "move", "root_id": rid, "folder": "精選/2024"}).json()
-        self.assertEqual(res["done"], 1)
-        moved = self.client.get("/api/folders", params={"root": rid, "path": "精選/2024"}).json()
-        self.assertEqual(len(moved["assets"]), 1)
+        # 建立資料夾與搬移已移除：API 不存在，硬碟上也不會多出資料夾或搬動檔案
+        self.assertEqual(self.post("/api/folders", {"root_id": rid, "path": "精選/2024"}).status_code, 405)
+        self.assertEqual(self.client.get("/api/fs/dirs", params={"root": rid}).status_code, 404)
+        self.assertEqual(self.post("/api/assets/bulk", {"ids": ids[:1], "action": "move", "root_id": rid, "folder": "精選"}).status_code, 400)
+        self.assertFalse((self.photos / "精選").exists())
+        self.assertEqual(len(self.client.get("/api/folders", params={"root": rid, "path": "2023 旅行"}).json()["assets"]), 2)
 
         res = self.post("/api/assets/bulk", {"ids": ids[1:], "action": "trash"}).json()
         self.assertEqual(res["done"], 1)
