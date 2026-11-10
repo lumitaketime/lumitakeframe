@@ -111,7 +111,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         state["jobs"].close()
         exiftool().close()
 
-    app = FastAPI(title="Lumitake Library", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(title="Re'memor", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
 
     def jobs() -> JobRunner:
         return state["jobs"]
@@ -1872,7 +1872,7 @@ def serve(cfg: Config, host: str | None = None, port: int | None = None, open_br
         host = "127.0.0.1"
     app = create_app(cfg, bound_host=host)
     url = f"http://127.0.0.1:{port}/"
-    print(f"Lumitake Library：{url}（按 Ctrl+C 結束）")
+    print(f"Re'memor：{url}（按 Ctrl+C 結束）")
     if host != "127.0.0.1":
         for u in lan_addresses(port):
             print(f"  手機／平板（同一個 Wi-Fi）：{u}")

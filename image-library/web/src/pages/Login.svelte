@@ -1,5 +1,6 @@
 <script>
   import { api } from "../lib/api.js";
+  import Wordmark from "../components/Wordmark.svelte";
   import { app } from "../lib/state.svelte.js";
 
   let password = $state("");
@@ -23,8 +24,8 @@
 
 <div class="wrap">
   <form class="card" onsubmit={submit}>
-    <img src="/icon.svg" alt="" width="64" height="64" />
-    <h1>Lumitake Library</h1>
+    <img src="/icon.png" alt="" width="64" height="64" />
+    <h1><Wordmark size={30} /></h1>
     <p class="muted small">請輸入在 Mac 上設定的連線密碼</p>
     <!-- svelte-ignore a11y_autofocus -->
     <input class="input" type="password" bind:value={password} placeholder="密碼" autocomplete="current-password" autofocus />

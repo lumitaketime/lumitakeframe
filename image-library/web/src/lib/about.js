@@ -1,6 +1,7 @@
 /** 「關於」頁的資料。版本號由伺服器回報（跟著每次發佈自動更新）。 */
 export const ABOUT = {
-  name: "Lumitake Library",
+  name: "Re'memor",
+  tagline: "硬碟目錄、去重與全文檢索",
   author: "Lumi taketime",
   year: "2026",
   email: "lumitaketime@gmail.com",
@@ -26,6 +27,7 @@ export const THIRD_PARTY = [
   ["ExifTool（Phil Harvey）", "Artistic License / GPL"],
   ["GeoNames 離線地名資料", "CC BY 4.0"],
   ["Material Design Icons、Roboto 字型", "Apache-2.0"],
+  ["Manrope 字型（文字標誌）", "SIL Open Font License 1.1"],
   ["Ollama 與所選的 AI 模型（例如 Gemma）", "MIT／各模型自己的授權條款"],
   ["InsightFace 人臉模型", "僅限非商業研究用途"],
   ["CLIP 圖像搜尋模型（多語言）", "MIT 等，依所選模型"],

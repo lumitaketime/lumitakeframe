@@ -1,5 +1,5 @@
 #!/bin/bash
-# Lumitake Library 一鍵安裝（macOS，Apple Silicon / Intel）
+# Re'memor 一鍵安裝（macOS，Apple Silicon / Intel）
 # 用法：在終端機執行  bash install-mac.sh
 set -euo pipefail
 
@@ -56,25 +56,25 @@ else
   echo "  ⚠ Ollama 沒有回應，可稍後在終端機執行：brew services start ollama"
 fi
 
-say "4/5 建立 Lumitake Library 執行環境"
+say "4/5 建立 Re'memor 執行環境"
 "$PY" -m venv "$APP_DIR/.venv"
 "$APP_DIR/.venv/bin/pip" install --quiet --upgrade pip
 "$APP_DIR/.venv/bin/pip" install --quiet -e "$APP_DIR"
 ok "已安裝到 $APP_DIR/.venv"
 
-LAUNCHER="$HOME/Desktop/Lumitake Library.command"
+LAUNCHER="$HOME/Desktop/Re'memor.command"
 cat > "$LAUNCHER" <<LAUNCH
 #!/bin/bash
-# 點兩下啟動 Lumitake Library；關閉這個視窗就會停止。
+# 點兩下啟動 Re'memor；關閉這個視窗就會停止。
 # 想把圖庫資料（資料庫與縮圖）放在外接 SSD，取消下一行的註解並改成你的路徑：
 # export REMEMOR_HOME="/Volumes/你的SSD/.rememor"
 cd "$APP_DIR"
-echo "Lumitake Library 執行中，瀏覽器會自動開啟。關閉這個視窗即停止。"
+echo "Re'memor 執行中，瀏覽器會自動開啟。關閉這個視窗即停止。"
 # caffeinate：接電源時避免 Mac 睡眠，手機才能持續連線
 exec caffeinate -is "$APP_DIR/.venv/bin/python" -m lumilib serve --open
 LAUNCH
 chmod +x "$LAUNCHER"
-ok "桌面捷徑：Lumitake Library.command"
+ok "桌面捷徑：Re'memor.command"
 
 say "5/5 下載 AI 視覺模型"
 if command -v ollama >/dev/null 2>&1 && ollama list 2>/dev/null | grep -q "^${DEFAULT_MODEL}"; then
@@ -89,7 +89,7 @@ else
 fi
 
 printf "\n\033[1;32m安裝完成！\033[0m\n"
-echo "  • 點兩下桌面上的「Lumitake Library.command」啟動"
+echo "  • 點兩下桌面上的「Re'memor.command」啟動"
 echo "  • 第一次開啟到「設定」加入照片資料夾（練習可先加入 ~/Pictures）"
 echo
 read -r -p "現在啟動嗎？[Y/n] " start

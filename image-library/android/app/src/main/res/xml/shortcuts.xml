@@ -9,6 +9,6 @@
         <intent
             android:action="com.lumitake.library.CHANGE_SERVER"
             android:targetClass="com.lumitake.library.MainActivity"
-            android:targetPackage="com.lumitake.library" />
+            android:targetPackage="com.lumitake.rememor" />
     </shortcut>
 </shortcuts>

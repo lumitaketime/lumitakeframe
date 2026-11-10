@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<title>Lumitake Library</title>
+<title>Re'memor</title>
 <style>
   :root { color-scheme: light dark; }
   body {
@@ -12,19 +12,21 @@
   }
   @media (prefers-color-scheme: dark) { body { background: #121316; color: #e8e9ee; } .muted { color: #9a9eab !important; } }
   img { width: 96px; height: 96px; margin-bottom: 18px; }
-  h1 { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+  h1 { font-size: 26px; margin: 0 0 6px; font-weight: 700; letter-spacing: -0.035em; color: #0b2346; }
+  h1 span { color: #ff8d28; }
+  @media (prefers-color-scheme: dark) { h1 { color: #ffffff; } }
   .muted { color: #6b7080; font-size: 13px; }
-  .spinner { width: 22px; height: 22px; border-radius: 50%; border: 3px solid #C9803F; border-right-color: transparent; animation: spin .8s linear infinite; margin: 18px; }
+  .spinner { width: 22px; height: 22px; border-radius: 50%; border: 3px solid #ff8d28; border-right-color: transparent; animation: spin .8s linear infinite; margin: 18px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   #error { display: none; max-width: 520px; text-align: center; color: #c62f3b; }
   code { font-size: 12px; word-break: break-all; -webkit-user-select: text; user-select: text; }
 </style>
 </head>
 <body>
-  <img src="icon.svg" alt="">
-  <h1>Lumitake Library</h1>
+  <img src="icon.png" alt="">
+  <h1>Re<span>’</span>memor</h1>
   <div class="spinner" id="spinner"></div>
-  <p class="muted" id="msg">正在啟動圖庫…</p>
+  <p class="muted" id="msg">正在啟動 Re'memor…</p>
   <div id="error">
     <p id="error-text"></p>
     <p class="muted">請結束後重新開啟。如果一直出現，請把記錄檔傳給開發者：<br><code id="error-log"></code></p>

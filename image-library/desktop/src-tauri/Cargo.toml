@@ -1,7 +1,7 @@
 [package]
 name = "lumitake-library"
 version = "0.19.2"
-description = "Lumitake Library：離線 AI 照片與影片圖庫"
+description = "Re'memor：硬碟目錄、去重與全文檢索"
 edition = "2021"
 
 [build-dependencies]

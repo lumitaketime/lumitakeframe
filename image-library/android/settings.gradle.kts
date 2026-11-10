@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "LumitakeLibrary"
+rootProject.name = "Rememor"
 include(":app")

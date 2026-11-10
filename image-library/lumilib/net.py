@@ -50,7 +50,7 @@ def install_default_ca() -> None:
 
 def urlopen(url: str | urllib.request.Request, timeout: float = 60):
     req = url if isinstance(url, urllib.request.Request) else urllib.request.Request(
-        url, headers={"User-Agent": "LumitakeLibrary"})
+        url, headers={"User-Agent": "Rememor"})
     return urllib.request.urlopen(req, timeout=timeout, context=ssl_context())
 
 

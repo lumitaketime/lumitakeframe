@@ -196,8 +196,8 @@
         {:else if emptyText}
           <h2>{title || "沒有項目"}</h2><p>{emptyText}</p>
         {:else}
-          <h2>歡迎使用 Lumitake Library</h2>
-          <p>加入電腦或外接 SSD 上的照片資料夾，就會自動掃描並依時間排列。<br />原始檔案留在原位，不會被複製。</p>
+          <h2>歡迎使用 Re'memor</h2>
+          <p>加入電腦或外接硬碟上的資料夾，就會自動掃描：所有檔案記進目錄，照片依時間排列。<br />檔案留在原位，不會被複製或修改。</p>
           <p><a class="btn" href="/settings/library" use:link>加入照片資料夾</a></p>
         {/if}
       </div>

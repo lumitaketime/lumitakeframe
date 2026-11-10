@@ -1,8 +1,8 @@
 // 只快取介面本身（HTML/JS/CSS/圖示），照片與 API 一律即時向 Mac 取得。
-const CACHE = "lumilib-shell-v1";
+const CACHE = "rememor-shell-v1";
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/icon.svg", "/manifest.webmanifest"])));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/icon.png", "/manifest.webmanifest"])));
   self.skipWaiting();
 });
 

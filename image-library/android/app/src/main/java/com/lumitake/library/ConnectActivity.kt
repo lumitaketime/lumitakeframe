@@ -57,7 +57,7 @@ class ConnectActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
         })
         column.addView(TextView(this).apply {
-            text = "在 Mac 的 Lumitake Library 打開「設定 → 手機與平板」，開啟連線後掃描畫面上的 QR code。手機需要和 Mac 連同一個 Wi-Fi。"
+            text = "在 Mac 的 Re'memor 打開「設定 → 手機與平板」，開啟連線後掃描畫面上的 QR code。手機需要和 Mac 連同一個 Wi-Fi。"
             setTextColor(muted)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             gravity = Gravity.CENTER
@@ -132,7 +132,7 @@ class ConnectActivity : AppCompatActivity() {
                 if (ok) {
                     open(url)
                 } else {
-                    status.text = "連不到 $url\n請確認 Mac 開機、Lumitake Library 正在執行、已開啟手機連線，並和手機在同一個 Wi-Fi。"
+                    status.text = "連不到 $url\n請確認 Mac 開機、Re'memor 正在執行、已開啟手機連線，並和手機在同一個 Wi-Fi。"
                     connectButton.text = "仍要使用這個網址"
                     connectButton.setOnClickListener { connect(input.text.toString(), force = true) }
                 }

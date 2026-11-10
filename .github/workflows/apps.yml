@@ -109,7 +109,7 @@ jobs:
       - name: 放入伺服器、重新簽章、製作 DMG
         working-directory: image-library/desktop
         run: |
-          APP="src-tauri/target/release/bundle/macos/Lumitake Library.app"
+          APP="src-tauri/target/release/bundle/macos/Re'memor.app"
           # 用 ditto 複製，保留資料夾結構、權限與符號連結
           ditto server/dist/lumilib-server "$APP/Contents/Resources/server"
           test -x "$APP/Contents/Resources/server/lumilib-server"
@@ -130,16 +130,16 @@ jobs:
           # 製作 DMG：App ＋「應用程式」捷徑
           STAGE="$RUNNER_TEMP/dmg"
           mkdir -p "$STAGE"
-          ditto "$APP" "$STAGE/Lumitake Library.app"
+          ditto "$APP" "$STAGE/Re'memor.app"
           ln -s /Applications "$STAGE/Applications"
           mkdir -p out
-          hdiutil create -volname "Lumitake Library" -srcfolder "$STAGE" -ov -format UDZO "out/Lumitake-Library-mac.dmg"
+          hdiutil create -volname "Re'memor" -srcfolder "$STAGE" -ov -format UDZO "out/Rememor-mac.dmg"
           ls -la out
 
       - uses: actions/upload-artifact@v4
         with:
           name: mac-dmg
-          path: image-library/desktop/out/Lumitake-Library-mac.dmg
+          path: image-library/desktop/out/Rememor-mac.dmg
           if-no-files-found: error
 
   android:
@@ -177,13 +177,13 @@ jobs:
         run: |
           gradle --no-daemon assembleRelease
           mkdir -p out
-          cp app/build/outputs/apk/release/*.apk out/Lumitake-Library.apk
+          cp app/build/outputs/apk/release/*.apk out/Rememor.apk
           ls -la out
 
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: image-library/android/out/Lumitake-Library.apk
+          path: image-library/android/out/Rememor.apk
           if-no-files-found: error
 
   release:
@@ -202,25 +202,25 @@ jobs:
         run: |
           ls -la dist
           cat > notes.md <<'EOF'
-          ## Lumitake Library 最新版（自動建置）
+          ## Re'memor 最新版（自動建置）
 
           ### Mac（Apple Silicon，M1 以後）
-          1. 下載 **Lumitake-Library-mac.dmg**，打開後把 App 拖進「應用程式」。
+          1. 下載 **Rememor-mac.dmg**，打開後把 App 拖進「應用程式」。
           2. 第一次打開：macOS 會說無法驗證開發者（沒有付費簽章）。到「系統設定 → 隱私權與安全性」，
-             往下找到 Lumitake Library，按「仍要打開」。
-             如果顯示「已損毀」，在終端機執行：`xattr -cr "/Applications/Lumitake Library.app"`
+             往下找到 Re'memor，按「仍要打開」。
+             如果顯示「已損毀」，在終端機執行：`xattr -cr "/Applications/Re'memor.app"`
           3. AI 分析需要另外安裝 Ollama（https://ollama.com/download），App 的設定頁會引導。
 
           ### Android
-          1. 在手機下載 **Lumitake-Library.apk**，允許「安裝不明來源的應用程式」後安裝。
+          1. 在手機下載 **Rememor.apk**，允許「安裝不明來源的應用程式」後安裝。
           2. 打開 App，掃描 Mac 上「設定 → 手機與平板」的 QR code。
           3. 新版 APK 如果無法覆蓋安裝，先解除安裝舊版再安裝即可（只需重新掃描 QR code）。
 
           ### iPhone／iPad
           用 Safari 開啟 Mac 設定頁顯示的網址，按「分享 → 加入主畫面」。
           EOF
-          gh release delete app-latest --repo "$REPO" --cleanup-tag --yes || true
-          gh release create app-latest --repo "$REPO" --prerelease \
-            --title "Lumitake Library 最新版" --notes-file notes.md \
+          gh release delete rememor-latest --repo "$REPO" --cleanup-tag --yes || true
+          gh release create rememor-latest --repo "$REPO" --prerelease \
+            --title "Re'memor 最新版" --notes-file notes.md \
             --target "${{ github.sha }}" \
-            dist/Lumitake-Library-mac.dmg dist/Lumitake-Library.apk
+            dist/Rememor-mac.dmg dist/Rememor.apk

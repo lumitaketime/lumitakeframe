@@ -151,7 +151,7 @@ Windows 移植：Tauri、Python、ONNX、網頁介面都能在 Windows 執行，
 
 ## 待決定事項
 
-- [ ] Re'memor 的圖示與視覺識別
+- [x] Re'memor 的圖示與視覺識別（docs/brand/）
 - [ ] 除中英文外，優先支援哪些語言包
 - [ ] 是否先用 Czkawka 清掉重複檔案再開始開發
 - [ ] 購入 M5 Pro 後，AI 分析是否改由 M5 Pro 處理

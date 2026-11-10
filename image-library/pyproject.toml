@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lumilib"
 version = "0.19.2"
-description = "Lumitake Library：用地端 AI 分析並管理硬碟／SSD 上的照片與影片"
+description = "Re'memor：硬碟目錄、去重與全文檢索（以 Lumitake Library 為基礎）"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "SEE LICENSE IN ../LICENSE" }
@@ -27,7 +27,8 @@ dependencies = [
 test = ["httpx>=0.27", "onnx>=1.15"]
 
 [project.scripts]
-lumilib = "lumilib.cli:main"
+rememor = "lumilib.cli:main"
+lumilib = "lumilib.cli:main"  # 舊名稱，繼續可用
 
 [tool.setuptools]
 packages = ["lumilib"]

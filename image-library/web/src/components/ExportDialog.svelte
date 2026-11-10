@@ -183,7 +183,7 @@
       <div class="field">
         <span class="label">儲存到</span>
         <div class="row">
-          <span class="dest"><Icon path={mdiFolderOutline} size={18} /><span>{dest || `${defaultDest || "圖片 / Lumitake 匯出"} / 今天的日期時間`}</span></span>
+          <span class="dest"><Icon path={mdiFolderOutline} size={18} /><span>{dest || `${defaultDest || "圖片 / Re'memor 匯出"} / 今天的日期時間`}</span></span>
           {#if app.server?.local && app.server?.platform === "darwin"}<button class="btn ghost small" onclick={pick}>更改…</button>{/if}
           {#if dest}<button class="btn text small" onclick={() => (dest = "")}>用預設位置</button>{/if}
         </div>

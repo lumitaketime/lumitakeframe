@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Lumitake Library",
+  "productName": "Re'memor",
   "version": "0.19.2",
-  "identifier": "com.lumitake.library",
+  "identifier": "com.lumitake.rememor",
   "build": {
     "frontendDist": "../splash"
   },
@@ -17,8 +17,8 @@
     "targets": [
       "app"
     ],
-    "category": "Photography",
-    "shortDescription": "離線 AI 照片與影片圖庫",
+    "category": "Utility",
+    "shortDescription": "硬碟目錄、去重與全文檢索",
     "copyright": "© 2026 Lumi taketime · CC BY-NC-SA 4.0",
     "icon": [
       "icons/32x32.png",

@@ -8,7 +8,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.lumitake.library"
+        applicationId = "com.lumitake.rememor"  // 和 Lumitake Library 分開，安裝時不會互相取代
         minSdk = 29
         targetSdk = 35
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()

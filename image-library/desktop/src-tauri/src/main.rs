@@ -1,4 +1,4 @@
-//! Lumitake Library 的 Mac App 外殼。
+//! Re'memor 的 Mac App 外殼。
 //!
 //! - 啟動 App 內建的圖庫伺服器（PyInstaller 打包的 lumilib-server），等它就緒後在視窗中開啟介面。
 //! - 關閉視窗時 App 留在選單列繼續執行（手機才能持續連線）；選單列「結束」才會停止伺服器。
@@ -41,12 +41,12 @@ fn http_get(path: &str) -> Option<String> {
     Some(body)
 }
 
-/// 伺服器是否已在執行（確認回應確實來自 Lumitake Library）
+/// 伺服器是否已在執行（確認回應確實來自 Re'memor）
 fn server_alive() -> bool {
     http_get("/api/auth/status").map(|b| b.contains("\"authenticated\"")).unwrap_or(false)
 }
 
-/// 正在執行的 Lumitake Library 版本（舊版沒有回報版本時視為未知）
+/// 正在執行的 Re'memor 版本（舊版沒有回報版本時視為未知）
 fn running_version() -> Option<String> {
     let body = http_get("/api/server")?;
     let key = "\"version\":\"";
@@ -55,7 +55,7 @@ fn running_version() -> Option<String> {
     Some(body[start..end].to_string())
 }
 
-/// 找出佔用連接埠的 Lumitake Library 程序（例如之前用終端機安裝的舊版）並請它結束
+/// 找出佔用連接埠的 Re'memor 程序（例如之前用終端機安裝的舊版）並請它結束
 fn stop_other_server() -> bool {
     let Ok(out) = Command::new("/usr/sbin/lsof").args(["-nP", "-t", &format!("-iTCP:{PORT}"), "-sTCP:LISTEN"]).output() else {
         return false;
@@ -212,12 +212,12 @@ fn open_when_ready(app: AppHandle) {
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "打開 Lumitake Library", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "打開 Re'memor", true, None::<&str>)?;
     let browser = MenuItem::with_id(app, "browser", "在瀏覽器中開啟", true, None::<&str>)?;
     let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
     let autostart = CheckMenuItem::with_id(app, "autostart", "登入時自動啟動", true, autostart_enabled, None::<&str>)?;
-    let about = MenuItem::with_id(app, "about", "關於 Lumitake Library", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "結束 Lumitake Library", true, None::<&str>)?;
+    let about = MenuItem::with_id(app, "about", "關於 Re'memor", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "結束 Re'memor", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
@@ -235,7 +235,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     TrayIconBuilder::with_id("main")
         .icon(icon)
         .icon_as_template(true)
-        .tooltip("Lumitake Library")
+        .tooltip("Re'memor")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| match event.id().as_ref() {
@@ -277,7 +277,7 @@ fn main() {
             let handle = app.handle().clone();
             let fs_handle = handle.clone();
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("Lumitake Library")
+                .title("Re'memor")
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(380.0, 560.0)
                 .user_agent(USER_AGENT)
@@ -313,7 +313,7 @@ fn main() {
                             need_start = true;
                         } else {
                             show_error(&starter, &format!(
-                                "有另一個 Lumitake Library（{}）正在使用連接埠 {PORT}，無法自動關閉。請關閉之前開啟的終端機視窗後重新打開 App。",
+                                "有另一個 Re'memor（{}）正在使用連接埠 {PORT}，無法自動關閉。請關閉之前開啟的終端機視窗後重新打開 App。",
                                 if version.is_empty() { "舊版" } else { &version }));
                             return;
                         }
@@ -343,7 +343,7 @@ fn main() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("無法啟動 Lumitake Library");
+        .expect("無法啟動 Re'memor");
 
     app.run(|app, event| match event {
         #[cfg(target_os = "macos")]

@@ -154,19 +154,19 @@
     </header>
 
     {#if step === "welcome"}
-      <div class="hero"><img src="/icon.svg" alt="" width="64" height="64" /></div>
-      <h1>歡迎使用 Lumitake Library</h1>
-      <p class="lead">把電腦或外接 SSD 上的作品整理成像 Google 相簿一樣好找的圖庫。照片留在原本的位置，AI 在這台 Mac 上分析，不會上傳到任何地方。</p>
+      <div class="hero"><img src="/icon.png" alt="" width="64" height="64" /></div>
+      <h1>歡迎使用 Re'memor</h1>
+      <p class="lead">把散落在好幾顆硬碟裡的檔案，整理成一份硬碟拔掉也能查的目錄。檔案留在原本的位置，掃描只讀不寫，AI 也在這台 Mac 上執行，不會上傳到任何地方。</p>
       <ol class="plan">
-        <li><b>加入照片資料夾</b><span>選擇作品所在的資料夾或 SSD</span></li>
-        <li><b>安裝 Ollama</b><span>免費的 AI 執行程式，約 3 分鐘</span></li>
-        <li><b>下載 AI 模型</b><span>依你的 Mac 推薦，約 3–10 GB</span></li>
+        <li><b>加入硬碟或資料夾</b><span>選擇外接硬碟，或電腦裡的任何資料夾</span></li>
+        <li><b>安裝 Ollama（選用）</b><span>免費的 AI 執行程式，約 3 分鐘；只建目錄可以先略過</span></li>
+        <li><b>下載 AI 模型（選用）</b><span>依你的 Mac 推薦，約 3–10 GB</span></li>
       </ol>
       <div class="actions"><span></span><button class="btn" onclick={next}>開始設定</button></div>
 
     {:else if step === "folder"}
-      <h2><Icon path={mdiHarddisk} />加入照片資料夾</h2>
-      <p class="lead">選擇作品所在的資料夾，例如「圖片」或外接 SSD 上的作品集。之後可以再加入更多。</p>
+      <h2><Icon path={mdiHarddisk} />加入硬碟或資料夾</h2>
+      <p class="lead">選擇一顆外接硬碟（在選擇視窗左側「位置」底下），或電腦裡的任何資料夾。掃描只讀取，不會修改或搬動檔案；之後可以再加入更多。</p>
       {#if roots.length}
         <ul class="roots">
           {#each roots as r (r.id)}

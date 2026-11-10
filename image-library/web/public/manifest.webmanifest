@@ -1,13 +1,13 @@
 {
-  "name": "Lumitake Library",
-  "short_name": "Lumitake",
-  "description": "地端 AI 照片與影片圖庫",
+  "name": "Re'memor",
+  "short_name": "Re'memor",
+  "description": "硬碟目錄、去重與全文檢索",
   "lang": "zh-Hant",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#121316",
-  "theme_color": "#4250af",
+  "background_color": "#0b2346",
+  "theme_color": "#0b2346",
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },

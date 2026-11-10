@@ -33,7 +33,7 @@ object Server {
         }
     }
 
-    /** 確認對方真的是 Lumitake Library（在背景執行緒呼叫） */
+    /** 確認對方真的是 Re'memor（在背景執行緒呼叫） */
     fun check(baseUrl: String): Boolean = try {
         val conn = URL(baseUrl + "api/auth/status").openConnection() as HttpURLConnection
         conn.connectTimeout = 4000

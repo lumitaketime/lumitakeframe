@@ -260,8 +260,8 @@ def cmd_serve(conn, cfg, args):
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="lumilib",
-        description="用地端模型分析圖片，之後以關鍵字從硬碟／SSD 找回照片。",
+        prog="rememor",
+        description="Re'memor：硬碟目錄、去重與全文檢索。硬碟拔掉也能查，掃描只讀不寫。",
     )
     p.add_argument("--version", action="version", version=f"lumilib {__version__}")
     p.add_argument("--home", help="資料目錄（預設 ~/.rememor，可用 REMEMOR_HOME 設定）")

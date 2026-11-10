@@ -34,7 +34,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import java.net.URLDecoder
 
 /**
- * 主畫面：全螢幕的 WebView，顯示 Mac 上 Lumitake Library 的介面。
+ * 主畫面：全螢幕的 WebView，顯示 Mac 上 Re'memor 的介面。
  * 介面本身來自 Mac，所以 Mac 更新後手機自動是新版，App 很少需要更新。
  */
 class MainActivity : AppCompatActivity() {
@@ -193,11 +193,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showError(reason: String) {
-        errorText.text = "$reason\n\n請確認：\n• Mac 已開機且 Lumitake Library 正在執行\n• 已在 Mac 的設定開啟「手機與平板」連線\n• 手機和 Mac 連同一個 Wi-Fi\n\n目前連線：$serverUrl"
+        errorText.text = "$reason\n\n請確認：\n• Mac 已開機且 Re'memor 正在執行\n• 已在 Mac 的設定開啟「手機與平板」連線\n• 手機和 Mac 連同一個 Wi-Fi\n\n目前連線：$serverUrl"
         errorView.visibility = View.VISIBLE
     }
 
-    /** 「存到這台裝置」：用系統下載管理員存到 圖片/Lumitake，帶上登入 cookie。 */
+    /** 「存到這台裝置」：用系統下載管理員存到 圖片/Rememor，帶上登入 cookie。 */
     private fun download(url: String, userAgent: String, contentDisposition: String?, mimeType: String?) {
         try {
             val name = fileName(contentDisposition) ?: URLUtil.guessFileName(url, contentDisposition, mimeType)
@@ -207,10 +207,10 @@ class MainActivity : AppCompatActivity() {
                 if (!mimeType.isNullOrBlank()) setMimeType(mimeType)
                 setTitle(name)
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES, "Lumitake/$name")
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES, "Rememor/$name")
             }
             (getSystemService(DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-            Toast.makeText(this, "正在存到「圖片/Lumitake」：$name", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "正在存到「圖片/Rememor」：$name", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "無法下載：${e.message}", Toast.LENGTH_LONG).show()
         }

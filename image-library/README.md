@@ -1,12 +1,38 @@
-# Lumitake Library：離線 AI 照片與影片圖庫
+# Re'memor：硬碟目錄、去重與全文檢索
 
-> **Re'memor 開發中（`rememor` 分支）**：在這個圖庫的基礎上，加上「硬碟拔掉也能查」的完整硬碟目錄。
-> 規劃見 [docs/rememor-plan.md](../docs/rememor-plan.md)。目前已完成：
-> - **硬碟目錄**：掃描時記錄每個資料夾、每個檔案（照片、文件、音樂、壓縮檔…所有類型）的名稱、大小、日期與類型，
->   以及每個資料夾含子資料夾的總大小。硬碟拔掉後，在「資料夾」頁照樣可以瀏覽。
-> - **認得每一顆硬碟**：用系統的硬碟編號辨識；硬碟改名後自動找到新位置，同一個位置換成另一顆硬碟時不會混在一起掃描。
-> - **可中斷、可接續**：掃描中途拔掉硬碟或按停止，不會把還沒掃到的檔案標成遺失，下次從中斷處繼續。
-> - **只讀不寫硬碟**：掃描時不修改、不建立硬碟上的任何檔案。
+<img src="lumilib/web/icon.png" alt="" width="96">
+
+把散落在好幾顆外接硬碟裡的檔案，整理成一份**硬碟拔掉也能查**的完整目錄。
+以 Lumitake Library（照片圖庫）為基礎開發，規劃見 [docs/rememor-plan.md](../docs/rememor-plan.md)。
+
+目前已完成：
+- **硬碟目錄**：掃描時記錄每個資料夾、每個檔案（照片、文件、音樂、壓縮檔…所有類型）的名稱、大小、日期與類型，
+  以及每個資料夾含子資料夾的總大小。硬碟拔掉後，在「資料夾」頁照樣可以瀏覽。
+- **認得每一顆硬碟**：用系統的硬碟編號辨識；硬碟改名後自動找到新位置，同一個位置換成另一顆硬碟時不會混在一起掃描。
+- **可中斷、可接續**：掃描中途拔掉硬碟或按停止，不會把還沒掃到的檔案標成遺失，下次從中斷處繼續。
+- **只讀不寫硬碟**：掃描時不修改、不建立硬碟上的任何檔案。
+- **和 Lumitake Library 分開**：資料在 `~/.rememor`、連接埠 8766，兩個 App 可以同時使用。
+
+## 在 Mac 上從原始碼執行（開發中的測試方式）
+
+需要 Homebrew。第一次安裝：
+
+```bash
+brew install python@3.12 exiftool
+git clone -b rememor https://github.com/lumitaketime/lumitakeframe.git ~/Rememor-dev
+cd ~/Rememor-dev/image-library
+"$(brew --prefix python@3.12)/bin/python3.12" -m venv .venv
+source .venv/bin/activate
+pip install -e .
+rememor serve --open
+```
+
+之後啟動：`cd ~/Rememor-dev/image-library && source .venv/bin/activate && rememor serve --open`
+（舊的 `lumilib` 指令也還能用）。更新到最新版：在 `~/Rememor-dev` 執行 `git pull`，再執行一次 `pip install -e .`。
+
+---
+
+以下沿用 Lumitake Library 的功能說明，會隨 Re'memor 開發逐步更新。
 
 給攝影師用的本機圖庫，概念像 Android 相簿：**資料夾就是相簿來源，App 只負責瀏覽與整理**。
 照片和影片留在你的 SSD／硬碟原位，不會被複製進某個資料庫，也不會上傳雲端。

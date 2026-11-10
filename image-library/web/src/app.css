@@ -1,11 +1,12 @@
 /*
- * Lumitake Library — Material Design 3 介面
+ * Re'memor — Material Design 3 介面
  * 色彩、字級、形狀、狀態層與動態都來自設計系統的 tokens（m3-tokens.css）。
  * 舊的變數名稱（--bg、--primary…）對應到 M3 色彩角色，讓所有頁面一起換上新設計。
  */
 @import "@fontsource/roboto/latin-400.css";
 @import "@fontsource/roboto/latin-500.css";
 @import "@fontsource/roboto/latin-700.css";
+@import "@fontsource/manrope/latin-700.css"; /* 只用在文字標誌 */
 @import "./m3-tokens.css";
 
 :root {
@@ -33,7 +34,17 @@
   --sidebar: 256px;
   --topbar: 64px;
   --font: Roboto, "PingFang TC", "Noto Sans TC", "Heiti TC", system-ui, sans-serif;
+  /* Re'memor 品牌色：海藍、藏青、記憶橘；文字標誌在淺色背景用藏青 */
+  --brand-blue: #2a6fc0;
+  --brand-navy: #0b2346;
+  --brand-orange: #ff8d28;
+  --brand-ink: var(--brand-navy);
 }
+/* 深色外觀：文字標誌改用白色 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --brand-ink: #ffffff; }
+}
+:root[data-theme="dark"] { --brand-ink: #ffffff; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }

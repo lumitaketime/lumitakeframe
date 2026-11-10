@@ -11,6 +11,7 @@
   import Onboarding from "./components/Onboarding.svelte";
   import SearchBox from "./components/SearchBox.svelte";
   import FilterButton from "./components/FilterButton.svelte";
+  import Wordmark from "./components/Wordmark.svelte";
   import { filterUI } from "./lib/filter.svelte.js";
   import Timeline from "./pages/Timeline.svelte";
   import Explore from "./pages/Explore.svelte";
@@ -310,9 +311,9 @@
     <header class="topbar">
       <button class="icon-btn menu-btn" onclick={toggleNav} aria-label={!wide ? "打開選單" : rail ? "展開選單" : "收合選單"}
         aria-expanded={!wide ? drawer : !rail} title={!wide ? "選單" : rail ? "展開選單" : "收合選單"}><Icon path={mdiMenu} /></button>
-      <a class="brand" href="/" use:link aria-label="Lumitake Library">
-        <img src="/icon.svg" alt="" width="32" height="32" />
-        <span>Lumitake <b>Library</b></span>
+      <a class="brand" href="/" use:link aria-label="Re'memor">
+        <img src="/icon.png" alt="" width="32" height="32" />
+        <span class="brand-name"><Wordmark size={24} /></span>
       </a>
       {#if narrow && !searchOpen}<span class="spacer"></span>{/if}
       <SearchBox narrow={winW <= 600} bind:expanded={searchOpen} />
@@ -472,8 +473,7 @@
   }
   .menu-btn { color: var(--on-surface-variant); flex-shrink: 0; }
   .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--on-surface); min-width: calc(var(--sidebar) - 64px); padding-right: 16px; flex-shrink: 0; }
-  .brand span { font-size: 22px; line-height: 28px; white-space: nowrap; }
-  .brand b { font-weight: 500; color: var(--primary); }
+  .brand-name { display: flex; align-items: center; }
   .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
   .right .icon-btn { color: var(--on-surface-variant); }
 
@@ -609,8 +609,8 @@
   .shell.mode-phone .bottom a:active { background: color-mix(in srgb, var(--on-surface) 10%, transparent); }
   @media (max-width: 600px) {
     .topbar { gap: 4px; padding: 0 4px; padding-top: env(safe-area-inset-top); }
-    .brand span { font-size: 16px; }
+    .brand-name :global(.wordmark) { font-size: 20px !important; }
     main { margin: 0; border-radius: var(--corner-large) var(--corner-large) 0 0; }
   }
-  @media (max-width: 420px) { .brand span { display: none; } }
+  @media (max-width: 420px) { .brand-name { display: none; } }
 </style>

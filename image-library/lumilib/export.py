@@ -37,7 +37,7 @@ FONT_CANDIDATES = [
 
 
 def default_dest() -> Path:
-    return Path.home() / "Pictures" / "Lumitake 匯出" / datetime.now().strftime("%Y-%m-%d %H%M")
+    return Path.home() / "Pictures" / "Re'memor 匯出" / datetime.now().strftime("%Y-%m-%d %H%M")
 
 
 def _font(size: int):

@@ -3,6 +3,7 @@
   import Loading from "../components/Loading.svelte";
   import { tick } from "svelte";
   import StatusCards from "../components/StatusCards.svelte";
+  import Wordmark from "../components/Wordmark.svelte";
   import SectionTitle from "../components/SectionTitle.svelte";
   import { ABOUT, THIRD_PARTY } from "../lib/about.js";
   import BackButton from "../components/BackButton.svelte";
@@ -389,7 +390,7 @@
     {#each SECTIONS as c (c.id)}
       <a href={`/settings/${c.id}`} use:link class:on={current === c.id}><Icon path={current === c.id ? filled(c.icon) : c.icon} size={20} /><span class="cl"><span>{c.label}</span><span class="csub">{c.sub}</span></span></a>
     {/each}
-    <a class="ver" class:on={current === "about"} href="/settings/about" use:link title="關於 Lumitake Library">Lumitake Library {app.server?.version || ""}</a>
+    <a class="ver" class:on={current === "about"} href="/settings/about" use:link title="關於 Re'memor">Re'memor {app.server?.version || ""}</a>
   </aside>
   <div class="pane">
     <a class="back" href="/settings" use:link><Icon path={mdiArrowLeft} size={20} />設定</a>
@@ -398,10 +399,10 @@
     <!-- 關於 -->
     <section class="card about">
       <div class="about-head">
-        <img src="/icon.svg" alt="" width="56" height="56" />
+        <img src="/icon.png" alt="" width="56" height="56" />
         <div>
-          <h2 class="plain">{ABOUT.name}</h2>
-          <span class="muted small">版本 {app.server?.version || ""}</span>
+          <h2 class="plain"><Wordmark size={28} /></h2>
+          <span class="muted small">{ABOUT.tagline} · 版本 {app.server?.version || ""}</span>
         </div>
       </div>
       <p class="small">© {ABOUT.year} {ABOUT.author}</p>
@@ -999,7 +1000,7 @@
           <li>ffmpeg（影片縮圖與分析）：{s.tools.ffmpeg ? "✓" : "未安裝 → brew install ffmpeg"}</li>
           <li>HEIC 支援：{s.tools.heif ? "✓" : "未安裝 pillow-heif"}</li>
           {#if s.home}<li>圖庫資料（資料庫與縮圖）：<code>{s.home}</code></li>{/if}
-          <li class="muted">Lumitake Library {s.version}</li>
+          <li class="muted">Re'memor {s.version}</li>
         </ul>
       {/if}
       <div class="row wrap"><a class="btn ghost small" href="/welcome" use:link>重新執行設定引導</a></div>
