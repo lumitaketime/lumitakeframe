@@ -70,7 +70,9 @@ def separate_drives(*mounts: Path):
 
 class CatalogTestCase(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
+        # macOS 的暫存資料夾 /var/folders 其實是 /private/var/folders 的捷徑；
+        # 加入資料夾時程式會換成真正的路徑，所以測試也用真正的路徑來模擬「拔掉」與「停止」
+        self.tmp = Path(tempfile.mkdtemp()).resolve()
         self.cfg = load_config(self.tmp / "home")
         self.conn = db.connect(self.cfg.db_path)
 
