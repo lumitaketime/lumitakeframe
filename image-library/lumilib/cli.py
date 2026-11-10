@@ -19,14 +19,16 @@ from .search import search
 def _print_scan(results) -> None:
     if not results:
         print("尚未加入任何資料夾，請先執行：lumilib add <資料夾路徑>")
+    from .scanner import describe
+
     for r in results:
-        if r.offline:
+        if r.offline and not r.other_drive:
             print(f"[{r.root}] 目前無法存取（外接硬碟未連接？），已略過，紀錄保持不變")
             continue
-        print(
-            f"[{r.root}] 新增 {r.added}、內容更新 {r.updated}、搬移/改名 {r.moved}、"
-            f"沿用重複檔分析 {r.reused}、未變更 {r.unchanged}、遺失 {r.missing}"
-        )
+        print(describe(r))
+        if r.complete:
+            print(f"   照片與影片：新增 {r.added}、內容更新 {r.updated}、搬移/改名 {r.moved}、"
+                  f"沿用重複檔分析 {r.reused}、未變更 {r.unchanged}")
         for err in r.errors[:10]:
             print(f"   ! {err}")
 

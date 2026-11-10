@@ -4,6 +4,7 @@
   import Icon from "../components/Icon.svelte";
   import CoverPicker from "../components/CoverPicker.svelte";
   import Menu from "../components/Menu.svelte";
+  import FileList from "../components/FileList.svelte";
   import { flip } from "svelte/animate";
   import { reorder, sortCards, moveKey } from "../lib/reorder.js";
   import { api, thumbUrl } from "../lib/api.js";
@@ -11,7 +12,7 @@
   import { app, toast, refresh } from "../lib/state.svelte.js";
   import { analyzeAssets } from "../lib/actions.js";
   import { mdiFolderOutline, mdiFolderOpenOutline, mdiCreation, mdiHarddisk, mdiContentCopy, mdiImageOutline, mdiSort, mdiStar, mdiStarOutline } from "../lib/icons.js";
-  import { count } from "../lib/format.js";
+  import { count, bytes } from "../lib/format.js";
 
   let { rootId = null } = $props();
   let data = $state(null);
@@ -117,6 +118,17 @@
     }
   }
 
+  // 目錄（所有檔案）的摘要：「1,234 個檔案 · 3.2 GB」；還沒用新版掃描過時退回照片數
+  function sizeText(files, size) {
+    return `${count(files)} 個檔案${size ? ` · ${bytes(size)}` : ""}`;
+  }
+  const rootSub = (r) => (r.catalog?.scanned ? sizeText(r.catalog.files, r.catalog.bytes) : `${count(r.count)} 個項目`);
+  const folderSub = (f) => (f.files !== undefined ? sizeText(f.files, f.bytes) : `${count(f.count)} 個項目`);
+  function driveText(d) {
+    if (!d) return "";
+    return [d.name, d.fs_label, d.capacity ? `容量 ${bytes(d.capacity)}` : ""].filter(Boolean).join(" · ");
+  }
+
   async function analyzeFolder() {
     await api("/api/jobs", { body: { kind: "analyze", root_id: rootId, folder: path } });
     toast("已排入 AI 分析（這個資料夾與子資料夾中尚未分析的項目）");
@@ -146,7 +158,8 @@
               </button>
             </div>
             <div class="name">{r.name}</div>
-            <div class="sub">{r.count.toLocaleString()} 個項目</div>
+            <div class="sub">{rootSub(r)}</div>
+            {#if r.catalog?.drive}<div class="sub drive">{driveText(r.catalog.drive)}{r.catalog.scan_state === "partial" ? " · 尚未掃描完成" : ""}</div>{/if}
           </a>
         </div>
       {/each}
@@ -154,6 +167,11 @@
   {:else}
     {#snippet subfolders()}
       {#if !data.root.online}<p class="offline-note muted small">硬碟未連接，顯示的是上次掃描的內容。</p>{/if}
+      {#if data.catalog && (data.assets.length || data.root.catalog?.drive)}
+        <p class="totals muted small">
+          {#if data.assets.length}共 {sizeText(data.catalog.total_files, data.catalog.total_bytes)}（含子資料夾）{/if}{#if data.assets.length && data.root.catalog?.drive} · {/if}{#if data.root.catalog?.drive}在「{data.root.catalog.drive.name}」硬碟上{/if}
+        </p>
+      {/if}
       {#if data.folders.length}
         {#if data.folders.length > 1}
           <div class="sub-head"><h2 class="section-title">資料夾</h2><Menu icon={mdiSort} label="資料夾排序" items={sortItems} /></div>
@@ -170,15 +188,24 @@
                   </button>
                 </div>
                 <div class="name">{f.name}</div>
-                <div class="sub">{f.count.toLocaleString()} 個項目</div>
+                <div class="sub">{folderSub(f)}</div>
               </div>
             </div>
           {/each}
         </div>
-        {#if data.assets.length}<h2 class="section-title">這層的檔案</h2>{/if}
       {/if}
-      {#if !data.assets.length && !data.folders.length}
-        <div class="empty"><p>這個資料夾裡沒有照片或影片。</p></div>
+      {#if data.catalog?.files_total}
+        <div class="sub-head"><h2 class="section-title">其他檔案</h2></div>
+        {#if data.catalog.kinds.length > 1}
+          <div class="kinds">
+            {#each data.catalog.kinds as k (k.kind)}<span class="chip static">{k.label} {count(k.files)}<span class="muted"> · {bytes(k.bytes) || "0 KB"}</span></span>{/each}
+          </div>
+        {/if}
+        <FileList files={data.catalog.files} total={data.catalog.files_total} />
+      {/if}
+      {#if data.assets.length && (data.folders.length || data.catalog?.files_total)}<h2 class="section-title photos-title">照片與影片</h2>{/if}
+      {#if !data.assets.length && !data.folders.length && !data.catalog?.files_total}
+        <div class="empty"><p>這個資料夾是空的。</p></div>
       {/if}
     {/snippet}
     {#key `${rootId}:${path}`}
@@ -186,7 +213,7 @@
         assets={data.assets}
         storeKey={`folder:${rootId}:${path}`}
         title={data.crumbs.length ? data.crumbs[data.crumbs.length - 1].name : data.root.name}
-        subtitle={data.assets.length ? null : `${count(data.folders.length)} 個資料夾`}
+        subtitle={data.assets.length ? null : data.catalog ? sizeText(data.catalog.total_files, data.catalog.total_bytes) : `${count(data.folders.length)} 個資料夾`}
         back={path ? `/folders/${rootId}${path.includes("/") ? `?path=${encodeURIComponent(path.slice(0, path.lastIndexOf("/")))}` : ""}` : "/folders"}
         crumbs={[{ label: "資料夾", href: "/folders" },
           ...(path ? [{ label: data.root.name, href: `/folders/${rootId}` }] : []),
@@ -216,4 +243,9 @@
   div.cover-card { cursor: pointer; }
   .sub-head { display: flex; align-items: center; gap: 8px; }
   .sub-head .section-title { flex: 1; }
+  .totals { margin: 0 0 14px; }
+  .drive { font-size: 12px; }
+  .kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+  .chip.static { cursor: default; }
+  .photos-title { margin-top: 24px; }
 </style>

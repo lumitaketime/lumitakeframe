@@ -39,6 +39,7 @@ export function duration(sec) {
 
 export function bytes(n) {
   if (!n) return "";
+  if (n >= 1e12) return `${(n / 1e12).toFixed(2)} TB`;
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)} GB`;
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(n / 1e3))} KB`;

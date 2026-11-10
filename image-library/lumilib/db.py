@@ -1,6 +1,12 @@
-"""SQLite 圖庫：資料夾根目錄、照片／影片紀錄、分析結果、相簿。
+"""SQLite 圖庫與硬碟目錄：硬碟、資料夾根目錄、所有檔案、照片／影片紀錄、分析結果、相簿。
 
-路徑以「根目錄 + 相對路徑」保存。外接 SSD 換了掛載點時用 relocate 更新根目錄即可。
+路徑以「根目錄 + 相對路徑」保存。外接 SSD 換了掛載點時用 relocate 更新根目錄即可；
+有硬碟編號時，掃描會自動找到改名後的新位置。
+
+v15 新增的硬碟目錄（Re'memor）：
+- drives：每一顆硬碟（系統編號、名稱、格式、容量），拔掉後仍保留紀錄。
+- folders：每個資料夾（含空資料夾）與它的總大小、檔案數。
+- files：每個檔案（所有類型）的名稱、大小、日期與類型；照片與影片另外在 images 有詳細資料。
 """
 
 from __future__ import annotations
@@ -11,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 14  # v14：相簿、資料夾的收藏與自訂順序
+SCHEMA_VERSION = 15  # v15：硬碟目錄（drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -20,6 +26,20 @@ CREATE TABLE IF NOT EXISTS roots (
     path TEXT NOT NULL,
     created_at TEXT NOT NULL,
     last_scan TEXT
+);
+
+-- v15：每一顆硬碟。key＝「uuid:系統編號」，查不到編號時用「vol:名稱|容量|格式」
+CREATE TABLE IF NOT EXISTS drives (
+    id INTEGER PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    uuid TEXT,
+    name TEXT NOT NULL,
+    fs_type TEXT,
+    capacity INTEGER,
+    read_only INTEGER NOT NULL DEFAULT 0,
+    mount_path TEXT,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS images (
@@ -132,6 +152,62 @@ CREATE TABLE IF NOT EXISTS folder_covers (
     image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
     PRIMARY KEY (root_id, path)
 );
+
+-- v15：每個資料夾（path 空字串＝資料夾來源本身）。
+-- files／bytes 是直接放在這層的檔案；total_files／total_bytes 含所有子資料夾。
+-- scan_gen：這個資料夾在第幾次掃描時處理完成，掃描中斷後接著掃時用來跳過已完成的部分。
+CREATE TABLE IF NOT EXISTS folders (
+    id INTEGER PRIMARY KEY,
+    root_id INTEGER NOT NULL REFERENCES roots(id) ON DELETE CASCADE,
+    parent_id INTEGER REFERENCES folders(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ok',
+    mtime REAL,
+    scan_gen INTEGER NOT NULL DEFAULT 0,
+    files INTEGER NOT NULL DEFAULT 0,
+    bytes INTEGER NOT NULL DEFAULT 0,
+    total_files INTEGER NOT NULL DEFAULT 0,
+    total_bytes INTEGER NOT NULL DEFAULT 0,
+    subfolders INTEGER NOT NULL DEFAULT 0,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    UNIQUE (root_id, path)
+);
+
+-- v15：每個檔案（所有類型）。kind：photo／raw／video／audio／document／archive／package／other
+CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY,
+    root_id INTEGER NOT NULL REFERENCES roots(id) ON DELETE CASCADE,
+    folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    ext TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    mtime REAL NOT NULL,
+    ctime REAL,
+    status TEXT NOT NULL DEFAULT 'ok',
+    image_id INTEGER REFERENCES images(id) ON DELETE SET NULL,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    UNIQUE (folder_id, name)
+);
+"""
+
+# v15：roots 新增的欄位：所在硬碟、在硬碟裡的位置、掃描進度
+ROOT_COLUMNS = [
+    ("drive_id", "INTEGER REFERENCES drives(id) ON DELETE SET NULL"),
+    ("drive_rel", "TEXT"),
+    ("scan_gen", "INTEGER NOT NULL DEFAULT 0"),
+    ("scan_state", "TEXT"),
+]
+
+CATALOG_INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
+CREATE INDEX IF NOT EXISTS idx_files_root_status ON files(root_id, status);
+CREATE INDEX IF NOT EXISTS idx_files_kind ON files(kind, status);
+CREATE INDEX IF NOT EXISTS idx_files_size ON files(size);
+CREATE INDEX IF NOT EXISTS idx_files_image ON files(image_id);
 """
 
 # v13：全文索引。中文、日文、韓文逐字＋兩字一組，其他文字依單字（可前綴比對）；
@@ -281,6 +357,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if name not in existing:
             conn.execute(f"ALTER TABLE images ADD COLUMN {name} {ddl}")
     conn.executescript(INDEXES)
+    root_cols = {row[1] for row in conn.execute("PRAGMA table_info(roots)")}
+    for name, ddl in ROOT_COLUMNS:
+        if name not in root_cols:
+            conn.execute(f"ALTER TABLE roots ADD COLUMN {name} {ddl}")
+    conn.executescript(CATALOG_INDEXES)
     album_cols = {row[1] for row in conn.execute("PRAGMA table_info(albums)")}
     if "favorite" not in album_cols:
         conn.execute("ALTER TABLE albums ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")

@@ -323,11 +323,10 @@ class JobRunner:
                 opts = {**opts}
             if kind in ("scan", "index"):
                 results = scan_all(conn, self.cfg, opts.get("roots"), progress=lambda m: upd(message=m), stop=stop)
+                from .scanner import describe
+
                 for r in results:
-                    if r.offline:
-                        parts.append(f"{r.root}：未連接，已略過")
-                    else:
-                        parts.append(f"{r.root}：新增 {r.added}、更新 {r.updated}、搬移 {r.moved}、遺失 {r.missing}")
+                    parts.append(describe(r))
                 if not results:
                     parts.append("尚未加入任何資料夾")
             if kind in ("faces", "index") and not stop.is_set() and self._faces_ready(kind):

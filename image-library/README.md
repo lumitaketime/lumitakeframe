@@ -1,5 +1,13 @@
 # Lumitake Library：離線 AI 照片與影片圖庫
 
+> **Re'memor 開發中（`rememor` 分支）**：在這個圖庫的基礎上，加上「硬碟拔掉也能查」的完整硬碟目錄。
+> 規劃見 [docs/rememor-plan.md](../docs/rememor-plan.md)。目前已完成：
+> - **硬碟目錄**：掃描時記錄每個資料夾、每個檔案（照片、文件、音樂、壓縮檔…所有類型）的名稱、大小、日期與類型，
+>   以及每個資料夾含子資料夾的總大小。硬碟拔掉後，在「資料夾」頁照樣可以瀏覽。
+> - **認得每一顆硬碟**：用系統的硬碟編號辨識；硬碟改名後自動找到新位置，同一個位置換成另一顆硬碟時不會混在一起掃描。
+> - **可中斷、可接續**：掃描中途拔掉硬碟或按停止，不會把還沒掃到的檔案標成遺失，下次從中斷處繼續。
+> - **只讀不寫硬碟**：掃描時不修改、不建立硬碟上的任何檔案。
+
 給攝影師用的本機圖庫，概念像 Android 相簿：**資料夾就是相簿來源，App 只負責瀏覽與整理**。
 照片和影片留在你的 SSD／硬碟原位，不會被複製進某個資料庫，也不會上傳雲端。
 介面參考 Google 相簿與 Immich，Mac 用瀏覽器開，iPhone／iPad 透過家裡 Wi-Fi 也能看。
@@ -183,6 +191,7 @@ lumilib serve --open
 ```bash
 # 後端測試（不需要 Ollama；有 exiftool / ffmpeg 時會多跑相關測試）
 pip install -e ".[test]" && python -m unittest discover -s tests
+python tools/bench_catalog.py 100000   # 用十萬個假檔案量目錄掃描的速度
 
 # 前端（Svelte 5 + Vite），建置結果輸出到 lumilib/web/ 並一起提交，安裝時不需要 Node.js
 cd web && pnpm install && pnpm build
@@ -192,7 +201,10 @@ pnpm dev   # 開發模式，API 轉到 127.0.0.1:8766
 | 位置 | 內容 |
 | --- | --- |
 | `lumilib/media.py` | exiftool／Pillow／ffmpeg：EXIF、RAW 預覽、影片畫面、縮圖 |
-| `lumilib/scanner.py` | 增量掃描、內容指紋、搬移與重複偵測 |
+| `lumilib/scanner.py` | 硬碟目錄與照片的增量掃描：拔掉硬碟的處理、接續掃描、同一顆硬碟內的搬移偵測 |
+| `lumilib/volumes.py` | 用系統的硬碟編號辨識每一顆硬碟（不在硬碟上寫入任何東西） |
+| `lumilib/filetypes.py` | 依副檔名分類：照片、RAW、影片、音樂、文件、壓縮檔、套件 |
+| `lumilib/catalog.py` | 目錄查詢：資料夾總大小、資料夾內容（硬碟拔掉也能查） |
 | `lumilib/analyzer.py`、`models.py` | Ollama 呼叫、提示詞、模型下載與推薦清單 |
 | `lumilib/search.py` | 查詢語法、排序、語意搜尋 |
 | `lumilib/fileops.py` | 垃圾桶、附屬檔、Finder |

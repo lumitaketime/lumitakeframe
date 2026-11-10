@@ -309,6 +309,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         return out
 
     def _root_dict(c, r) -> dict:
+        from .catalog import root_summary
+
         custom = folder_cover(c, r["id"], "")
         cover = {"id": custom} if custom else c.execute(
             "SELECT id FROM images WHERE root_id = ? AND status = 'ok' AND thumb_ok = 1 ORDER BY sort_at DESC LIMIT 1",
@@ -320,6 +322,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "SELECT COUNT(*) FROM images WHERE root_id = ? AND status = 'ok'", (r["id"],)).fetchone()[0],
             "last_scan": r["last_scan"], "cover": cover["id"] if cover else None, "cover_custom": bool(custom),
             "favorite": folder_pref(c, r["id"], "")[0], "position": folder_pref(c, r["id"], "")[1],
+            "catalog": root_summary(c, r),
         }
 
     # ---- 時間軸 ----
@@ -1308,6 +1311,17 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 child["count"] += row["count"]
                 if (row["latest"] or "") >= child["latest"]:
                     child["latest"], child["cover"] = row["latest"] or "", row["id"]
+            # 硬碟目錄：所有子資料夾（含沒有照片的、空的）與總大小；硬碟拔掉時也看得到
+            from .catalog import folder_listing
+
+            listing = folder_listing(c, r["id"], path)
+            if listing:
+                for sf in listing["subfolders"]:
+                    if sf["status"] != "ok":
+                        continue
+                    child = children.setdefault(sf["name"], {"name": sf["name"], "path": sf["path"], "count": 0, "cover": None,
+                                                             "latest": "", "cover_custom": False})
+                    child.update(files=sf["files"], bytes=sf["bytes"], subfolders=sf["subfolders"])
             # 使用者自訂的封面優先
             for child in children.values():
                 custom = folder_cover(c, r["id"], child["path"])
@@ -1334,9 +1348,27 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "assets": [summarize(a) for a in assets],
                 "cover": here_custom if path else root_info["cover"],
                 "cover_custom": bool(here_custom) if path else root_info["cover_custom"],
+                "catalog": catalog_payload(listing),
             }
         finally:
             c.close()
+
+    OTHER_FILES_LIMIT = 20000
+
+    def catalog_payload(listing: dict | None) -> dict | None:
+        """資料夾的目錄資料：總數、各類型佔多少、照片以外的檔案（精簡格式：[id, 名稱, 類型, 大小, 修改時間]）。"""
+        if listing is None:
+            return None
+        media = ("photo", "raw", "video")
+        others = [f for f in listing["files"] if f["status"] == "ok" and not (f["kind"] in media and f["image_id"])]
+        return {
+            "total_files": listing["total_files"], "total_bytes": listing["total_bytes"],
+            "files_here": listing["files_here"], "bytes_here": listing["bytes_here"],
+            "kinds": listing["kinds"],
+            "files": [[f["id"], f["name"], f["kind"], f["size"], f["mtime"]] for f in others[:OTHER_FILES_LIMIT]],
+            "files_total": len(others),
+            "missing": [f["name"] for f in listing["files"] if f["status"] != "ok"][:200],
+        }
 
     @app.post("/api/folders/prefs")
     def set_folder_prefs(body: dict = Body(...)):
