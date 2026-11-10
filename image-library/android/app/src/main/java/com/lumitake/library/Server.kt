@@ -8,7 +8,7 @@ import java.net.URL
 object Server {
     private const val PREFS = "lumitake"
     private const val KEY_URL = "server_url"
-    const val DEFAULT_PORT = 8765
+    const val DEFAULT_PORT = 8766
 
     fun get(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_URL, null)
@@ -17,7 +17,7 @@ object Server {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_URL, url).apply()
     }
 
-    /** 「192.168.1.20」「mac.local:8765」「http://…」都整理成 http://主機:埠/ */
+    /** 「192.168.1.20」「mac.local:8766」「http://…」都整理成 http://主機:埠/ */
     fun normalize(input: String): String? {
         var text = input.trim()
         if (text.isEmpty()) return null

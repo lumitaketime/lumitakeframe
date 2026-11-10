@@ -46,7 +46,7 @@ class UndoMergeTests(unittest.TestCase):
         from lumilib.server import create_app
 
         app = create_app(self.cfg, start_jobs_on_boot=False)
-        with TestClient(app, base_url="http://127.0.0.1:8765", client=("127.0.0.1", 50000)) as client:
+        with TestClient(app, base_url="http://127.0.0.1:8766", client=("127.0.0.1", 50000)) as client:
             res = client.post("/api/people/merge", json={"target": self.p1, "sources": [self.p2]}).json()
             self.assertTrue(res["undo"])
             people = client.get("/api/people").json()

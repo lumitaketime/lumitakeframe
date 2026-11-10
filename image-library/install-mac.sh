@@ -67,7 +67,7 @@ cat > "$LAUNCHER" <<LAUNCH
 #!/bin/bash
 # 點兩下啟動 Lumitake Library；關閉這個視窗就會停止。
 # 想把圖庫資料（資料庫與縮圖）放在外接 SSD，取消下一行的註解並改成你的路徑：
-# export LUMILIB_HOME="/Volumes/你的SSD/.lumilib"
+# export REMEMOR_HOME="/Volumes/你的SSD/.rememor"
 cd "$APP_DIR"
 echo "Lumitake Library 執行中，瀏覽器會自動開啟。關閉這個視窗即停止。"
 # caffeinate：接電源時避免 Mac 睡眠，手機才能持續連線

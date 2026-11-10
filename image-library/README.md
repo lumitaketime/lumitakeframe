@@ -59,7 +59,9 @@
 4. 關閉視窗後 App 會留在上方選單列（手機才能繼續連線）；要完全結束請按選單列圖示 →「結束」。
    選單裡也可以勾選「登入時自動啟動」。
 
-App 與命令列版本共用同一個圖庫資料（`~/.lumilib`），分析結果、相簿、人物都會保留。
+App 與命令列版本共用同一個圖庫資料（`~/.rememor`），分析結果、相簿、人物都會保留。
+Re'memor 和 Lumitake Library 分開存放（Library 在 `~/.lumilib`、連接埠 8765；Re'memor 在 `~/.rememor`、連接埠 8766），
+兩個可以同時使用，不會讀寫到對方的資料。
 如果之前用終端機安裝過（桌面上有 `Lumitake Library.command`），App 開啟時會自動關閉舊版服務、改用 App 內建的新版；
 之後請直接用 App，可以把桌面上的 `Lumitake Library.command` 刪掉。
 
@@ -136,11 +138,11 @@ InsightFace 預訓練模型的授權僅限非商業用途。
 
 ### 把圖庫資料也放在 SSD（行動作品集）
 
-資料庫與縮圖預設在 `~/.lumilib`（十萬張約 2–3 GB 縮圖）。想讓它跟著 SSD 走，
+資料庫與縮圖預設在 `~/.rememor`（十萬張約 2–3 GB 縮圖）。想讓它跟著 SSD 走，
 先結束 App，在終端機把資料搬到 SSD 並建立捷徑（`你的SSD` 換成實際名稱）：
 
 ```bash
-mv ~/.lumilib "/Volumes/你的SSD/.lumilib" && ln -s "/Volumes/你的SSD/.lumilib" ~/.lumilib
+mv ~/.rememor "/Volumes/你的SSD/.rememor" && ln -s "/Volumes/你的SSD/.rememor" ~/.rememor
 ```
 
 之後 App 會透過這個捷徑讀寫 SSD 上的資料；使用時 SSD 需要接著。
@@ -184,7 +186,7 @@ pip install -e ".[test]" && python -m unittest discover -s tests
 
 # 前端（Svelte 5 + Vite），建置結果輸出到 lumilib/web/ 並一起提交，安裝時不需要 Node.js
 cd web && pnpm install && pnpm build
-pnpm dev   # 開發模式，API 轉到 127.0.0.1:8765
+pnpm dev   # 開發模式，API 轉到 127.0.0.1:8766
 ```
 
 | 位置 | 內容 |

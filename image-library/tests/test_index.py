@@ -121,7 +121,7 @@ class FolderCoverTests(unittest.TestCase):
         a = _add(conn, root, "trip/day1/a.jpg", "a", thumb_ok=1)
         b = _add(conn, root, "trip/day2/b.jpg", "b", thumb_ok=1, sort_at="2025-01-01T00:00:00")
         conn.close()
-        with TestClient(create_app(cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8765", client=("127.0.0.1", 1)) as c:
+        with TestClient(create_app(cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8766", client=("127.0.0.1", 1)) as c:
             top = c.get("/api/folders", params={"root": root}).json()
             self.assertEqual(top["folders"][0]["cover"], b)  # 預設：最新的照片
             r = c.post("/api/folders/cover", json={"root_id": root, "path": "trip", "image_id": a})
@@ -193,7 +193,7 @@ class FaceCoverTests(unittest.TestCase):
                          (fid, img, pid, score, now))
         conn.commit()
         conn.close()
-        with TestClient(create_app(cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8765", client=("127.0.0.1", 1)) as c:
+        with TestClient(create_app(cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8766", client=("127.0.0.1", 1)) as c:
             faces = c.get("/api/people/1/faces").json()
             self.assertEqual([f["id"] for f in faces], [11, 10])  # 清楚的排前面
             self.assertEqual(c.post("/api/people/1", json={"cover_face_id": 12}).status_code, 400)  # 別人的臉
@@ -222,7 +222,7 @@ class PeopleCorrectionTests(unittest.TestCase):
                          (fid, img, now))
         conn.commit()
         conn.close()
-        self.client = TestClient(create_app(self.cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8765", client=("127.0.0.1", 1))
+        self.client = TestClient(create_app(self.cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8766", client=("127.0.0.1", 1))
         self.client.__enter__()
 
     def tearDown(self):
@@ -284,7 +284,7 @@ class SortFavoriteTests(unittest.TestCase):
         root = db.add_root(conn, tmp / "p")["id"]
         imgs = [_add(conn, root, f"{d}/x.jpg", d) for d in ("a", "b", "c")]
         conn.close()
-        with TestClient(create_app(cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8765", client=("127.0.0.1", 1)) as c:
+        with TestClient(create_app(cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8766", client=("127.0.0.1", 1)) as c:
             ids = [c.post("/api/albums", json={"name": n, "ids": imgs[:1]}).json()["id"] for n in ("甲", "乙", "丙")]
             c.post("/api/albums/order", json={"ids": [ids[2], ids[0], ids[1]]})
             c.post(f"/api/albums/{ids[1]}", json={"favorite": True})

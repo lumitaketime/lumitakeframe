@@ -19,7 +19,7 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
-const PORT: u16 = 8765;
+const PORT: u16 = 8766;
 /// App 與內建伺服器的版本一致（Cargo.toml 與 lumilib/__init__.py 一起更新）
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15 LumitakeApp/0.3";

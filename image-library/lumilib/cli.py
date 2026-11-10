@@ -262,7 +262,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="用地端模型分析圖片，之後以關鍵字從硬碟／SSD 找回照片。",
     )
     p.add_argument("--version", action="version", version=f"lumilib {__version__}")
-    p.add_argument("--home", help="資料目錄（預設 ~/.lumilib，可用 LUMILIB_HOME 設定）")
+    p.add_argument("--home", help="資料目錄（預設 ~/.rememor，可用 REMEMOR_HOME 設定）")
     p.add_argument("--model", dest="vision_model", help="這次使用的視覺模型")
     p.add_argument("--ollama", dest="ollama_url", help="Ollama 位址，預設 http://127.0.0.1:11434")
     sub = p.add_subparsers(dest="command", required=True)
@@ -334,7 +334,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("serve", help="開啟圖庫介面")
     s.add_argument("--host", help="預設 127.0.0.1；開啟手機連線後為 0.0.0.0")
-    s.add_argument("--port", type=int, help="預設 8765")
+    s.add_argument("--port", type=int, help="預設 8766")
     s.add_argument("--open", action="store_true", help="自動開啟瀏覽器")
     s.set_defaults(func=cmd_serve)
     return p

@@ -1,6 +1,9 @@
 """設定：資料目錄、地端模型位址與模型名稱。
 
 優先順序：命令列參數 > 環境變數 > 資料目錄下的 config.json > 預設值。
+
+Re'memor 和 Lumitake Library 分開住：資料目錄預設 ~/.rememor、連接埠 8766、環境變數以 REMEMOR_ 開頭，
+所以兩個 App 可以同時使用，不會讀寫到對方的資料庫。
 """
 
 from __future__ import annotations
@@ -27,7 +30,7 @@ DEFAULTS = {
     # 縮圖高度（像素）；時間軸以等高列排版
     "thumb_size": 360,
     "request_timeout": 300,
-    "port": 8765,
+    "port": 8766,
     # 1 = 允許同一個 Wi-Fi 下的手機／平板連線（需要設定密碼）
     "lan": 0,
     # 啟動時自動掃描新增的檔案
@@ -83,7 +86,7 @@ DEFAULTS = {
     "face_custom_rec": "",
 }
 
-ENV_PREFIX = "LUMILIB_"
+ENV_PREFIX = "REMEMOR_"
 
 
 @dataclass
@@ -181,7 +184,7 @@ def default_home() -> Path:
     env = os.environ.get(ENV_PREFIX + "HOME")
     if env:
         return Path(env).expanduser()
-    return Path.home() / ".lumilib"
+    return Path.home() / ".rememor"
 
 
 def _coerce(name: str, value):

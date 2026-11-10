@@ -36,6 +36,8 @@ Re'memor 是以 Lumitake Library（`image-library/`，0.19.2）為基礎擴充�
 ## 開發方式
 
 - 所有 Re'memor 開發都在 `rememor` 分支進行。
+- Re'memor 和 Lumitake Library 分開住：資料目錄 `~/.rememor`（環境變數 `REMEMOR_HOME`）、連接埠 8766；
+  不要讀寫 Library 的 `~/.lumilib`，也不要用它的連接埠 8765。
 - 不要推送到 `main`（Lumitake Frame 網站）或 `claude/kind-dijkstra-7t80hs`（Lumitake Library 正式版）：
   推送這兩個分支會觸發 `.github/workflows/apps.yml` 自動建置，覆蓋 Releases 上的「最新版」安裝檔。
 - 開發者是程式新手：說明時用繁體中文、白話，先講「這樣做會有什麼結果」，再講技術細節。

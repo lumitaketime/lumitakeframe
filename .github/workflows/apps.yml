@@ -59,7 +59,7 @@ jobs:
       - name: 測試打包後的伺服器
         run: |
           SERVER=image-library/desktop/server/dist/lumilib-server/lumilib-server
-          export LUMILIB_HOME="$RUNNER_TEMP/home"
+          export REMEMOR_HOME="$RUNNER_TEMP/home"
           "$SERVER" --version
           # 模擬使用者的 Mac：沒有可用的系統憑證設定，下載必須靠內建的 certifi
           SSL_CERT_FILE=/nonexistent/cert.pem SSL_CERT_DIR=/nonexistent \
@@ -120,7 +120,7 @@ jobs:
           codesign --verify --deep --strict "$APP"
           du -sh "$APP"
           # 實際從 App 內啟動伺服器確認可用
-          export LUMILIB_HOME="$RUNNER_TEMP/home-app"
+          export REMEMOR_HOME="$RUNNER_TEMP/home-app"
           "$APP/Contents/Resources/server/lumilib-server" serve --port 8898 > "$RUNNER_TEMP/app-server.log" 2>&1 &
           PID=$!
           for i in $(seq 1 90); do curl -fs http://127.0.0.1:8898/api/auth/status && break; sleep 1; done

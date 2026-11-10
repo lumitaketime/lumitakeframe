@@ -80,7 +80,7 @@ class ConnectActivity : AppCompatActivity() {
             setPadding(0, dp(24), 0, dp(6))
         })
         input = EditText(this).apply {
-            hint = "例如 192.168.1.20:8765"
+            hint = "例如 192.168.1.20:8766"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             imeOptions = EditorInfo.IME_ACTION_GO
             setSingleLine()

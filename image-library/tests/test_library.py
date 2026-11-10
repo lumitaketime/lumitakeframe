@@ -391,7 +391,7 @@ class ServerTests(LibraryTestCase):
         self.trashed = []
         app = create_app(self.cfg, client_factory=FakeClient, start_jobs_on_boot=False,
                          trash=lambda p: (self.trashed.append(p.name), p.unlink()))
-        self.client = TestClient(app, base_url="http://127.0.0.1:8765", client=("127.0.0.1", 50000))
+        self.client = TestClient(app, base_url="http://127.0.0.1:8766", client=("127.0.0.1", 50000))
         self.client.__enter__()
 
     def tearDown(self):
@@ -535,7 +535,7 @@ class ServerTests(LibraryTestCase):
         pulls = [j for j in snap["recent"] if j["kind"] == "pull"]
         self.assertTrue(pulls and pulls[0]["error"] is None, snap["recent"])
         s = self.post("/api/settings", {"vision_model": "qwen2.5vl:3b", "port": 1}).json()
-        self.assertEqual((s["vision_model"], s["port"]), ("qwen2.5vl:3b", 8765))  # port 不能從網頁改
+        self.assertEqual((s["vision_model"], s["port"]), ("qwen2.5vl:3b", 8766))  # port 不能從網頁改
 
     def test_ai_test_endpoint(self):
         self.post("/api/jobs", {"kind": "scan"})
@@ -580,15 +580,15 @@ class SecurityTests(LibraryTestCase):
         return client
 
     def test_remote_blocked_when_lan_off(self):
-        c = self.make_client("192.168.1.5:8765", "192.168.1.9")
+        c = self.make_client("192.168.1.5:8766", "192.168.1.9")
         self.assertEqual(c.get("/api/server").status_code, 403)
 
     def test_dns_rebinding_host_is_not_local(self):
-        c = self.make_client("evil.example:8765", "127.0.0.1")
+        c = self.make_client("evil.example:8766", "127.0.0.1")
         self.assertEqual(c.get("/api/server").status_code, 403)
 
     def test_cross_origin_post_blocked(self):
-        c = self.make_client("127.0.0.1:8765", "127.0.0.1")
+        c = self.make_client("127.0.0.1:8766", "127.0.0.1")
         r = c.post("/api/albums", json={"name": "x"}, headers={"Origin": "http://evil.example"})
         self.assertEqual(r.status_code, 403)
 
@@ -596,7 +596,7 @@ class SecurityTests(LibraryTestCase):
         from lumilib.auth import Auth
 
         Auth(self.cfg.auth_file).set_password("secret123")
-        c = self.make_client("192.168.1.5:8765", "192.168.1.9", lan=1, bound="0.0.0.0")
+        c = self.make_client("192.168.1.5:8766", "192.168.1.9", lan=1, bound="0.0.0.0")
         self.assertEqual(c.get("/api/server").status_code, 401)
         self.assertFalse(c.get("/api/auth/status").json()["authenticated"])
         self.assertEqual(c.post("/api/auth/login", json={"password": "wrong"}).status_code, 401)
