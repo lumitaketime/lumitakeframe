@@ -40,6 +40,7 @@ Re'memor 是以 Lumitake Library（`image-library/`，0.19.2）為基礎擴充�
   不要讀寫 Library 的 `~/.lumilib`，也不要用它的連接埠 8765。
 - 不要推送到 `main`（Lumitake Frame 網站）或 `claude/kind-dijkstra-7t80hs`（Lumitake Library 正式版）：
   推送這兩個分支會觸發 `.github/workflows/apps.yml` 自動建置，覆蓋 Releases 上的「最新版」安裝檔。
+- 介面開發一律遵守 [docs/rememor-ui-handbook.md](docs/rememor-ui-handbook.md)（介面開發手冊）。
 - 開發者是程式新手：說明時用繁體中文、白話，先講「這樣做會有什麼結果」，再講技術細節。
 - 重大改動前先說明計畫，等確認後再動手；每個階段完成後先用真實硬碟實測。
 - 現有程式碼的註解與介面文字都是繁體中文，新程式碼沿用相同風格。
