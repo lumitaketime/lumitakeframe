@@ -142,7 +142,7 @@
     position: fixed; top: 0; left: 0; right: 0; height: var(--topbar); z-index: 60;
     display: flex; align-items: center; gap: 4px; padding: 0 12px; padding-top: env(safe-area-inset-top);
     background: var(--surface-container); border-bottom: 1px solid var(--outline-variant); color: var(--primary);
-    animation: down .15s ease-out;
+    animation: down var(--dur-fast) ease-out;
   }
   b { color: var(--on-surface); font-weight: 500; margin-left: 4px; }
   .spacer { flex: 1; }

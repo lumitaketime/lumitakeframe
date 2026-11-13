@@ -109,8 +109,8 @@
   .st.warn .txt span { color: inherit; opacity: .85; }
   /* M3 線性進度條 */
   .bar { grid-column: 1 / 3; height: 4px; border-radius: var(--radius-xs); background: var(--surface-container-highest); overflow: hidden; position: relative; }
-  .bar span { display: block; height: 100%; border-radius: var(--radius-xs); background: var(--primary); transition: width .6s cubic-bezier(.2, 0, 0, 1); }
-  .bar.indeterminate span { position: absolute; animation: indet 1.4s cubic-bezier(.4, 0, .2, 1) infinite; }
+  .bar span { display: block; height: 100%; border-radius: var(--radius-xs); background: var(--primary); transition: width var(--dur-slow) var(--ease); }
+  .bar.indeterminate span { position: absolute; animation: indet 1.4s var(--ease-out) infinite; }
   @keyframes indet { from { left: -40%; } to { left: 100%; } }
   .pct { font-size: var(--text-callout); color: var(--on-surface-variant); font-variant-numeric: tabular-nums; justify-self: end; }
   @media (prefers-reduced-motion: reduce) { .bar span { transition: none; } .bar.indeterminate span { animation: none; left: 0; } }

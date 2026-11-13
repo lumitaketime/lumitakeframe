@@ -2,7 +2,7 @@
   /** Material 3 Snackbar：inverse-surface 底色，由下往上彈入，先播離場動畫再移除。 */
   import Icon from "./Icon.svelte";
   import { app, dismissToast, holdToast, releaseToast } from "../lib/state.svelte.js";
-  import { riseIn, popOut } from "../lib/motion.js";
+  import { DUR, riseIn, popOut } from "../lib/motion.js";
   import { mdiAlertCircleOutline, mdiClose } from "../lib/icons.js";
   import { flip } from "svelte/animate";
 </script>
@@ -12,7 +12,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="toast" class:error={t.kind === "error"} role={t.kind === "error" ? "alert" : "status"}
       onpointerenter={() => holdToast(t.id)} onpointerleave={() => releaseToast(t.id)}
-      in:riseIn out:popOut={{ y: 8, scale: 0.98 }} animate:flip={{ duration: 250 }}>
+      in:riseIn out:popOut={{ y: 8, scale: 0.98 }} animate:flip={{ duration: DUR.base }}>
       {#if t.kind === "error"}<span class="lead"><Icon path={mdiAlertCircleOutline} size={20} /></span>{/if}
       <span class="msg">{t.message}</span>
       {#if t.action}

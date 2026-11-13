@@ -45,7 +45,7 @@
   .star:hover { color: var(--on-surface-variant); background: color-mix(in srgb, var(--on-surface) 8%, transparent); }
   .star.on { color: var(--system-yellow); }
   .star.rej.on { color: var(--error); }
-  .dot { width: 18px; height: 18px; border-radius: 50%; border: 0; background: var(--c); opacity: .35; margin: 0 4px; cursor: pointer; padding: 0; transition: opacity .15s, box-shadow .15s; }
+  .dot { width: 18px; height: 18px; border-radius: 50%; border: 0; background: var(--c); opacity: .35; margin: 0 4px; cursor: pointer; padding: 0; transition: opacity var(--dur-fast), box-shadow var(--dur-fast); }
   .dot:hover { opacity: .7; }
   .dot.on { opacity: 1; box-shadow: 0 0 0 2px var(--surface-container-low), 0 0 0 4px var(--c); }
   .seg { border: 1px solid var(--outline); border-radius: var(--corner-full); overflow: hidden; gap: 0; }

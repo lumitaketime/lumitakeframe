@@ -60,7 +60,7 @@ export function reorder(node, opts) {
       const r = el.getBoundingClientRect();
       // 浮起來的卡片飛回它的新位置
       const a = ghost.animate([{ left: ghost.style.left, top: ghost.style.top }, { left: `${r.left}px`, top: `${r.top}px` }],
-        { duration: 220, easing: "cubic-bezier(.2, 0, 0, 1)" });
+        { duration: DUR.quick, easing: EASE.out });
       a.finished.catch(() => {}).then(() => {
         ghost.remove();
         el.classList.remove("reorder-src");

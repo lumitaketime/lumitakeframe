@@ -89,7 +89,7 @@
 
 <style>
   .tile { position: relative; border: 0; padding: 0; border-radius: var(--radius); overflow: hidden; aspect-ratio: 1; cursor: pointer; background: var(--surface-container); }
-  .tile img { width: 100%; height: 100%; object-fit: cover; transition: transform .25s; }
+  .tile img { width: 100%; height: 100%; object-fit: cover; transition: transform var(--dur); }
   .tile:hover img { transform: scale(1.05); }
   .tile span {
     position: absolute; left: 0; right: 0; bottom: 0; padding: 24px 10px 8px; color: var(--media-fg); font-weight: 500; text-align: left;

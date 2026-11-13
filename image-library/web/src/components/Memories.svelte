@@ -27,7 +27,7 @@
     position: relative; flex-shrink: 0; width: 140px; height: 200px; border: 0; padding: 0; border-radius: var(--corner-medium);
     overflow: hidden; cursor: pointer; background: var(--surface-container);
   }
-  .card img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s; }
+  .card img { width: 100%; height: 100%; object-fit: cover; transition: transform var(--dur-move); }
   .card:hover img { transform: scale(1.05); }
   .label {
     position: absolute; inset: auto 0 0 0; padding: 30px 10px 10px; color: var(--media-fg); text-align: left;

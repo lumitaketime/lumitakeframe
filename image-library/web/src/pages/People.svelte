@@ -113,7 +113,7 @@
   .people { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 22px 14px; }
   .person { display: flex; flex-direction: column; align-items: center; text-decoration: none; color: var(--on-surface); gap: 2px; min-width: 0; }
   .face { position: relative; width: 100%; max-width: 132px; }
-  .face img { width: 100%; aspect-ratio: 1; border-radius: 50%; object-fit: cover; background: var(--surface-container); transition: transform .2s; display: block; }
+  .face img { width: 100%; aspect-ratio: 1; border-radius: 50%; object-fit: cover; background: var(--surface-container); transition: transform var(--dur-quick); display: block; }
   .person:hover img { transform: scale(1.04); }
   .person.picked img { outline: 4px solid var(--primary); outline-offset: 2px; }
   .check { position: absolute; top: 0; left: 0; color: var(--primary); background: var(--surface); border-radius: 50%; }

@@ -119,17 +119,17 @@
     content: ""; position: absolute; inset: 0; border-radius: var(--corner-small); pointer-events: none;
     background: var(--surface-container-highest);
     animation: m3-skel-wave 1.5s ease-in-out infinite both;
-    animation-delay: calc(var(--wave, 0) * 110ms);
+    animation-delay: calc(var(--wave, 0) * var(--dur-fast));
   }
   @media (prefers-reduced-motion: reduce) { .thumb.loading::before { animation: none; } }
   .fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--on-surface-variant); }
   .shade {
-    position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .15s;
+    position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity var(--dur-fast);
     background: linear-gradient(to bottom, var(--media-scrim), transparent 35%);
   }
   .check {
     position: absolute; top: 4px; left: 4px; border: 0; background: none; color: var(--media-fg); padding: 4px; cursor: pointer;
-    opacity: 0; transition: opacity .15s; filter: drop-shadow(0 1px 2px var(--media-scrim));
+    opacity: 0; transition: opacity var(--dur-fast); filter: drop-shadow(0 1px 2px var(--media-scrim));
   }
   @media (hover: hover) {
     .thumb:hover .shade, .thumb:hover .check { opacity: 1; }

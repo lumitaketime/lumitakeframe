@@ -229,7 +229,7 @@
   .total { display: flex; align-items: baseline; gap: 8px; margin: 10px 0 8px; }
   .total b { font-size: var(--text-large-title); font-weight: 500; font-variant-numeric: tabular-nums; }
   .bar { display: flex; height: 12px; border-radius: var(--corner-full); overflow: hidden; background: var(--surface); gap: 2px; }
-  .bar span { display: block; height: 100%; min-width: 3px; transition: width .4s; }
+  .bar span { display: block; height: 100%; min-width: 3px; transition: width var(--dur-slow); }
   .legend { list-style: none; padding: 0; margin: 12px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px 16px; }
   .legend li { display: flex; align-items: center; gap: 8px; font-size: var(--text-body); }
   .legend i { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }

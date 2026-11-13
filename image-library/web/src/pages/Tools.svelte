@@ -276,7 +276,7 @@
   .tool:hover .pin-btn, .tool .pin-btn.on, .tool .pin-btn:focus-visible { opacity: 1; }
   .tool .pin-btn.on { color: var(--primary); }
   @media (hover: none) { .tool .pin-btn { opacity: 1; } }
-  :global(.tool.pin-lifting) { transform: scale(.96); opacity: .6; transition: transform .2s, opacity .2s; }
+  :global(.tool.pin-lifting) { transform: scale(.96); opacity: .6; transition: transform var(--dur-quick), opacity var(--dur-quick); }
   .hint { flex-basis: 100%; margin-top: -10px; }
   .tool b { font-size: var(--text-title-3); line-height: 24px; font-weight: 500; }
   .tool .ic {

@@ -583,22 +583,22 @@
 <style>
   .viewer {
     position: fixed; inset: 0; z-index: 100; background: var(--media-bg); color: var(--media-fg); display: flex;
-    animation: bg-in .28s cubic-bezier(.2,0,0,1);
-    transition: background-color .26s cubic-bezier(.3,0,.8,.15);
+    animation: bg-in var(--dur-move) var(--ease-out);
+    transition: background-color var(--dur) ease-in;
   }
   @keyframes bg-in { from { background-color: transparent; } }
   /* 動畫進行中：真正的照片先藏起來，由覆蓋的那張負責移動 */
   .viewer.opening .stage :global(img), .viewer.closing .stage :global(img), .viewer.closing video { opacity: 0 !important; transition: none !important; }
   .viewer.closing { background-color: transparent; pointer-events: none; }
-  .viewer.opening .top, .viewer.closing .top, .viewer.closing .nav, .viewer.closing .side { opacity: 0; transition: opacity .15s; }
-  .viewer .top { transition: opacity .2s; }
+  .viewer.opening .top, .viewer.closing .top, .viewer.closing .nav, .viewer.closing .side { opacity: 0; transition: opacity var(--dur-fast); }
+  .viewer .top { transition: opacity var(--dur-quick); }
   .stage-wrap { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
   /* 照片滿版，工具列浮在上面；只在左上、右上按鈕後面有一點點淡淡的暗角，讓白色圖示在亮的天空上也看得到。
      工具列收起時暗角一起消失，照片上不留任何東西 */
   .top {
     position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 2px;
     padding: max(8px, env(safe-area-inset-top)) 8px 8px; background: none;
-    transition: opacity .25s;
+    transition: opacity var(--dur);
   }
   .top::before, .top::after {
     content: ""; position: absolute; top: 0; height: 96px; pointer-events: none; z-index: -1;
@@ -618,9 +618,9 @@
   .media, .placeholder, video {
     position: absolute; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;
   }
-  .placeholder { width: 100%; height: 100%; filter: blur(8px); opacity: .7; transition: opacity .3s; }
+  .placeholder { width: 100%; height: 100%; filter: blur(8px); opacity: .7; transition: opacity var(--dur-move); }
   .placeholder.gone { opacity: 0; }
-  .media { opacity: 0; transition: opacity .2s; will-change: transform; }
+  .media { opacity: 0; transition: opacity var(--dur-quick); will-change: transform; }
   .media.show { opacity: 1; }
   video { width: 100%; height: 100%; background: var(--media-bg); }
   .notice {
@@ -630,7 +630,7 @@
   .nav {
     position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; border: 0; cursor: pointer;
     width: 48px; height: 48px; border-radius: 50%; background: var(--media-scrim-light); color: var(--media-fg);
-    display: flex; align-items: center; justify-content: center; transition: opacity .2s, background .2s;
+    display: flex; align-items: center; justify-content: center; transition: opacity var(--dur-quick), background var(--dur-quick);
   }
   .nav:hover { background: var(--media-fill); }
   .nav.left { left: 16px; }
@@ -653,7 +653,7 @@
   @media (max-width: 760px) { .zoom-panel { display: none; } }
   .rate-bar {
     position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 3; display: flex; align-items: center;
-    gap: 2px; background: var(--media-scrim); border-radius: var(--corner-full); padding: 4px 10px; transition: opacity .2s;
+    gap: 2px; background: var(--media-scrim); border-radius: var(--corner-full); padding: 4px 10px; transition: opacity var(--dur-quick);
   }
   .rate-bar button { border: 0; background: none; color: var(--media-fg-dim); cursor: pointer; padding: 4px; display: flex; }
   .rate-bar .star.on { color: var(--system-yellow); }
@@ -681,7 +681,7 @@
     border-radius: var(--corner-medium); cursor: pointer; text-align: left; color: inherit; text-decoration: none; font-size: var(--text-body);
   }
   .menu button:hover, .menu a:hover { background: var(--surface-container); }
-  .side { height: 100%; animation: side-in .32s cubic-bezier(.2,0,0,1); }
+  .side { height: 100%; animation: side-in var(--dur-move) var(--ease-out); }
   @keyframes side-in { from { transform: translateX(24px); opacity: 0; } }
   @media (max-width: 900px) {
     .rate-bar { bottom: calc(10px + env(safe-area-inset-bottom)); }

@@ -254,7 +254,7 @@
   .day-head { display: flex; align-items: center; gap: 4px; height: 40px; font-size: var(--text-body); font-weight: 500; }
   .day-check {
     border: 0; background: none; padding: 0; width: 0; overflow: hidden; color: var(--on-surface-variant); cursor: pointer;
-    transition: width .15s; display: flex;
+    transition: width var(--dur-fast); display: flex;
   }
   .day:hover .day-check, .day-check.on { width: 24px; }
   .day-check.on { color: var(--primary); }

@@ -226,11 +226,11 @@ input[type="range"]:disabled { opacity: var(--opacity-disabled); cursor: default
 /* ---- 進場：清單、卡片依序淡入 ---- */
 @keyframes m3-enter { from { opacity: 0; transform: translateY(8px); } }
 .m3-stagger > * { animation: m3-enter var(--dur-slow) var(--ease-out) both; }
-.m3-stagger > :nth-child(2) { animation-delay: 30ms; }
-.m3-stagger > :nth-child(3) { animation-delay: 60ms; }
-.m3-stagger > :nth-child(4) { animation-delay: 90ms; }
-.m3-stagger > :nth-child(5) { animation-delay: 120ms; }
-.m3-stagger > :nth-child(n + 6) { animation-delay: 150ms; }
+.m3-stagger > :nth-child(2) { animation-delay: calc(var(--dur-fast) * .2); }
+.m3-stagger > :nth-child(3) { animation-delay: calc(var(--dur-fast) * .4); }
+.m3-stagger > :nth-child(4) { animation-delay: calc(var(--dur-fast) * .6); }
+.m3-stagger > :nth-child(5) { animation-delay: var(--dur-fast); }
+.m3-stagger > :nth-child(n + 6) { animation-delay: var(--dur-fast); }
 
 .scroll-area { overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
 

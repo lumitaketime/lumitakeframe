@@ -1,6 +1,7 @@
 <script>
   /** 設定區塊的標題：說明文字收進 ⓘ，需要時才展開。 */
   import { slide } from "svelte/transition";
+  import { DUR } from "../lib/motion.js";
   import Icon from "./Icon.svelte";
   import { mdiInformationVariantCircleOutline } from "../lib/icons.js";
 
@@ -17,7 +18,7 @@
   {/if}
 </h2>
 {#if children && open}
-  <p class="st-desc" transition:slide={{ duration: 180 }}>{@render children()}</p>
+  <p class="st-desc" transition:slide={{ duration: DUR.quick }}>{@render children()}</p>
 {/if}
 
 <style>

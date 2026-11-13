@@ -91,7 +91,7 @@
   .cell {
     flex: 1 1 0; min-width: 0; border-radius: var(--corner-small); background: var(--surface-container-highest);
     animation: m3-skel-wave 1.5s ease-in-out infinite both;
-    animation-delay: calc(var(--wave, 0) * 110ms);
+    animation-delay: calc(var(--wave, 0) * var(--dur-fast));
   }
   @media (prefers-reduced-motion: reduce) { .cell { animation: none; opacity: .7; } }
 </style>

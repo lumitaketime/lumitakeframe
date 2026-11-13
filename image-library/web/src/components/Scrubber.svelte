@@ -102,7 +102,7 @@
   }
   .tick { position: absolute; right: 6px; width: 6px; height: 1px; background: var(--on-surface-variant); opacity: .45; }
   .indicator {
-    position: absolute; right: 0; width: 26px; height: 2px; background: var(--primary); transition: top .12s;
+    position: absolute; right: 0; width: 26px; height: 2px; background: var(--primary); transition: top var(--dur-fast);
   }
   .bubble {
     position: absolute; right: 60px; transform: translateY(-50%); background: var(--on-surface); color: var(--surface);

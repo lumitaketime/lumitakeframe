@@ -113,13 +113,13 @@
 <style>
   .show { position: fixed; inset: 0; z-index: 70; background: var(--media-bg); }
   .show.cursorless { cursor: none; }
-  img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .9s ease; }
+  img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity var(--dur-crossfade) var(--ease); }
   img.on { opacity: 1; }
   .none { color: var(--media-fg); text-align: center; margin-top: 40vh; }
   .controls {
     position: absolute; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%);
     display: flex; align-items: center; gap: 6px; background: var(--media-scrim); color: var(--media-fg); border-radius: var(--corner-full); padding: 6px 12px;
-    transition: opacity .3s;
+    transition: opacity var(--dur-move);
   }
   .controls.hidden { opacity: 0; pointer-events: none; }
   .controls button { border: 0; background: none; color: var(--media-fg); display: flex; padding: 6px; border-radius: 50%; cursor: pointer; }

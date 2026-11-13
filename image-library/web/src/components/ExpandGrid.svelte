@@ -8,6 +8,7 @@
   import { onMount, tick } from "svelte";
   import { fly, fade } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
+  import { DUR } from "../lib/motion.js";
   import Icon from "./Icon.svelte";
   import { mdiChevronDown } from "../lib/icons.js";
 
@@ -33,11 +34,11 @@
   // 第一列不做動畫；後面的依順序稍微錯開（最多 0.12 秒），一列一列往下長出來
   function enter(node, { index }) {
     if (index < perRow || reduce()) return { duration: 0 };
-    return fly(node, { y: -8, duration: 200, delay: Math.min(120, (index - perRow) * 8), easing: cubicOut });
+    return fly(node, { y: -8, duration: DUR.quick, delay: Math.min(120, (index - perRow) * 8), easing: cubicOut });
   }
   function leave(node, { index }) {
     if (index < perRow || reduce()) return { duration: 0 };
-    return fade(node, { duration: 100 });
+    return fade(node, { duration: DUR.fast });
   }
 
   async function toggle() {
@@ -65,6 +66,6 @@
   .cell { min-width: 0; display: flex; flex-direction: column; }
   .cell > :global(*) { flex: 1; }
   .more { margin: 4px 0 0 -12px; }
-  .more :global(svg) { transition: transform var(--duration-short4, 200ms) var(--easing-standard, ease); }
+  .more :global(svg) { transition: transform var(--duration-short4, var(--dur-quick)) var(--easing-standard, ease); }
   .more.open :global(svg) { transform: rotate(180deg); }
 </style>

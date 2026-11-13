@@ -33,7 +33,7 @@
   import { TOOLS, pinnedKeys, toolByKey } from "./lib/toolkit.js";
   import { drag, unpin } from "./lib/pin.svelte.js";
   import { undoLast } from "./lib/undo.svelte.js";
-  import { fadeThrough } from "./lib/motion.js";
+  import { DUR, fadeThrough } from "./lib/motion.js";
   // 設定的各分類是同一頁的不同區塊：換分類不重建整頁（避免閃一下、狀態卡重新載入）
   const routeKey = $derived(route.path.startsWith("/settings") ? "/settings" : route.path);
   import { rubberBand, installShake } from "./lib/alive.js";
@@ -344,7 +344,7 @@
     </nav>
     {#if drawer}
       <button class="scrim" onclick={() => (drawer = false)} aria-label="關閉選單"></button>
-      <nav class="sidebar drawer" aria-label="主選單" use:rubberBand={{ targets: (n) => [...n.children] }} transition:fly={{ x: -300, duration: 240, opacity: 1, easing: cubicOut }}>
+      <nav class="sidebar drawer" aria-label="主選單" use:rubberBand={{ targets: (n) => [...n.children] }} transition:fly={{ x: -300, duration: DUR.base, opacity: 1, easing: cubicOut }}>
         {@render navContent(false)}
       </nav>
     {/if}
@@ -533,7 +533,7 @@
     content: ""; position: absolute; top: 0; bottom: 0; border-radius: var(--radius-xs); background: var(--primary);
   }
   .load-bar.on span::before { animation: lb-a 2s cubic-bezier(.65, .815, .735, .395) infinite; }
-  .load-bar.on span::after { animation: lb-b 2s cubic-bezier(.165, .84, .44, 1) 1.15s infinite; }
+  .load-bar.on span::after { animation: lb-b 2s var(--ease-out) 1.15s infinite; }
   @keyframes lb-a { 0% { left: -35%; right: 100%; } 60%, 100% { left: 100%; right: -90%; } }
   @keyframes lb-b { 0% { left: -200%; right: 100%; } 60%, 100% { left: 107%; right: -8%; } }
   .bottom { display: none; }

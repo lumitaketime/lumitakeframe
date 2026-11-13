@@ -2,6 +2,8 @@
  * 開關照片時的「放大／縮回」動畫：照片從網格裡的縮圖位置長成全螢幕，關閉時縮回原位（像 Google 相簿）。
  * 做法是蓋一張固定定位的圖片，從起點矩形動到終點矩形，結束後移除。
  */
+import { DUR, EASE } from "./motion.js";
+
 const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** 網格裡這張照片的縮圖；不在畫面上時回傳 null */
@@ -20,7 +22,7 @@ export function findThumb(id, { scroll = false } = {}) {
 }
 
 /** 把圖片從 from 動到 to；回傳 Promise，動畫結束時完成 */
-export function fly({ src, from, to, duration = 320, fromRadius = "0px", toRadius = "0px", easing = "cubic-bezier(.2,0,0,1)" }) {
+export function fly({ src, from, to, duration = DUR.move, fromRadius = "0px", toRadius = "0px", easing = EASE.out }) {
   if (!src || !from || !to || reduce()) return Promise.resolve();
   const img = document.createElement("img");
   img.src = src;
@@ -35,4 +37,4 @@ export function fly({ src, from, to, duration = 320, fromRadius = "0px", toRadiu
   return anim.finished.catch(() => {}).then(() => img);
 }
 
-export const heroDuration = 320;
+export const heroDuration = DUR.move;

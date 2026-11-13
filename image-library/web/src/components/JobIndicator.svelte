@@ -49,6 +49,6 @@
   .job.idle:hover { color: var(--primary); }
   .job.warn { background: var(--surface-container); color: var(--error); }
   .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--primary); transition: width .4s; }
+  .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--primary); transition: width var(--dur-slow); }
   @media (max-width: 760px) { .txt { display: none; } .job { padding: 8px; } }
 </style>

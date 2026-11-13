@@ -6,6 +6,7 @@
   import { app, showDialog, toast } from "../lib/state.svelte.js";
   import Menu from "../components/Menu.svelte";
   import { flip } from "svelte/animate";
+  import { DUR } from "../lib/motion.js";
   import { mdiImageAlbum, mdiPlus, mdiAutoFix, mdiSort, mdiStar, mdiStarOutline } from "../lib/icons.js";
   import { reorder, sortCards, moveKey } from "../lib/reorder.js";
   import { refresh } from "../lib/state.svelte.js";
@@ -125,12 +126,12 @@
   {#if favs.length}
     <h2 class="section-title">收藏的相簿</h2>
     <div class="card-grid favs" use:reorder={dragOpts}>
-      {#each favs as a (a.id)}<div class="slot" animate:flip={{ duration: 220 }}>{@render card(a)}</div>{/each}
+      {#each favs as a (a.id)}<div class="slot" animate:flip={{ duration: DUR.quick }}>{@render card(a)}</div>{/each}
     </div>
     {#if rest.length}<h2 class="section-title">所有相簿</h2>{/if}
   {/if}
   <div class="card-grid" use:reorder={dragOpts}>
-    {#each rest as a (a.id)}<div class="slot" animate:flip={{ duration: 220 }}>{@render card(a)}</div>{/each}
+    {#each rest as a (a.id)}<div class="slot" animate:flip={{ duration: DUR.quick }}>{@render card(a)}</div>{/each}
   </div>
   {#if albums?.length > 1}<p class="muted tiny tip">按住相簿一下就可以拖曳排序（排完會改成「自訂」排序並記住）。</p>{/if}
 </div>

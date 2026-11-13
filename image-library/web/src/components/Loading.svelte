@@ -65,7 +65,7 @@
   .m3-spin circle {
     fill: none; stroke: var(--primary); stroke-width: 4; stroke-linecap: round;
     stroke-dasharray: 119.4; stroke-dashoffset: 107; transform-origin: center;
-    animation: m3-arc 1.333s cubic-bezier(.4, 0, .2, 1) infinite;
+    animation: m3-arc 1.333s var(--ease-out) infinite;
   }
   @keyframes m3-rotate { to { transform: rotate(360deg); } }
   @keyframes m3-arc {
@@ -78,7 +78,7 @@
   .skel {
     display: block; border-radius: var(--corner-small); background: var(--surface-container-highest);
     animation: m3-skel-wave 1.5s ease-in-out infinite both;
-    animation-delay: calc(var(--wave, 0) * 110ms);
+    animation-delay: calc(var(--wave, 0) * var(--dur-fast));
   }
 
   .skel-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 24px 16px; }
@@ -88,7 +88,7 @@
   .line.short { width: 40%; height: 12px; margin-top: 6px; }
 
   .skel-rows { display: flex; flex-direction: column; gap: 8px; }
-  .card-sk .skel, .row-sk .skel { animation-delay: calc(var(--wave, 0) * 110ms); }
+  .card-sk .skel, .row-sk .skel { animation-delay: calc(var(--wave, 0) * var(--dur-fast)); }
   .row-sk { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-radius: var(--corner-large); background: var(--surface-container-low); }
   .row-sk .dot { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; }
   .row-sk .col { flex: 1; }

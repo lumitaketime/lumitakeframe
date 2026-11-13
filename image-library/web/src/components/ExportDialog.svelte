@@ -5,6 +5,7 @@
    * 設定會記在這台裝置，下次直接沿用。
    */
   import { slide } from "svelte/transition";
+  import { DUR } from "../lib/motion.js";
   import Modal from "./Modal.svelte";
   import Icon from "./Icon.svelte";
   import { api } from "../lib/api.js";
@@ -141,7 +142,7 @@
       </ul>
 
       {#if jpegCount}
-        <div class="field" transition:slide={{ duration: 200 }}>
+        <div class="field" transition:slide={{ duration: DUR.quick }}>
           <span class="label">用途</span>
           <div class="purposes">
             {#each PURPOSES as p (p.key)}
@@ -152,7 +153,7 @@
             {/each}
           </div>
           {#if o.purpose === "custom"}
-            <div class="row" transition:slide={{ duration: 180 }}>
+            <div class="row" transition:slide={{ duration: DUR.quick }}>
               <label class="mini">長邊（px，0＝原尺寸）
                 <input class="input short" type="number" min="0" max="12000" step="10" bind:value={o.custom} />
               </label>
@@ -195,13 +196,13 @@
         <span class="chev" class:up={more}><Icon path={mdiChevronDown} size={20} /></span>
       </button>
       {#if more}
-        <div class="more-body" transition:slide={{ duration: 220 }}>
+        <div class="more-body" transition:slide={{ duration: DUR.quick }}>
           <label class="toggle"><input type="checkbox" bind:checked={o.stripGps} />移除 GPS 位置（建議交件與上傳社群時開啟）</label>
           <label class="toggle"><input type="checkbox" bind:checked={o.keepExif} />保留拍攝資訊（相機、鏡頭、光圈、快門、時間）</label>
           {#if jpegCount}
             <label class="toggle"><input type="checkbox" bind:checked={o.wm} />JPEG 加上文字浮水印{raw && !o.rawToJpeg ? "（RAW 原檔不會加）" : ""}</label>
             {#if o.wm}
-              <div class="wm" transition:slide={{ duration: 180 }}>
+              <div class="wm" transition:slide={{ duration: DUR.quick }}>
                 <input class="input" bind:value={o.wmText} placeholder="© 你的名字" aria-label="浮水印文字" />
                 <div class="row">
                   <label class="mini">位置

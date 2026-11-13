@@ -6,6 +6,7 @@
   import Menu from "../components/Menu.svelte";
   import FileList from "../components/FileList.svelte";
   import { flip } from "svelte/animate";
+  import { DUR } from "../lib/motion.js";
   import { reorder, sortCards, moveKey } from "../lib/reorder.js";
   import { api, thumbUrl } from "../lib/api.js";
   import { route, navigate, link } from "../lib/router.svelte.js";
@@ -148,7 +149,7 @@
     {/if}
     <div class="card-grid" use:reorder={dragOpts(() => rootsShown, true)}>
       {#each rootsShown as r (r.id)}
-        <div class="slot" animate:flip={{ duration: 220 }}>
+        <div class="slot" animate:flip={{ duration: DUR.quick }}>
           <a class="cover-card" href={`/folders/${r.id}`} use:link data-reorder-key={keyOf(r)} draggable="false">
             <div class="cover">
               {#if r.cover}<img src={thumbUrl({ id: r.cover })} alt="" loading="lazy" draggable="false" />{:else}<Icon path={mdiHarddisk} size={48} />{/if}
@@ -178,7 +179,7 @@
         {/if}
         <div class="card-grid folders" use:reorder={dragOpts(() => foldersShown, false)}>
           {#each foldersShown as f (f.path)}
-            <div class="slot" animate:flip={{ duration: 220 }}>
+            <div class="slot" animate:flip={{ duration: DUR.quick }}>
               <div class="cover-card" role="button" tabindex="0" data-reorder-key={f.path}
                 onclick={() => open(f.path)} onkeydown={(e) => e.key === "Enter" && open(f.path)}>
                 <div class="cover">

@@ -4,10 +4,11 @@
  * - installShake：按到不能用的按鈕，按鈕會左右快速搖一下（像搖頭），告訴使用者「這裡現在不能用」。
  * 開啟「減少動態效果」時兩者都不做。
  */
+import { DUR, EASE } from "./motion.js";
 const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const MAX = 72; // 最多拉開的距離（px）
-const SPRING = "cubic-bezier(.3, 1.45, .45, 1)"; // 回彈時稍微超過一點再停，像彈簧
+const SPRING = EASE.springPress; // 回彈時稍微超過一點再停，像彈簧
 
 /**
  * 從 target 往上到 root 之間，有沒有其他還能往這個方向捲的區塊（例如選單、面板），有的話交給它自己捲；
@@ -57,7 +58,7 @@ export function rubberBand(node, opts = {}) {
     if (!from) return;
     anims = targets().map((el) => {
       el.style.translate = "";
-      return el.animate([{ translate: `0 ${from}px` }, { translate: "0 0" }], { duration: 520, easing: SPRING });
+      return el.animate([{ translate: `0 ${from}px` }, { translate: "0 0" }], { duration: DUR.slow, easing: SPRING });
     });
   }
 
@@ -69,7 +70,7 @@ export function rubberBand(node, opts = {}) {
     bumpUntil = now + 700;
     anims.forEach((a) => a.cancel());
     anims = targets().map((el) =>
-      el.animate([{ translate: "0 0" }, { translate: `0 ${dir * 14}px` }, { translate: "0 0" }], { duration: 420, easing: "cubic-bezier(.3, .7, .4, 1)" }));
+      el.animate([{ translate: "0 0" }, { translate: `0 ${dir * 14}px` }, { translate: "0 0" }], { duration: DUR.slow, easing: EASE.out }));
   }
 
   function onWheel(e) {
@@ -149,7 +150,7 @@ export function shake(el) {
       { transform: "translateX(-4px)" }, { transform: "translateX(3px)" }, { transform: "translateX(-1px)" },
       { transform: "translateX(0)" },
     ],
-    { duration: 380, easing: "cubic-bezier(.36, .07, .19, .97)" },
+    { duration: DUR.slow, easing: EASE.standard },
   );
   a.id = "m3-shake";
   navigator.vibrate?.([12, 40, 12]);
