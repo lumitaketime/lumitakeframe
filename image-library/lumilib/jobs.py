@@ -322,7 +322,12 @@ class JobRunner:
             if kind == "index":
                 opts = {**opts}
             if kind in ("scan", "index"):
-                results = scan_all(conn, self.cfg, opts.get("roots"), progress=lambda m: upd(message=m), stop=stop)
+                def scan_progress(m, scan=None):
+                    upd(message=m, scan=scan)
+
+                scan_progress.wants_scan = True  # 側邊欄要顯示「哪一顆硬碟正在掃描、進度多少」
+                results = scan_all(conn, self.cfg, opts.get("roots"), progress=scan_progress, stop=stop)
+                upd(scan=None)
                 from .scanner import describe
 
                 for r in results:

@@ -95,3 +95,52 @@ def folder_listing(conn: sqlite3.Connection, root_id: int, path: str = "") -> di
         "kinds": [{"kind": k, "label": filetypes.LABELS.get(k, k), "files": v[0], "bytes": v[1]}
                   for k, v in sorted(kinds.items(), key=lambda kv: -kv[1][1])],
     }
+
+
+def drives_overview(conn: sqlite3.Connection, scanning: dict | None = None) -> list[dict]:
+    """側邊欄的硬碟清單：每顆硬碟（不論有沒有接上）的容量、已編目的檔案數與大小、連線與掃描狀態。
+
+    scanning 是正在執行的掃描工作回報的 {"root_id", "files"}。只讀資料庫，另外用「資料夾還在不在」判斷有沒有接上。
+    還沒用新版掃描過的資料夾來源沒有硬碟資料，各自列成一項（drive_id 為 None）。
+    """
+    rows = conn.execute(
+        """SELECT r.id, r.name, r.path, r.drive_id, r.last_scan, r.scan_state,
+                  COALESCE(f.total_files, 0) AS files, COALESCE(f.total_bytes, 0) AS bytes
+           FROM roots r LEFT JOIN folders f ON f.root_id = r.id AND f.path = ''
+           ORDER BY r.name COLLATE NOCASE""").fetchall()
+    drives = {d["id"]: d for d in conn.execute("SELECT * FROM drives")}
+    out: dict = {}
+    for r in rows:
+        d = drives.get(r["drive_id"])
+        key = f"drive:{d['id']}" if d else f"root:{r['id']}"
+        item = out.get(key)
+        if item is None:
+            item = out[key] = {
+                "key": key, "drive_id": d["id"] if d else None, "name": d["name"] if d else r["name"],
+                "fs_label": volumes.fs_label(d["fs_type"]) if d else None,
+                "capacity": d["capacity"] if d else None, "read_only": bool(d["read_only"]) if d else False,
+                "online": False, "files": 0, "bytes": 0, "last_scan": None, "complete": True,
+                "scanning": False, "progress": None, "roots": [],
+            }
+        online = Path(r["path"]).is_dir()
+        item["roots"].append({"id": r["id"], "name": r["name"], "online": online, "files": r["files"], "bytes": r["bytes"]})
+        item["online"] = item["online"] or online
+        item["files"] += r["files"]
+        item["bytes"] += r["bytes"]
+        if r["last_scan"] and (item["last_scan"] is None or r["last_scan"] > item["last_scan"]):
+            item["last_scan"] = r["last_scan"]
+        if r["scan_state"] != "done":
+            item["complete"] = False
+        if scanning and scanning.get("root_id") == r["id"]:
+            item["scanning"] = True
+            # 以前完整掃過才估得出百分比（用上次的檔案數當總數）；第一次掃描只知道「正在掃」
+            if r["last_scan"] and r["files"]:
+                item["progress"] = min(0.99, (scanning.get("files") or 0) / r["files"])
+    return sorted(out.values(), key=lambda x: x["name"].casefold())
+
+
+def kinds_overview(conn: sqlite3.Connection) -> list[dict]:
+    """側邊欄「類型」：每種檔案類型在所有硬碟上的檔案數與總大小（交給 SQLite 統計，用 idx_files_kind）。"""
+    got = {r["kind"]: (r["n"], r["b"]) for r in conn.execute(
+        "SELECT kind, COUNT(*) AS n, COALESCE(SUM(size), 0) AS b FROM files WHERE status = 'ok' GROUP BY kind")}
+    return [{"kind": k, "files": got.get(k, (0, 0))[0], "bytes": got.get(k, (0, 0))[1]} for k in filetypes.KINDS]

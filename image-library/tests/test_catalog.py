@@ -355,6 +355,85 @@ class FolderApiTests(CatalogFixture):
             self.assertEqual(school["catalog"]["total_files"], 3)
 
 
+class DrivesApiTests(CatalogFixture):
+    """側邊欄用的硬碟清單與類型統計。"""
+
+    def test_drive_list_shows_offline_drives_with_totals(self):
+        from lumilib.catalog import drives_overview
+
+        with separate_drives(self.drive):
+            scan_all(self.conn, self.cfg)
+        (d,) = drives_overview(self.conn)
+        self.assertEqual((d["name"], d["online"], d["files"], d["capacity"], d["complete"]),
+                         ("Archive", True, 6, 4_000_000_000_000, True))
+        self.assertIsNotNone(d["last_scan"])
+        self.drive.rename(self.tmp / "unplugged")  # 拔掉之後仍然列出，只是變成未連線
+        (d,) = drives_overview(self.conn)
+        self.assertEqual((d["online"], d["files"], d["roots"][0]["id"]), (False, 6, self.root["id"]))
+
+    def test_two_folders_on_one_drive_are_one_entry(self):
+        from lumilib.catalog import drives_overview
+
+        disk = self.tmp / "Disk"  # 同一顆硬碟上加入兩個不同的資料夾
+        for name in ("甲", "乙"):
+            (disk / name).mkdir(parents=True)
+            (disk / name / "a.txt").write_text("hello", encoding="utf-8")
+            db.add_root(self.conn, disk / name, name)
+        with separate_drives(self.drive, disk):
+            scan_all(self.conn, self.cfg)
+        d = next(x for x in drives_overview(self.conn) if x["name"] == "Disk")
+        self.assertEqual((sorted(r["name"] for r in d["roots"]), d["files"]), (["乙", "甲"], 2))
+        self.assertEqual(len(drives_overview(self.conn)), 2)
+
+    def test_unscanned_folder_is_listed_without_drive(self):
+        from lumilib.catalog import drives_overview
+
+        (d,) = drives_overview(self.conn)  # 還沒掃描過：沒有硬碟資料，也要列出來
+        self.assertEqual((d["key"], d["drive_id"], d["files"], d["complete"]), (f"root:{self.root['id']}", None, 0, False))
+
+    def test_scanning_progress(self):
+        from lumilib.catalog import drives_overview
+
+        (d,) = drives_overview(self.conn, {"root_id": self.root["id"], "files": 3})
+        self.assertEqual((d["scanning"], d["progress"]), (True, None))  # 第一次掃描：不知道總數，不給百分比
+        scan_all(self.conn, self.cfg)
+        (d,) = drives_overview(self.conn, {"root_id": self.root["id"], "files": 3})
+        self.assertEqual((d["scanning"], d["progress"]), (True, 0.5))
+        (d,) = drives_overview(self.conn, {"root_id": self.root["id"], "files": 60})
+        self.assertEqual(d["progress"], 0.99)  # 檔案變多時不會超過 100%
+
+    def test_scan_job_reports_which_root(self):
+        seen = []
+
+        def progress(message, scan=None):
+            seen.append(scan)
+
+        progress.wants_scan = True
+        scan_all(self.conn, self.cfg, progress=progress)
+        self.assertIn({"root_id": self.root["id"], "files": 6}, seen)
+        plain = []
+        scan_all(self.conn, self.cfg, progress=plain.append)  # 只收文字的呼叫方式（指令列）照舊
+        self.assertTrue(all(isinstance(m, str) for m in plain))
+
+    def test_kinds_and_api(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib.catalog import kinds_overview
+        from lumilib.server import create_app
+
+        scan_all(self.conn, self.cfg)
+        kinds = {k["kind"]: (k["files"], k["bytes"]) for k in kinds_overview(self.conn)}
+        self.assertEqual(kinds["audio"], (1, 3000))
+        self.assertEqual(kinds["archive"], (1, 500))
+        self.assertEqual(kinds["document"][0], 2)
+        self.assertEqual(kinds["video"], (0, 0))  # 沒有的類型也回傳 0，側邊欄的順序才固定
+        with TestClient(create_app(self.cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8766",
+                        client=("127.0.0.1", 1)) as c:
+            data = c.get("/api/drives").json()
+            self.assertEqual((len(data["drives"]), data["drives"][0]["scanning"]), (1, False))
+            self.assertEqual(len(data["kinds"]), 8)
+
+
 class UpgradeTests(unittest.TestCase):
     def test_existing_library_gets_catalog_without_losing_data(self):
         """舊版（v14）的圖庫升級後，照片、分析與相簿都保留，第一次掃描補上完整目錄。"""

@@ -311,7 +311,11 @@ class _Scan:
         if self.progress and (force or now - self.last_report >= 1.0):
             self.last_report = now
             r = self.result
-            self.progress(f"{self.root['name']}：已檢查 {r.files:,} 個檔案、{r.folders:,} 個資料夾，新增 {r.files_added:,} 個")
+            message = f"{self.root['name']}：已檢查 {r.files:,} 個檔案、{r.folders:,} 個資料夾，新增 {r.files_added:,} 個"
+            if getattr(self.progress, "wants_scan", False):  # 背景工作另外要知道「正在掃哪一個、掃了幾個」
+                self.progress(message, scan={"root_id": self.root["id"], "files": r.files})
+            else:
+                self.progress(message)
 
     # ---- 資料夾 ----
     def ensure_folder(self, parent_id, rel: str, name: str) -> tuple[int, int]:

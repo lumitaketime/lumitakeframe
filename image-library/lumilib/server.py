@@ -1284,6 +1284,18 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             c.close()
 
     # ---- 資料夾 ----
+    @app.get("/api/drives")
+    def drives_api():
+        """側邊欄：所有硬碟與各類型的統計。只讀資料庫，硬碟沒接上也回傳。"""
+        from .catalog import drives_overview, kinds_overview
+
+        c = conn()
+        try:
+            current = jobs().snapshot().get("current") or {}
+            return {"drives": drives_overview(c, current.get("scan")), "kinds": kinds_overview(c)}
+        finally:
+            c.close()
+
     @app.get("/api/folders")
     @memo(20)
     def folders(root: int | None = None, path: str = ""):

@@ -206,6 +206,8 @@ CATALOG_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
 CREATE INDEX IF NOT EXISTS idx_files_root_status ON files(root_id, status);
 CREATE INDEX IF NOT EXISTS idx_files_kind ON files(kind, status);
+-- 側邊欄「類型」的檔案數與總大小：只讀這個索引就能算完，不必讀整張表
+CREATE INDEX IF NOT EXISTS idx_files_kind_size ON files(status, kind, size);
 CREATE INDEX IF NOT EXISTS idx_files_size ON files(size);
 CREATE INDEX IF NOT EXISTS idx_files_image ON files(image_id);
 """

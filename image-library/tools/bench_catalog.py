@@ -85,6 +85,15 @@ def main() -> None:
         catalog.folder_listing(conn, 1, "")
     print(f"列出資料夾內容：每次 {(time.perf_counter() - t) / 40 * 1000:.1f} 毫秒")
 
+    t = time.perf_counter()
+    for _ in range(20):
+        catalog.drives_overview(conn)
+    drives_ms = (time.perf_counter() - t) / 20 * 1000
+    t = time.perf_counter()
+    for _ in range(20):
+        catalog.kinds_overview(conn)
+    print(f"側邊欄：硬碟清單每次 {drives_ms:.1f} 毫秒、類型統計每次 {(time.perf_counter() - t) / 20 * 1000:.1f} 毫秒")
+
     top = conn.execute("SELECT total_files, total_bytes FROM folders WHERE path = ''").fetchone()
     conn.close()
     size = sum(p.stat().st_size for p in (work / "home").glob("library.db*"))
