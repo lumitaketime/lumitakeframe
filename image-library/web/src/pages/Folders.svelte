@@ -238,13 +238,13 @@
 <style>
   .offline-note { margin: 0 0 12px; }
   .folders { margin-bottom: 28px; }
-  .offline { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 2px 8px; border-radius: var(--corner-full); }
+  .offline { position: absolute; top: 8px; left: 8px; background: var(--media-scrim); color: var(--media-fg); font-size: var(--text-callout); padding: 2px 8px; border-radius: var(--corner-full); }
   a.cover-card { text-decoration: none; display: block; }
   div.cover-card { cursor: pointer; }
   .sub-head { display: flex; align-items: center; gap: 8px; }
   .sub-head .section-title { flex: 1; }
   .totals { margin: 0 0 14px; }
-  .drive { font-size: 12px; }
+  .drive { font-size: var(--text-callout); }
   .kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
   .chip.static { cursor: default; }
   .photos-title { margin-top: 24px; }

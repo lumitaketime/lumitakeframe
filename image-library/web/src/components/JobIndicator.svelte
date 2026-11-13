@@ -42,7 +42,7 @@
 <style>
   .job {
     position: relative; overflow: hidden; display: flex; align-items: center; gap: 8px; border: 0; cursor: pointer;
-    background: var(--secondary-container); color: var(--primary); border-radius: var(--corner-full); padding: 6px 14px; font-size: 14px;
+    background: var(--secondary-container); color: var(--primary); border-radius: var(--corner-full); padding: 6px 14px; font-size: var(--text-body);
     max-width: 260px;
   }
   .job.idle { background: var(--surface-container); color: var(--on-surface-variant); }

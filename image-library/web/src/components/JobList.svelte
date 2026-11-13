@@ -51,12 +51,12 @@
   .compact .job { padding: 8px 10px; }
   .job.queued { opacity: .7; }
   .grow { flex: 1; min-width: 0; }
-  .head { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+  .head { display: flex; justify-content: space-between; gap: 8px; font-size: var(--text-body); }
   .head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pct { font-variant-numeric: tabular-nums; color: var(--primary); font-weight: 500; font-size: 14px; }
-  .lane { font-size: 11px; color: var(--primary); background: var(--secondary-container); border-radius: var(--corner-full); padding: 2px 8px; flex-shrink: 0; }
-  .bar { height: 6px; border-radius: 3px; background: var(--outline-variant); overflow: hidden; margin: 6px 0 4px; }
-  .bar span { display: block; height: 100%; background: var(--primary); transition: width .4s; border-radius: 3px; }
+  .pct { font-variant-numeric: tabular-nums; color: var(--primary); font-weight: 500; font-size: var(--text-body); }
+  .lane { font-size: var(--text-sub); color: var(--primary); background: var(--secondary-container); border-radius: var(--corner-full); padding: 2px 8px; flex-shrink: 0; }
+  .bar { height: 6px; border-radius: var(--radius-xs); background: var(--outline-variant); overflow: hidden; margin: 6px 0 4px; }
+  .bar span { display: block; height: 100%; background: var(--primary); transition: width .4s; border-radius: var(--radius-xs); }
   .paused .bar span { background: var(--on-surface-variant); }
   .bar.indeterminate span { animation: slide 1.4s ease-in-out infinite; }
   @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }

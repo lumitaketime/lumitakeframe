@@ -125,11 +125,11 @@
   .fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--on-surface-variant); }
   .shade {
     position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .15s;
-    background: linear-gradient(to bottom, rgba(0,0,0,.45), transparent 35%);
+    background: linear-gradient(to bottom, var(--media-scrim), transparent 35%);
   }
   .check {
-    position: absolute; top: 4px; left: 4px; border: 0; background: none; color: #fff; padding: 4px; cursor: pointer;
-    opacity: 0; transition: opacity .15s; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
+    position: absolute; top: 4px; left: 4px; border: 0; background: none; color: var(--media-fg); padding: 4px; cursor: pointer;
+    opacity: 0; transition: opacity .15s; filter: drop-shadow(0 1px 2px var(--media-scrim));
   }
   @media (hover: hover) {
     .thumb:hover .shade, .thumb:hover .check { opacity: 1; }
@@ -141,25 +141,25 @@
   .selected .check { opacity: 1; color: var(--primary); filter: none; }
   .selected .shade { opacity: 0; }
   .badge {
-    position: absolute; color: #fff; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 2px;
-    text-shadow: 0 1px 3px rgba(0,0,0,.7); filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
+    position: absolute; color: var(--media-fg); font-size: var(--text-callout); font-weight: 500; display: flex; align-items: center; gap: 2px;
+    text-shadow: 0 1px 3px var(--media-scrim-strong); filter: drop-shadow(0 1px 2px var(--media-scrim));
   }
   .tr { top: 6px; right: 6px; }
-  .fav { position: absolute; bottom: 5px; left: 6px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+  .fav { position: absolute; bottom: 5px; left: 6px; color: var(--media-fg); filter: drop-shadow(0 1px 2px var(--media-scrim)); }
   .missing img { filter: grayscale(1); opacity: .45; }
   .rejected img { opacity: .35; }
-  .stack { background: rgba(0,0,0,.45); padding: 1px 6px 1px 4px; border-radius: var(--corner-small); font-size: 11px; }
+  .stack { background: var(--media-scrim); padding: 1px 6px 1px 4px; border-radius: var(--corner-small); font-size: var(--text-sub); }
   .stack.with-video { top: 28px; }
   .corner { position: absolute; right: 5px; bottom: 5px; display: flex; align-items: center; gap: 4px; pointer-events: none; }
   .raw {
-    font-size: 9px; line-height: 14px; font-weight: 500; letter-spacing: .06em; color: rgb(255 255 255 / .92);
-    background: rgb(0 0 0 / .38); border: 1px solid rgb(255 255 255 / .45); border-radius: var(--corner-extra-small); padding: 0 4px;
+    font-size: var(--text-caption); line-height: 14px; font-weight: 500; letter-spacing: .06em; color: var(--media-fg);
+    background: var(--media-scrim-light); border: 1px solid var(--media-line); border-radius: var(--corner-extra-small); padding: 0 4px;
   }
   .meta-badge {
-    display: flex; align-items: center; gap: 2px; color: #fff;
-    background: rgba(0,0,0,.45); border-radius: var(--corner-small); padding: 1px 5px; font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; gap: 2px; color: var(--media-fg);
+    background: var(--media-scrim); border-radius: var(--corner-small); padding: 1px 5px; font-size: var(--text-sub); font-weight: 700;
   }
-  .meta-badge :global(svg) { color: #f5c518; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 2px; box-shadow: 0 0 0 1px rgba(255,255,255,.7); }
+  .meta-badge :global(svg) { color: var(--system-yellow); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 2px; box-shadow: 0 0 0 1px var(--media-fg-dim); }
   .thumb:focus-visible { outline: 3px solid var(--primary); outline-offset: -3px; }
 </style>

@@ -278,17 +278,17 @@
   @media (hover: none) { .tool .pin-btn { opacity: 1; } }
   :global(.tool.pin-lifting) { transform: scale(.96); opacity: .6; transition: transform .2s, opacity .2s; }
   .hint { flex-basis: 100%; margin-top: -10px; }
-  .tool b { font-size: 16px; line-height: 24px; font-weight: 500; }
+  .tool b { font-size: var(--text-title-3); line-height: 24px; font-weight: 500; }
   .tool .ic {
     width: 48px; height: 48px; border-radius: var(--corner-large); display: flex; align-items: center; justify-content: center;
     background: var(--secondary-container); color: var(--on-secondary-container); margin-bottom: 6px;
   }
-  .tool .count { margin-top: auto; font-size: 14px; font-weight: 500; color: var(--primary); }
+  .tool .count { margin-top: auto; font-size: var(--text-body); font-weight: 500; color: var(--primary); }
   .back { color: var(--on-surface); }
   .bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; }
   .spacer { flex: 1; }
   .seg { display: inline-flex; border: 1px solid var(--outline); border-radius: var(--corner-full); overflow: hidden; }
-  .seg button { border: 0; background: none; color: var(--on-surface); padding: 0 16px; height: 36px; font-size: 14px; font-weight: 500; cursor: pointer; }
+  .seg button { border: 0; background: none; color: var(--on-surface); padding: 0 16px; height: 36px; font-size: var(--text-body); font-weight: 500; cursor: pointer; }
   .seg button + button { border-left: 1px solid var(--outline); }
   .seg button.on { background: var(--secondary-container); color: var(--on-secondary-container); }
   .group-sec { margin-bottom: 24px; }
@@ -300,8 +300,8 @@
   .rows li.sel { background: var(--secondary-container); }
   .thumb-btn { position: relative; border: 0; padding: 0; background: var(--surface-container); width: 56px; height: 56px; border-radius: var(--corner-small); overflow: hidden; cursor: pointer; flex-shrink: 0; }
   .thumb-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .vid { position: absolute; right: 3px; bottom: 3px; background: rgb(0 0 0 / .55); color: #fff; border-radius: var(--corner-extra-small); display: flex; padding: 1px; }
-  .rawb { position: absolute; right: 3px; bottom: 3px; font-size: 8px; line-height: 12px; font-weight: 500; color: #fff; background: rgb(0 0 0 / .4); border: 1px solid rgb(255 255 255 / .45); border-radius: 3px; padding: 0 3px; }
+  .vid { position: absolute; right: 3px; bottom: 3px; background: var(--media-scrim); color: var(--media-fg); border-radius: var(--corner-extra-small); display: flex; padding: 1px; }
+  .rawb { position: absolute; right: 3px; bottom: 3px; font-size: var(--text-caption); line-height: 12px; font-weight: 500; color: var(--media-fg); background: var(--media-scrim-light); border: 1px solid var(--media-line); border-radius: var(--radius-xs); padding: 0 3px; }
   .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .grow b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
   .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -309,15 +309,15 @@
   .frow { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: none; color: inherit; text-align: left; padding: 6px 0; cursor: pointer; border-radius: var(--corner-small); }
   .rows li:has(.frow) { padding: 4px 10px; }
   .sort { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 6px 0 12px; border: 1px solid var(--outline); border-radius: var(--corner-full); color: var(--on-surface-variant); }
-  .sort select { border: 0; background: none; color: var(--on-surface); font-size: 14px; font-weight: 500; height: 34px; cursor: pointer; outline: none; }
+  .sort select { border: 0; background: none; color: var(--on-surface); font-size: var(--text-body); font-weight: 500; height: 34px; cursor: pointer; outline: none; }
   .list-note { margin: 0 0 8px; }
   .date { min-width: 84px; text-align: right; font-variant-numeric: tabular-nums; }
   .tcrumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 0; margin: 0 0 8px; color: var(--on-surface-variant); }
   .tcrumbs .btn:disabled { color: var(--on-surface); background: none; opacity: 1; }
   .tm { margin-bottom: 6px; }
   @media (max-width: 600px) { .date { display: none; } }
-  .meter { display: block; height: 6px; border-radius: 3px; background: var(--surface-container-highest); overflow: hidden; margin: 4px 0; max-width: 420px; }
-  .meter span { display: block; height: 100%; background: var(--primary); border-radius: 3px; }
+  .meter { display: block; height: 6px; border-radius: var(--radius-xs); background: var(--surface-container-highest); overflow: hidden; margin: 4px 0; max-width: 420px; }
+  .meter span { display: block; height: 100%; background: var(--primary); border-radius: var(--radius-xs); }
   .skeleton { height: 220px; border-radius: var(--corner-large); background: var(--surface-container-low); animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .5; } }
 </style>

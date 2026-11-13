@@ -272,7 +272,7 @@
 
 <style>
   .overlay {
-    position: fixed; inset: 0; z-index: 60; background: rgba(15, 17, 24, .55); display: flex; align-items: center;
+    position: fixed; inset: 0; z-index: 60; background: var(--scrim); display: flex; align-items: center;
     justify-content: center; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
     overflow-y: auto;
   }
@@ -282,16 +282,16 @@
   }
   header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
   .dots { display: flex; gap: 6px; }
-  .dots span { width: 26px; height: 4px; border-radius: 2px; background: var(--outline-variant); }
+  .dots span { width: 26px; height: 4px; border-radius: var(--radius-xs); background: var(--outline-variant); }
   .dots span.on { background: var(--primary); }
   .hero { display: flex; justify-content: center; margin: 8px 0 4px; }
-  h1 { font-size: 24px; text-align: center; margin: 8px 0; text-wrap: balance; }
-  h2 { display: flex; align-items: center; gap: 10px; font-size: 22px; margin: 6px 0 10px; }
+  h1 { font-size: var(--text-title-1); text-align: center; margin: 8px 0; text-wrap: balance; }
+  h2 { display: flex; align-items: center; gap: 10px; font-size: var(--text-title-1); margin: 6px 0 10px; }
   .lead { color: var(--on-surface-variant); line-height: 1.6; margin: 0 0 14px; }
   .plan, .howto { margin: 0 0 8px; padding-left: 22px; display: flex; flex-direction: column; gap: 12px; }
   .plan li, .howto li { padding-left: 4px; }
   .plan li b, .howto li b { display: block; margin-bottom: 2px; }
-  .plan li span { color: var(--on-surface-variant); font-size: 14px; }
+  .plan li span { color: var(--on-surface-variant); font-size: var(--text-body); }
   .howto li { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
   .howto li::marker { font-weight: 700; color: var(--primary); }
   .row { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
@@ -303,9 +303,9 @@
   .ok b { color: var(--on-surface); }
   .ok p { margin: 2px 0 0; color: var(--on-surface-variant); }
   .alt { margin-top: 12px; }
-  .alt summary { cursor: pointer; color: var(--on-surface-variant); font-size: 14px; }
+  .alt summary { cursor: pointer; color: var(--on-surface-variant); font-size: var(--text-body); }
   .cmd { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-  .cmd code { flex: 1; background: var(--surface-container); padding: 8px 12px; border-radius: var(--corner-small); font-size: 14px; }
+  .cmd code { flex: 1; background: var(--surface-container); padding: 8px 12px; border-radius: var(--corner-small); font-size: var(--text-body); }
   .status { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
   .small-spin { width: 12px; height: 12px; }
   .picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 6px 0 12px; }
@@ -314,8 +314,8 @@
     background: var(--surface-container); border: 2px solid transparent; border-radius: var(--corner-large); padding: 14px; color: var(--on-surface);
   }
   .pick.on { border-color: var(--primary); }
-  .pick b { font-size: 16px; }
-  .pick .state { margin-top: 6px; font-size: 14px; font-weight: 500; color: var(--primary); }
+  .pick b { font-size: var(--text-title-3); }
+  .pick .state { margin-top: 6px; font-size: var(--text-body); font-weight: 500; color: var(--primary); }
   .pick:disabled { opacity: .5; cursor: default; }
   .progress { background: var(--surface-container); border-radius: var(--corner-medium); padding: 12px 14px; margin-bottom: 10px; }
   progress { width: 100%; height: 6px; accent-color: var(--primary); }

@@ -27,7 +27,7 @@
     padding: 24px; transform-origin: top center;
   }
   .modal.wide { width: min(620px, 100%); }
-  h2 { margin: 0 0 16px; font-size: 24px; line-height: 32px; font-weight: 400; }
+  h2 { margin: 0 0 16px; font-size: var(--text-title-1); line-height: 32px; font-weight: 400; }
   .body { overflow-y: auto; min-height: 0; color: var(--on-surface-variant); }
   .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; flex-wrap: wrap; }
   /* Dialog 的動作按鈕用 Text button（主要動作保留 Filled） */

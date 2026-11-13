@@ -115,7 +115,7 @@
     border: 1px solid var(--outline); border-radius: var(--corner-extra-small); color: var(--on-surface-variant);
   }
   .field:focus-within { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
-  .field input { flex: 1; min-width: 160px; border: 0; outline: none; background: none; font-size: 16px; color: var(--on-surface); }
+  .field input { flex: 1; min-width: 160px; border: 0; outline: none; background: none; font-size: var(--text-title-3); color: var(--on-surface); }
   .tag {
     display: inline-flex; align-items: center; gap: 2px; height: 32px; padding: 0 4px 0 12px; border-radius: var(--corner-small);
     background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 500;
@@ -124,7 +124,7 @@
   .tag button { border: 0; background: none; color: inherit; display: flex; padding: 4px; border-radius: 50%; cursor: pointer; }
   .tag button:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
   .sugg { display: flex; flex-direction: column; gap: 6px; }
-  .n { font-size: 11px; color: var(--on-surface-variant); }
-  .hint { font-size: 12px; line-height: 16px; color: var(--on-surface-variant); margin: 0; }
+  .n { font-size: var(--text-sub); color: var(--on-surface-variant); }
+  .hint { font-size: var(--text-callout); line-height: 16px; color: var(--on-surface-variant); margin: 0; }
   .spinner { width: 14px; height: 14px; }
 </style>

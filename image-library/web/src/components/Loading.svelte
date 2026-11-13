@@ -59,7 +59,7 @@
     color: var(--on-surface-variant); animation: m3-fade var(--duration-medium2) var(--easing-standard);
   }
   .spin-wrap.inline { flex-direction: row; padding: 12px 0; justify-content: flex-start; gap: 12px; }
-  .lbl { font-size: 14px; line-height: 20px; }
+  .lbl { font-size: var(--text-body); line-height: 20px; }
   /* M3 圓形不定進度：整體旋轉，弧長在 10%–75% 之間伸縮 */
   .m3-spin { animation: m3-rotate 1.568s linear infinite; }
   .m3-spin circle {

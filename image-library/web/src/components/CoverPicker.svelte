@@ -98,10 +98,10 @@
   }
   .preview img { width: 100%; height: 100%; object-fit: cover; animation: m3-fade var(--duration-medium2) var(--easing-standard); }
   .info { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-  .info b { color: var(--on-surface); font-weight: 500; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .hint { font-size: 12px; line-height: 16px; }
+  .info b { color: var(--on-surface); font-weight: 500; font-size: var(--text-title-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hint { font-size: var(--text-callout); line-height: 16px; }
   .seg { display: inline-flex; align-self: flex-start; border: 1px solid var(--outline); border-radius: var(--corner-full); overflow: hidden; }
-  .seg button { border: 0; background: none; color: var(--on-surface); height: 36px; padding: 0 20px; font-size: 14px; font-weight: 500; cursor: pointer; }
+  .seg button { border: 0; background: none; color: var(--on-surface); height: 36px; padding: 0 20px; font-size: var(--text-body); font-weight: 500; cursor: pointer; }
   .seg button + button { border-left: 1px solid var(--outline); }
   .seg button.on { color: var(--on-secondary-container); }
   .seg button:disabled { color: color-mix(in srgb, var(--on-surface) 38%, transparent); cursor: default; }

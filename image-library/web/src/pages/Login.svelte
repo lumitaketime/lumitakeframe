@@ -37,6 +37,6 @@
 <style>
   .wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--surface-container); }
   .card { background: var(--surface-container-low); border-radius: var(--corner-extra-large); padding: 32px; width: min(360px, 100%); display: flex; flex-direction: column; gap: 12px; align-items: center; box-shadow: var(--shadow); }
-  h1 { margin: 0; font-size: 22px; }
+  h1 { margin: 0; font-size: var(--text-title-1); }
   .card .btn, .card .input { width: 100%; }
 </style>

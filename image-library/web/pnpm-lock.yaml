@@ -11,9 +11,6 @@ importers:
       '@fontsource/manrope':
         specifier: 5.3.0
         version: 5.3.0
-      '@fontsource/roboto':
-        specifier: 5.1.0
-        version: 5.1.0
       '@mdi/js':
         specifier: ^7.4.47
         version: 7.4.47
@@ -191,9 +188,6 @@ packages:
 
   '@fontsource/manrope@5.3.0':
     resolution: {integrity: sha512-obJ1Dv3+uCA6HlHgW8u4BGYxJR9In2HW7gjJhlflEvkrj1X1iSEwu0fToL+JYGC/FEKFfIz1sBuPduvcL2gIAA==}
-
-  '@fontsource/roboto@5.1.0':
-    resolution: {integrity: sha512-cFRRC1s6RqPygeZ8Uw/acwVHqih8Czjt6Q0MwoUoDe9U3m4dH1HmNDRBZyqlMSFwgNAUKgFImncKdmDHyKpwdg==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -638,8 +632,6 @@ snapshots:
     optional: true
 
   '@fontsource/manrope@5.3.0': {}
-
-  '@fontsource/roboto@5.1.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

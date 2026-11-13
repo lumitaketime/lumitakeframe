@@ -115,13 +115,13 @@
   .pic { border: 3px solid transparent; border-radius: var(--corner-medium); padding: 0; background: none; cursor: pointer; display: block; position: relative; width: 100%; }
   .item.kept .pic { border-color: var(--primary); }
   .pic img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--corner-medium); display: block; }
-  .keep { position: absolute; left: 6px; top: 6px; display: flex; align-items: center; gap: 2px; background: var(--primary); color: var(--on-primary); border-radius: var(--corner-full); padding: 1px 8px 1px 2px; font-size: 12px; font-weight: 500; }
-  .zoom { position: absolute; right: 8px; top: 150px; border: 0; border-radius: 50%; width: 28px; height: 28px; background: rgba(0,0,0,.5); cursor: pointer; }
-  .info { display: flex; flex-direction: column; font-size: 12px; margin-top: 4px; min-width: 0; }
+  .keep { position: absolute; left: 6px; top: 6px; display: flex; align-items: center; gap: 2px; background: var(--primary); color: var(--on-primary); border-radius: var(--corner-full); padding: 1px 8px 1px 2px; font-size: var(--text-callout); font-weight: 500; }
+  .zoom { position: absolute; right: 8px; top: 150px; border: 0; border-radius: 50%; width: 28px; height: 28px; background: var(--media-scrim); cursor: pointer; }
+  .info { display: flex; flex-direction: column; font-size: var(--text-callout); margin-top: 4px; min-width: 0; }
   .info b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .info span { color: var(--on-surface-variant); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .stars { display: flex; align-items: center; gap: 2px; }
-  .stars :global(svg) { color: #f5c518; }
+  .stars :global(svg) { color: var(--system-yellow); }
   .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   .empty :global(svg) { color: var(--on-surface-variant); margin: 0 auto; }
   @media (max-width: 760px) { .item { width: 140px; } .zoom { top: 110px; } }

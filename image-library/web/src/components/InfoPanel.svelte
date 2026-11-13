@@ -328,15 +328,15 @@
 <style>
   .info { width: 360px; background: var(--surface-container-low); color: var(--on-surface); height: 100%; overflow-y: auto; flex-shrink: 0; }
   header { display: flex; align-items: center; gap: 4px; padding: 8px; position: sticky; top: 0; background: var(--surface-container-low); z-index: 2; }
-  h3 { margin: 0; font-size: 16px; font-weight: 500; }
-  h4 { margin: 22px 0 10px; font-size: 14px; color: var(--on-surface-variant); font-weight: 500; letter-spacing: .03em; }
+  h3 { margin: 0; font-size: var(--text-title-3); font-weight: 500; }
+  h4 { margin: 22px 0 10px; font-size: var(--text-body); color: var(--on-surface-variant); font-weight: 500; letter-spacing: .03em; }
   .pad { padding: 0 18px 28px; }
   .desc { margin: 0 0 12px; line-height: 1.65; }
   .tr { margin: -4px 0 12px; }
   .note { position: relative; margin: 0 0 14px; }
   .note textarea {
     width: 100%; resize: none; overflow: hidden; border: 0; border-bottom: 1px solid var(--outline-variant);
-    background: transparent; color: var(--on-surface); font-size: 16px; line-height: 24px; padding: 8px 0 8px 28px;
+    background: transparent; color: var(--on-surface); font-size: var(--text-title-3); line-height: 24px; padding: 8px 0 8px 28px;
     outline: none; min-height: 40px;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23747780'%3E%3Cpath d='M14.06 9.02l.92.92L5.92 19H5v-.92l9.06-9.06M17.66 3c-.25 0-.51.1-.7.29l-1.83 1.83 3.75 3.75 1.83-1.83a.996.996 0 0 0 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.71-.29zm-3.6 3.19L3 17.25V21h3.75L17.81 9.94l-3.75-3.75z'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: 0 10px; background-size: 18px;
@@ -346,7 +346,7 @@
   .note.has textarea { background-image: none; padding-left: 0; }
   .note textarea:hover { border-bottom-color: var(--outline); }
   .note textarea:focus { border-bottom: 2px solid var(--primary); padding-left: 0; background-image: none; }
-  .note-state { position: absolute; right: 0; bottom: -18px; font-size: 11px; color: var(--on-surface-variant); }
+  .note-state { position: absolute; right: 0; bottom: -18px; font-size: var(--text-sub); color: var(--on-surface-variant); }
   .mytags { margin: 6px 0 4px; }
   .mytags h4 { margin: 14px 0 8px; }
   .mytag {
@@ -358,7 +358,7 @@
   .mytag .x { border: 0; background: none; color: inherit; display: flex; padding: 0 8px 0 4px; height: 100%; align-items: center; cursor: pointer; opacity: .7; }
   .mytag .x:hover, .mytag .t:hover { background: color-mix(in srgb, currentColor 8%, transparent); opacity: 1; }
   .chip.add { border-style: dashed; }
-  .tag-input { height: 32px; border: 1px solid var(--primary); border-radius: var(--corner-small); padding: 0 10px; background: none; outline: none; font-size: 14px; min-width: 140px; }
+  .tag-input { height: 32px; border: 1px solid var(--primary); border-radius: var(--corner-small); padding: 0 10px; background: none; outline: none; font-size: var(--text-body); min-width: 140px; }
   .people-head { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; }
   .people-head h4 { margin: 0; }
   .people-head .icon-btn { width: 32px; height: 32px; color: var(--on-surface-variant); }
@@ -368,11 +368,11 @@
   .face-img { border: 0; padding: 0; background: none; cursor: pointer; width: 100%; }
   .face-img img { width: 100%; aspect-ratio: 1; border-radius: var(--corner-medium); object-fit: cover; background: var(--surface-container); display: block; }
   .face-img:hover img { outline: 2px solid var(--primary); outline-offset: 2px; }
-  .face-name { font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 0 0; min-height: 20px; }
+  .face-name { font-size: var(--text-callout); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 0 0; min-height: 20px; }
   .face-name.unnamed { color: var(--on-surface-variant); }
   .face-x {
     position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: 0; cursor: pointer;
-    background: var(--on-surface); color: var(--surface); font-size: 14px; line-height: 1;
+    background: var(--on-surface); color: var(--surface); font-size: var(--text-body); line-height: 1;
   }
   .edit-tip { margin: -4px 0 12px; }
   .warn { color: var(--error); display: flex; gap: 6px; align-items: flex-start; }
@@ -382,11 +382,11 @@
   .item > div { color: var(--on-surface); display: flex; flex-direction: column; gap: 2px; }
   .min { min-width: 0; flex: 1; }
   .break { word-break: break-all; }
-  .exp { font-size: 14px; margin-top: 2px; }
+  .exp { font-size: var(--text-body); margin-top: 2px; }
   .btns { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
   .path {
     border: 0; background: none; padding: 0; text-align: left; cursor: copy; color: var(--on-surface);
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all;
+    font-family: var(--font-mono); font-size: var(--text-callout); word-break: break-all;
   }
   .path:hover { color: var(--primary); }
   @media (max-width: 900px) {

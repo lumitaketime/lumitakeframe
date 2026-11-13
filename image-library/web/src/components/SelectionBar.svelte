@@ -154,10 +154,10 @@
   .rate-menu .row { display: flex; gap: 4px; align-items: center; }
   .rate-menu button {
     border: 0; background: var(--surface-container); color: var(--on-surface); border-radius: var(--corner-small); padding: 6px 8px; cursor: pointer;
-    display: flex; align-items: center; gap: 2px; font-size: 14px;
+    display: flex; align-items: center; gap: 2px; font-size: var(--text-body);
   }
   .rate-menu button:hover { background: var(--surface-container-highest); }
-  .rate-menu button :global(svg) { color: #f5c518; }
+  .rate-menu button :global(svg) { color: var(--system-yellow); }
   .rate-menu .dot { width: 26px; height: 26px; border-radius: 50%; padding: 0; }
   @keyframes down { from { transform: translateY(-100%); } }
 </style>

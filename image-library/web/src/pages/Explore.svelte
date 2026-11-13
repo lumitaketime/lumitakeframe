@@ -92,12 +92,12 @@
   .tile img { width: 100%; height: 100%; object-fit: cover; transition: transform .25s; }
   .tile:hover img { transform: scale(1.05); }
   .tile span {
-    position: absolute; left: 0; right: 0; bottom: 0; padding: 24px 10px 8px; color: #fff; font-weight: 500; text-align: left;
-    background: linear-gradient(transparent, rgba(0,0,0,.7)); font-size: 14px; display: flex; flex-direction: column;
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 24px 10px 8px; color: var(--media-fg); font-weight: 500; text-align: left;
+    background: linear-gradient(transparent, var(--media-scrim-strong)); font-size: var(--text-body); display: flex; flex-direction: column;
   }
-  .tile small { font-weight: 400; opacity: .8; font-size: 12px; }
+  .tile small { font-weight: 400; opacity: .8; font-size: var(--text-callout); }
   .more { color: var(--on-surface); text-decoration: none; }
-  .person { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; color: var(--on-surface); font-size: 14px; }
+  .person { display: flex; flex-direction: column; align-items: center; gap: 6px; text-decoration: none; color: var(--on-surface); font-size: var(--text-body); }
   .person img { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; background: var(--surface-container); }
   .person span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

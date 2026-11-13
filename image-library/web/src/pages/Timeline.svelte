@@ -242,16 +242,16 @@
   .tl-head { display: flex; align-items: center; gap: 4px; margin: -4px 0 0; min-height: 40px; }
   .tl-head.titled { min-height: 64px; margin: 0; }
   .tl-title { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
-  .tl-title h1 { font-size: 28px; line-height: 36px; font-weight: 400; margin: 0; }
+  .tl-title h1 { font-size: var(--text-large-title); line-height: 36px; font-weight: 400; margin: 0; }
   .spacer { flex: 1; }
   .timeline { display: flex; min-height: 100%; }
   .content { flex: 1; min-width: 0; padding: 0 12px 100px 24px; }
-  .month-title { font-size: 22px; font-weight: 500; margin: 22px 0 4px; }
+  .month-title { font-size: var(--text-title-1); font-weight: 500; margin: 22px 0 4px; }
   .days { display: flex; flex-wrap: wrap; column-gap: 12px; }
   @media (max-width: 639px) { .days { column-gap: 2px; } }
   .day { margin-bottom: 12px; min-width: 0; }
   .day-head span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .day-head { display: flex; align-items: center; gap: 4px; height: 40px; font-size: 14px; font-weight: 500; }
+  .day-head { display: flex; align-items: center; gap: 4px; height: 40px; font-size: var(--text-body); font-weight: 500; }
   .day-check {
     border: 0; background: none; padding: 0; width: 0; overflow: hidden; color: var(--on-surface-variant); cursor: pointer;
     transition: width .15s; display: flex;
@@ -261,7 +261,7 @@
 
   @media (max-width: 760px) {
     .content { padding: 0 4px 100px; }
-    .month-title { font-size: 16px; margin: 16px 6px 2px; }
-    .day-head { padding: 0 6px; height: 34px; font-size: 14px; }
+    .month-title { font-size: var(--text-title-3); margin: 16px 6px 2px; }
+    .day-head { padding: 0 6px; height: 34px; font-size: var(--text-body); }
   }
 </style>

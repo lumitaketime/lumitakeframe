@@ -104,14 +104,14 @@
   .txt { grid-column: 2 / 4; min-width: 0; display: flex; flex-direction: column; }
   /* 窄的時候換行（最多兩行），不要把數字截掉 */
   .txt b, .txt span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; word-break: keep-all; overflow-wrap: anywhere; }
-  .txt b { font-weight: 500; font-size: 16px; line-height: 20px; }
-  .txt span { font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
+  .txt b { font-weight: 500; font-size: var(--text-title-3); line-height: 20px; }
+  .txt span { font-size: var(--text-callout); line-height: 16px; color: var(--on-surface-variant); }
   .st.warn .txt span { color: inherit; opacity: .85; }
   /* M3 線性進度條 */
-  .bar { grid-column: 1 / 3; height: 4px; border-radius: 2px; background: var(--surface-container-highest); overflow: hidden; position: relative; }
-  .bar span { display: block; height: 100%; border-radius: 2px; background: var(--primary); transition: width .6s cubic-bezier(.2, 0, 0, 1); }
+  .bar { grid-column: 1 / 3; height: 4px; border-radius: var(--radius-xs); background: var(--surface-container-highest); overflow: hidden; position: relative; }
+  .bar span { display: block; height: 100%; border-radius: var(--radius-xs); background: var(--primary); transition: width .6s cubic-bezier(.2, 0, 0, 1); }
   .bar.indeterminate span { position: absolute; animation: indet 1.4s cubic-bezier(.4, 0, .2, 1) infinite; }
   @keyframes indet { from { left: -40%; } to { left: 100%; } }
-  .pct { font-size: 12px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; justify-self: end; }
+  .pct { font-size: var(--text-callout); color: var(--on-surface-variant); font-variant-numeric: tabular-nums; justify-self: end; }
   @media (prefers-reduced-motion: reduce) { .bar span { transition: none; } .bar.indeterminate span { animation: none; left: 0; } }
 </style>

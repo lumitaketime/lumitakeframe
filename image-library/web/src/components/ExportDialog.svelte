@@ -238,14 +238,14 @@
   .plan li + li { border-top: 1px solid var(--outline-variant); }
   .plan li.off { color: var(--on-surface-variant); }
   .plan .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .plan b { font-weight: 500; font-size: 16px; }
-  .plan .grow span { font-size: 14px; color: var(--on-surface-variant); }
+  .plan b { font-weight: 500; font-size: var(--text-title-3); }
+  .plan .grow span { font-size: var(--text-body); color: var(--on-surface-variant); }
   .ic { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--surface-container-highest); flex-shrink: 0; }
   .ic.raw { background: var(--tertiary-container); color: var(--on-tertiary-container); }
   .ic.jpg { background: var(--secondary-container); color: var(--on-secondary-container); }
   .field { display: flex; flex-direction: column; gap: 8px; }
-  .label { font-size: 14px; font-weight: 500; }
-  .hint { font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
+  .label { font-size: var(--text-body); font-weight: 500; }
+  .hint { font-size: var(--text-callout); line-height: 16px; color: var(--on-surface-variant); }
   .hint b { color: var(--on-surface); font-weight: 500; }
   .purposes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
   .purpose {
@@ -253,27 +253,27 @@
     border: 1px solid var(--outline-variant); background: none; border-radius: var(--corner-medium);
     transition: border-color var(--spring-effects-fast-duration) var(--spring-effects-fast), background-color var(--spring-effects-fast-duration) var(--spring-effects-fast);
   }
-  .purpose b { font-size: 14px; font-weight: 500; }
-  .purpose span { font-size: 12px; line-height: 16px; color: var(--on-surface-variant); }
+  .purpose b { font-size: var(--text-body); font-weight: 500; }
+  .purpose span { font-size: var(--text-callout); line-height: 16px; color: var(--on-surface-variant); }
   .purpose.on { border: 2px solid var(--primary); padding: 11px 13px; background: color-mix(in srgb, var(--primary) 8%, transparent); }
   .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .name-pick { width: auto; min-width: 160px; }
   .grow-in { flex: 1; min-width: 200px; }
   .short { max-width: 160px; }
-  .mini { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--on-surface-variant); flex: 1; min-width: 140px; }
-  .dest { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-container-highest); border-radius: var(--corner-small); padding: 6px 10px; font-size: 14px; min-width: 0; flex: 1; }
+  .mini { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-callout); color: var(--on-surface-variant); flex: 1; min-width: 140px; }
+  .dest { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-container-highest); border-radius: var(--corner-small); padding: 6px 10px; font-size: var(--text-body); min-width: 0; flex: 1; }
   .dest span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .more {
     display: flex; align-items: center; gap: 12px; border: 0; background: none; color: var(--on-surface); cursor: pointer;
     padding: 10px 4px; border-top: 1px solid var(--outline-variant); text-align: left; border-radius: 0;
   }
-  .more > span:first-child { font-size: 14px; font-weight: 500; }
-  .summary { flex: 1; font-size: 12px; color: var(--on-surface-variant); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .more > span:first-child { font-size: var(--text-body); font-weight: 500; }
+  .summary { flex: 1; font-size: var(--text-callout); color: var(--on-surface-variant); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chev { display: flex; transition: transform var(--spring-standard-fast-spatial-duration) var(--spring-standard-fast-spatial); }
   .chev.up { transform: rotate(180deg); }
   .more-body { display: flex; flex-direction: column; gap: 14px; margin-top: -8px; }
   .wm { display: flex; flex-direction: column; gap: 10px; padding-left: 4px; }
-  .toggle { display: flex; flex-direction: row-reverse; justify-content: space-between; align-items: center; gap: 16px; font-size: 14px; cursor: pointer; }
+  .toggle { display: flex; flex-direction: row-reverse; justify-content: space-between; align-items: center; gap: 16px; font-size: var(--text-body); cursor: pointer; }
   .foot { margin-right: auto; }
   .spinner { width: 14px; height: 14px; }
 </style>

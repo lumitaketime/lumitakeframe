@@ -108,7 +108,7 @@
 
 <style>
   .groups { margin-bottom: 8px; }
-  .groups .chip span { margin-left: 4px; font-size: 12px; }
+  .groups .chip span { margin-left: 4px; font-size: var(--text-callout); }
   .assign { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--secondary-container); border-radius: var(--corner-medium); padding: 10px 12px; margin-bottom: 12px; position: sticky; top: 0; z-index: 3; }
   .people { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 22px 14px; }
   .person { display: flex; flex-direction: column; align-items: center; text-decoration: none; color: var(--on-surface); gap: 2px; min-width: 0; }
@@ -117,8 +117,8 @@
   .person:hover img { transform: scale(1.04); }
   .person.picked img { outline: 4px solid var(--primary); outline-offset: 2px; }
   .check { position: absolute; top: 0; left: 0; color: var(--primary); background: var(--surface); border-radius: 50%; }
-  .person b { margin-top: 8px; font-weight: 500; font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .person span { font-size: 12px; color: var(--on-surface-variant); }
+  .person b { margin-top: 8px; font-weight: 500; font-size: var(--text-body); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .person span { font-size: var(--text-callout); color: var(--on-surface-variant); }
   .tags { color: var(--primary) !important; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hidden-person { opacity: .45; }
   label { display: flex; align-items: center; gap: 6px; }

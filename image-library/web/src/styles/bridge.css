@@ -1,0 +1,68 @@
+/*
+ * 過渡用對照：舊畫面沿用的 Material 變數名稱 → Liquid Glass token。
+ * 讓還沒重做的頁面先換上新外觀；各頁在介面步驟 2–6 重做時直接改用 token，這個檔案最後會刪除。
+ * 新寫的程式不要再用這些舊名稱。
+ */
+:root, [data-theme] {
+  --primary: var(--accent);
+  --on-primary: var(--on-accent);
+  --primary-container: var(--selection-muted);
+  --secondary: var(--label-secondary);
+  --secondary-container: var(--selection-muted);
+  --on-secondary-container: var(--label-primary);
+  --tertiary: var(--system-orange);
+  --tertiary-container: color-mix(in srgb, var(--system-orange) 18%, var(--control-bg));
+  --on-tertiary-container: var(--label-primary);
+  --error: var(--destructive);
+  --on-error: var(--on-destructive);
+  --surface: var(--control-bg);
+  --on-surface: var(--label-primary);
+  --on-surface-variant: var(--label-secondary);
+  --surface-container-low: var(--layer-1);
+  --surface-container: var(--layer-2);
+  --surface-container-high: var(--layer-3);
+  --surface-container-highest: var(--layer-4);
+  --inverse-surface: color-mix(in srgb, var(--label-primary) 86%, var(--control-bg));
+  --inverse-on-surface: var(--control-bg);
+  --inverse-primary: var(--control-bg);
+  --outline: var(--gray-1);
+  --outline-variant: var(--separator);
+  --overlay: var(--scrim);
+  --shadow: none;
+  --elevation-level3: var(--shadow-popover);
+
+  --corner-extra-small: var(--radius-xs);
+  --corner-small: var(--radius-sm);
+  --corner-medium: var(--radius-md);
+  --corner-large: var(--radius-lg);
+  --corner-large-increased: var(--radius-lg);
+  --corner-extra-large: var(--radius-xl);
+  --corner-full: var(--radius-capsule);
+  --radius: var(--radius-md);
+
+  --state-hover: 0.06;
+  --state-focus: 0.08;
+  --state-pressed: 0.12;
+
+  --duration-short4: var(--dur-fast);
+  --duration-medium2: var(--dur);
+  --duration-medium4: var(--dur-slow);
+  --duration-long1: var(--dur-slow);
+  --easing-standard: var(--ease);
+  --easing-emphasized-decelerate: var(--ease-out);
+  --spring-effects-fast: var(--ease);
+  --spring-effects-fast-duration: var(--dur-fast);
+  --spring-effects-default: var(--ease);
+  --spring-effects-default-duration: var(--dur);
+  --spring-standard-fast-spatial: var(--ease);
+  --spring-standard-fast-spatial-duration: var(--dur-fast);
+  --spring-standard-default-spatial: var(--ease);
+  --spring-standard-default-spatial-duration: var(--dur);
+  --spring-standard-slow-spatial: var(--ease);
+  --spring-standard-slow-spatial-duration: var(--dur-slow);
+  --spring-expressive-fast-spatial: var(--spring);
+  --spring-expressive-fast-spatial-duration: var(--dur);
+  --spring-expressive-default-spatial: var(--spring);
+  --spring-expressive-default-spatial-duration: var(--dur-slow);
+  --font: var(--font-sans);
+}

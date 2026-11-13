@@ -65,8 +65,8 @@
   .head { display: flex; gap: 20px; align-items: center; margin-bottom: 20px; }
   .preview { width: 96px; height: 96px; border-radius: 50%; overflow: hidden; flex-shrink: 0; background: var(--surface-container-highest); }
   .preview img { width: 100%; height: 100%; object-fit: cover; animation: m3-fade var(--duration-medium2) var(--easing-standard); }
-  .info { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 14px; line-height: 20px; }
-  .info b { color: var(--on-surface); font-weight: 500; font-size: 16px; }
+  .info { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: var(--text-body); line-height: 20px; }
+  .info b { color: var(--on-surface); font-weight: 500; font-size: var(--text-title-3); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 12px; }
   .face {
     position: relative; aspect-ratio: 1; border-radius: 50%; padding: 0; border: 0; cursor: pointer; background: var(--surface-container-highest);

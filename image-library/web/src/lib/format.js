@@ -1,3 +1,5 @@
+import { formatBytes, formatDateTime, formatNumber } from "../i18n/index.svelte.js";
+
 const WEEK = ["日", "一", "二", "三", "四", "五", "六"];
 
 export function parseLocal(iso) {
@@ -24,8 +26,7 @@ export function dayLabel(iso) {
 export function dateTime(iso, tz) {
   const d = parseLocal(iso);
   if (!d) return "";
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 週${WEEK[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}${tz ? ` (UTC${tz})` : ""}`;
+  return `${formatDateTime(d)}${tz ? ` (UTC${tz})` : ""}`;
 }
 
 export function duration(sec) {
@@ -37,12 +38,9 @@ export function duration(sec) {
   return h ? `${h}:${String(m).padStart(2, "0")}:${r}` : `${m}:${r}`;
 }
 
+/** 大小：KB、MB、GB、TB，最多一位小數（依語系格式化） */
 export function bytes(n) {
-  if (!n) return "";
-  if (n >= 1e12) return `${(n / 1e12).toFixed(2)} TB`;
-  if (n >= 1e9) return `${(n / 1e9).toFixed(2)} GB`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(n / 1e3))} KB`;
+  return formatBytes(n);
 }
 
 export function shutter(t) {
@@ -52,15 +50,16 @@ export function shutter(t) {
 }
 
 export function count(n) {
-  return new Intl.NumberFormat("zh-TW").format(n || 0);
+  return formatNumber(n);
 }
 
+/** 顏色標籤用設計系統的系統色（跟著四個主題變化） */
 export const LABEL_COLORS = {
-  red: "#e5484d",
-  yellow: "#f5c518",
-  green: "#30a46c",
-  blue: "#3e63dd",
-  purple: "#8e4ec6",
+  red: "var(--system-red)",
+  yellow: "var(--system-yellow)",
+  green: "var(--system-green)",
+  blue: "var(--system-blue)",
+  purple: "var(--system-purple)",
 };
 export const LABEL_NAMES = { red: "紅", yellow: "黃", green: "綠", blue: "藍", purple: "紫" };
 export const LABEL_KEYS = ["red", "yellow", "green", "blue", "purple"];

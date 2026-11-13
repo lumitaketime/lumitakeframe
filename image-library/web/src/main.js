@@ -2,18 +2,16 @@ import { mount } from "svelte";
 import "./app.css";
 import App from "./App.svelte";
 import { isMacApp, isAndroidApp } from "./lib/state.svelte.js";
-import { installRipple } from "./lib/ripple.js";
 import { installRangeFill } from "./lib/range.js";
 
+// 外觀一律跟隨系統（淺色、深色、增加對比），不提供 App 專屬的外觀開關
 try {
-  const theme = localStorage.getItem("theme");
-  if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+  localStorage.removeItem("theme"); // 舊版留下的設定
 } catch {
-  /* 無法使用 localStorage 時跟隨系統 */
+  /* 無法使用 localStorage 時略過 */
 }
 
 mount(App, { target: document.getElementById("app") });
-installRipple();
 installRangeFill();
 
 // Mac App 的視窗不能開新分頁：外部連結改用預設瀏覽器開啟

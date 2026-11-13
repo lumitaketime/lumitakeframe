@@ -269,7 +269,7 @@
   .sb.open .field { background: var(--surface-container-highest); border-radius: var(--corner-extra-large) var(--corner-extra-large) 0 0; }
   .lead-icon { width: 40px; display: flex; justify-content: center; }
   .lead { color: var(--on-surface-variant); }
-  .field input { flex: 1; border: 0; outline: none; background: none; color: var(--on-surface); min-width: 0; font-size: 16px; line-height: 24px; }
+  .field input { flex: 1; border: 0; outline: none; background: none; color: var(--on-surface); min-width: 0; font-size: var(--text-title-3); line-height: 24px; }
   .field input::placeholder { color: var(--on-surface-variant); }
   .field input::-webkit-search-cancel-button { display: none; }
   .clear { width: 36px; height: 36px; color: var(--on-surface-variant); }
@@ -285,22 +285,22 @@
     position: relative; flex-shrink: 0; overflow: hidden; display: flex; align-items: center; justify-content: center;
     background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 500;
   }
-  .av { width: 40px; height: 40px; border-radius: var(--corner-small); margin-left: -8px; font-size: 16px; }
+  .av { width: 40px; height: 40px; border-radius: var(--corner-small); margin-left: -8px; font-size: var(--text-title-3); }
   .av img, .pav img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  .pav { width: 64px; height: 64px; border-radius: 50%; font-size: 24px; }
+  .pav { width: 64px; height: 64px; border-radius: 50%; font-size: var(--text-title-1); }
   .av.round { border-radius: 50%; }
   .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .lbl { font-size: 16px; line-height: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lbl { font-size: var(--text-title-3); line-height: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lbl b { font-weight: 700; }
-  .sub { font-size: 12px; line-height: 16px; color: var(--on-surface-variant); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { font-size: var(--text-callout); line-height: 16px; color: var(--on-surface-variant); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .x { width: 32px; height: 32px; color: var(--on-surface-variant); }
   .scope { display: flex; align-items: center; gap: 8px; padding: 12px 20px 8px; flex-wrap: wrap; }
-  .scope > span { font-size: 12px; color: var(--on-surface-variant); margin-right: 4px; }
+  .scope > span { font-size: var(--text-callout); color: var(--on-surface-variant); margin-right: 4px; }
   .scope .chip { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .divider { height: 1px; background: var(--outline-variant); margin: 4px 0; }
   .people { display: flex; gap: 12px; padding: 12px 20px 4px; overflow-x: auto; overscroll-behavior-x: contain; }
   .person { border: 0; background: none; padding: 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; width: 72px; flex-shrink: 0; color: var(--on-surface); }
-  .person span { font-size: 12px; max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .all { display: flex; align-items: center; gap: 8px; margin: 8px 20px 0; border: 0; background: none; color: var(--primary); font-size: 14px; font-weight: 500; cursor: pointer; padding: 8px 0; }
+  .person span { font-size: var(--text-callout); max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .all { display: flex; align-items: center; gap: 8px; margin: 8px 20px 0; border: 0; background: none; color: var(--primary); font-size: var(--text-body); font-weight: 500; cursor: pointer; padding: 8px 0; }
   .sb.expanded { position: absolute; left: 4px; right: 4px; top: calc(8px + env(safe-area-inset-top)); z-index: 40; max-width: none; }
 </style>

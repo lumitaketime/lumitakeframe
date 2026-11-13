@@ -194,30 +194,30 @@
 <style>
   .reasons { background: var(--surface-container); border-radius: var(--corner-large); padding: 12px 16px; margin: 6px 0 14px; }
   .reasons ul { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
-  .reasons li { display: flex; gap: 12px; font-size: 14px; }
+  .reasons li { display: flex; gap: 12px; font-size: var(--text-body); }
   .reasons .n { flex-shrink: 0; width: 72px; font-weight: 500; color: var(--error); font-variant-numeric: tabular-nums; }
   .reasons .why { word-break: break-all; color: var(--on-surface-variant); }
   .reasons .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .quick { margin-bottom: 14px; }
   .scope-bar {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 8px 4px 16px; margin: 0 0 12px;
-    border-radius: var(--corner-medium); background: var(--surface-container-low); font-size: 14px; color: var(--on-surface-variant);
+    border-radius: var(--corner-medium); background: var(--surface-container-low); font-size: var(--text-body); color: var(--on-surface-variant);
   }
   .scope-bar b { color: var(--on-surface); font-weight: 500; }
   .status-pill {
     display: inline-flex; align-items: center; gap: 12px; height: 48px; padding: 0 24px 0 16px; margin: 0 0 12px;
-    border-radius: var(--corner-full); background: var(--secondary-container); color: var(--on-secondary-container); font-size: 16px;
+    border-radius: var(--corner-full); background: var(--secondary-container); color: var(--on-secondary-container); font-size: var(--text-title-3);
     animation: m3-enter var(--duration-medium2) var(--easing-emphasized-decelerate);
   }
   .status-pill.done { padding-left: 24px; }
   .ring { width: 22px; height: 22px; border-radius: 50%; border: 3px solid color-mix(in srgb, var(--primary) 25%, transparent); border-top-color: var(--primary); animation: spin .9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .smart { margin: -6px 0 12px; }
-  .sem { display: flex; align-items: center; gap: 6px; font-size: 14px; }
-  .help table { border-collapse: collapse; width: 100%; max-width: 760px; font-size: 14px; }
+  .sem { display: flex; align-items: center; gap: 6px; font-size: var(--text-body); }
+  .help table { border-collapse: collapse; width: 100%; max-width: 760px; font-size: var(--text-body); }
   .help td { padding: 8px 10px; border-bottom: 1px solid var(--outline-variant); vertical-align: top; }
   .help td:first-child { white-space: nowrap; }
-  code { background: var(--surface-container); padding: 2px 6px; border-radius: var(--corner-small); font-size: 14px; }
+  code { background: var(--surface-container); padding: 2px 6px; border-radius: var(--corner-small); font-size: var(--text-body); }
   .center { text-align: center; margin: 20px; }
   @media (max-width: 760px) { .help td:first-child { white-space: normal; } }
 </style>

@@ -30,10 +30,10 @@
   .card img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s; }
   .card:hover img { transform: scale(1.05); }
   .label {
-    position: absolute; inset: auto 0 0 0; padding: 30px 10px 10px; color: #fff; text-align: left;
-    background: linear-gradient(transparent, rgba(0,0,0,.7)); display: flex; flex-direction: column;
+    position: absolute; inset: auto 0 0 0; padding: 30px 10px 10px; color: var(--media-fg); text-align: left;
+    background: linear-gradient(transparent, var(--media-scrim-strong)); display: flex; flex-direction: column;
   }
-  .label b { font-size: 16px; }
-  .label small { opacity: .85; font-size: 12px; }
+  .label b { font-size: var(--text-title-3); }
+  .label small { opacity: .85; font-size: var(--text-callout); }
   @media (max-width: 760px) { .card { width: 112px; height: 160px; } .memories { padding: 10px 6px 0; } }
 </style>

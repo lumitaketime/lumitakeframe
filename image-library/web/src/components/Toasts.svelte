@@ -35,13 +35,13 @@
     pointer-events: auto; display: flex; align-items: center; gap: 12px; min-height: 48px; max-width: 100%;
     padding: 6px 8px 6px 16px; border-radius: var(--corner-extra-small);
     background: var(--inverse-surface); color: var(--inverse-on-surface); box-shadow: var(--elevation-level3);
-    font-size: 14px; line-height: 20px; letter-spacing: 0.25px;
+    font-size: var(--text-body); line-height: 20px;
   }
   .msg { padding: 8px 0; word-break: break-word; flex: 1; }
   .lead { display: flex; color: var(--inverse-primary); }
-  .toast.error .lead { color: #ffb4ab; }
+  .toast.error .lead { color: var(--system-red); }
   .act {
-    border: 0; background: none; color: var(--inverse-primary); font-weight: 500; letter-spacing: 0.1px;
+    border: 0; background: none; color: var(--inverse-primary); font-weight: 500;
     padding: 10px 12px; border-radius: var(--corner-full); cursor: pointer; white-space: nowrap;
   }
   .act:hover { background: color-mix(in srgb, var(--inverse-primary) 8%, transparent); }

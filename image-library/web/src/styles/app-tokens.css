@@ -1,0 +1,97 @@
+/*
+ * Re'memor 自己的語意變數：全部由設計系統的 token 組合而來。
+ * 設計系統沒有的值只允許寫在這個檔案（品牌色來自標誌設計稿；看照片與影片的黑底）。
+ * 其他元件一律用 token 或這裡的變數，不寫色碼、字級、圓角數值（scripts/check-tokens.mjs 會檢查）。
+ */
+:root {
+  /* ---- 品牌（Re'memor 標誌設計稿）：只用在文字標誌與啟動畫面 ---- */
+  --brand-blue: #2a6fc0;
+  --brand-navy: #0b2346;
+  --brand-orange: #ff8d28;
+  --brand-ink: var(--brand-navy);
+
+  /* ---- 看照片與影片：永遠是黑底白字，不跟著淺色／深色切換 ---- */
+  --media-bg: #000000;
+  --media-fg: var(--on-media);
+  --media-fg-dim: color-mix(in srgb, var(--on-media) 70%, transparent);
+  --media-scrim: color-mix(in srgb, var(--media-bg) 55%, transparent); /* 照片上的文字底、按鈕底 */
+  --media-scrim-light: color-mix(in srgb, var(--media-bg) 35%, transparent);
+  --media-scrim-strong: color-mix(in srgb, var(--media-bg) 75%, transparent);
+  --media-line: color-mix(in srgb, var(--on-media) 45%, transparent);
+  --media-fill: color-mix(in srgb, var(--on-media) 16%, transparent);
+
+  /* ---- 不透明的層次底色（卡片、佔位格）：由 control-bg 混入文字色，四個主題都成立 ---- */
+  --layer-1: var(--elevated-secondary);
+  --layer-2: color-mix(in srgb, var(--label-primary) 8%, var(--control-bg));
+  --layer-3: color-mix(in srgb, var(--label-primary) 11%, var(--control-bg));
+  --layer-4: color-mix(in srgb, var(--label-primary) 14%, var(--control-bg));
+
+  /* ---- 檔案類型色（手冊「檔案類型色」）：佔比圖、容量條、類型圖示 ---- */
+  --kind-video: var(--system-indigo);
+  --kind-photo: var(--system-mint);
+  --kind-raw: var(--system-teal);
+  --kind-document: var(--system-blue);
+  --kind-audio: var(--system-pink);
+  --kind-archive: var(--system-brown);
+  --kind-other: var(--gray-1);
+  --kind-folder: var(--system-yellow);
+  --kind-duplicate: var(--system-orange);
+  --favorite: var(--system-pink);
+
+  /* ---- 字級：滑鼠與觸控板用 macOS 字級，觸控螢幕用 iOS 字級 ---- */
+  --text-large-title: var(--mac-large-title-size);
+  --text-title-1: var(--mac-title-1-size);
+  --text-title-2: var(--mac-title-2-size);
+  --text-title-3: var(--mac-title-3-size);
+  --text-body: var(--mac-body-size);
+  --text-callout: var(--mac-callout-size);
+  --text-sub: var(--mac-subheadline-size);
+  --text-caption: var(--mac-caption-1-size);
+  --line-body: var(--mac-body-line);
+  --line-callout: var(--mac-callout-line);
+  --line-title-1: var(--mac-title-1-line);
+  --line-title-3: var(--mac-title-3-line);
+
+  /* ---- 控制項與命中範圍 ---- */
+  --ctl-h: var(--control-regular); /* 按鈕、輸入框高度 */
+  --ctl-h-small: var(--control-small);
+  --hit: calc(var(--target-mac) + var(--space-1)); /* 圖示按鈕 */
+  --row-h: var(--target-mac);
+
+  /* ---- 版面 ---- */
+  --sidebar: 240px;
+  --topbar: 52px;
+
+  /* ---- 動態：短、收斂；「減少動態效果」在 app.css 統一處理 ---- */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --spring: cubic-bezier(0.2, 0.9, 0.3, 1.1);
+  --dur-fast: 160ms;
+  --dur: 220ms;
+  --dur-slow: 350ms;
+}
+@media (prefers-color-scheme: dark) { :root { --brand-ink: var(--on-media); } }
+[data-theme="dark"], [data-theme="dark-hc"] { --brand-ink: var(--on-media); }
+[data-theme="light"], [data-theme="light-hc"] { --brand-ink: var(--brand-navy); }
+
+@media (pointer: coarse) {
+  :root {
+    --text-large-title: var(--ios-large-title-size);
+    --text-title-1: var(--ios-title-1-size);
+    --text-title-2: var(--ios-title-2-size);
+    --text-title-3: var(--ios-title-3-size);
+    --text-body: var(--ios-body-size);
+    --text-callout: var(--ios-callout-size);
+    --text-sub: var(--ios-subheadline-size);
+    --text-caption: var(--ios-caption-1-size);
+    --line-body: var(--ios-body-line);
+    --line-callout: var(--ios-callout-line);
+    --line-title-1: var(--ios-title-1-line);
+    --line-title-3: var(--ios-title-3-line);
+    --ctl-h: var(--control-large);
+    --ctl-h-small: var(--control-regular);
+    --hit: var(--target-ios);
+    --row-h: var(--target-ios);
+    --topbar: 56px;
+  }
+}

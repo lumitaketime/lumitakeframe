@@ -111,21 +111,21 @@
 </div>
 
 <style>
-  .show { position: fixed; inset: 0; z-index: 70; background: #000; }
+  .show { position: fixed; inset: 0; z-index: 70; background: var(--media-bg); }
   .show.cursorless { cursor: none; }
   img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .9s ease; }
   img.on { opacity: 1; }
-  .none { color: #fff; text-align: center; margin-top: 40vh; }
+  .none { color: var(--media-fg); text-align: center; margin-top: 40vh; }
   .controls {
     position: absolute; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%);
-    display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,.6); color: #fff; border-radius: var(--corner-full); padding: 6px 12px;
+    display: flex; align-items: center; gap: 6px; background: var(--media-scrim); color: var(--media-fg); border-radius: var(--corner-full); padding: 6px 12px;
     transition: opacity .3s;
   }
   .controls.hidden { opacity: 0; pointer-events: none; }
-  .controls button { border: 0; background: none; color: #fff; display: flex; padding: 6px; border-radius: 50%; cursor: pointer; }
-  .controls button:hover { background: rgba(255,255,255,.15); }
-  .controls select { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: var(--corner-full); padding: 3px 8px; font-size: 14px; }
-  .controls select option { color: #000; }
-  .count { font-size: 14px; min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; opacity: .8; }
+  .controls button { border: 0; background: none; color: var(--media-fg); display: flex; padding: 6px; border-radius: 50%; cursor: pointer; }
+  .controls button:hover { background: var(--media-fill); }
+  .controls select { background: transparent; color: var(--media-fg); border: 1px solid var(--media-line); border-radius: var(--corner-full); padding: 3px 8px; font-size: var(--text-body); }
+  .controls select option { color: var(--media-bg); }
+  .count { font-size: var(--text-body); min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; opacity: .8; }
   @media (prefers-reduced-motion: reduce) { img { transition: none; } }
 </style>

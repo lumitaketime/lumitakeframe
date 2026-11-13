@@ -1,71 +1,36 @@
 /*
- * Re'memor — Material Design 3 介面
- * 色彩、字級、形狀、狀態層與動態都來自設計系統的 tokens（m3-tokens.css）。
- * 舊的變數名稱（--bg、--primary…）對應到 M3 色彩角色，讓所有頁面一起換上新設計。
+ * Re'memor 介面的全域樣式。
+ * 顏色、字級、間距、圓角、陰影全部來自 Liquid Glass 設計系統的 token（styles/tokens.css），
+ * 這裡不寫色碼與數值；設計系統沒有的值集中在 styles/app-tokens.css。
  */
-@import "@fontsource/roboto/latin-400.css";
-@import "@fontsource/roboto/latin-500.css";
-@import "@fontsource/roboto/latin-700.css";
 @import "@fontsource/manrope/latin-700.css"; /* 只用在文字標誌 */
-@import "./m3-tokens.css";
-
-:root {
-  /* 舊名稱 → M3 色彩角色 */
-  --bg: var(--surface);
-  --bg-2: var(--surface-container);
-  --bg-3: var(--surface-container-highest);
-  --panel: var(--surface-container-low);
-  --text: var(--on-surface);
-  --muted: var(--on-surface-variant);
-  --line: var(--outline-variant);
-  --primary-soft: var(--secondary-container);
-  --on-primary-soft: var(--on-secondary-container);
-  --danger: var(--error);
-  --fav: #e53950;
-  --overlay: rgb(0 0 0 / 0.32);
-  /* 不用陰影：層次靠 M3 的色調（surface-container 各階）與細邊框表現 */
-  --shadow: none;
-  --elevation-level1: none;
-  --elevation-level2: none;
-  --elevation-level3: none;
-  --elevation-level4: none;
-  --elevation-level5: none;
-  --radius: var(--corner-medium);
-  --sidebar: 256px;
-  --topbar: 64px;
-  --font: Roboto, "PingFang TC", "Noto Sans TC", "Heiti TC", system-ui, sans-serif;
-  /* Re'memor 品牌色：海藍、藏青、記憶橘；文字標誌在淺色背景用藏青 */
-  --brand-blue: #2a6fc0;
-  --brand-navy: #0b2346;
-  --brand-orange: #ff8d28;
-  --brand-ink: var(--brand-navy);
-}
-/* 深色外觀：文字標誌改用白色 */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --brand-ink: #ffffff; }
-}
-:root[data-theme="dark"] { --brand-ink: #ffffff; }
+@import "./styles/tokens.css";
+@import "./styles/bundle.css";
+@import "./styles/app-tokens.css";
+@import "./styles/bridge.css";
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
-  background: var(--surface);
-  color: var(--on-surface);
-  font: 400 14px/20px var(--font);
-  letter-spacing: 0.25px;
+  background: var(--window-bg);
+  color: var(--label-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
 }
 button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
-a { color: var(--primary); }
+a { color: var(--label-link); }
 img { -webkit-user-drag: none; }
-::selection { background: var(--secondary-container); color: var(--on-secondary-container); }
+::selection { background: var(--selection-muted); }
 
-/* ---- 鍵盤焦點：3px secondary、外推 2px，永遠可見 ---- */
-:focus-visible { outline: 3px solid var(--secondary); outline-offset: 2px; }
+/* ---- 鍵盤焦點：設計系統的 focus-ring（3px 實色），只在用鍵盤時顯示 ---- */
+:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 :focus:not(:focus-visible) { outline: none; }
 
-/* ---- 狀態層（hover 8%、focus 10%、pressed 10%）與漣漪 ---- */
+/* ---- 滑過與按下的回饋：一層很淡的文字色 ---- */
 .btn, .icon-btn, .chip, .m3-state, .sidebar a, .bottom a, .cats a, .tabs a, .seg button, .pill,
 .cover-card .cover, .feature, .style, .pick, .group {
   position: relative; isolation: isolate;
@@ -76,266 +41,223 @@ img { -webkit-user-drag: none; }
 .tabs a::before, .seg button::before, .pill::before, .cover-card .cover::before, .feature::before, .style::before, .pick::before {
   content: ""; position: absolute; inset: 0; background: currentColor; opacity: 0; pointer-events: none; z-index: 1;
   border-radius: inherit;
-  transition: opacity var(--spring-effects-fast-duration) var(--spring-effects-fast);
+  transition: opacity var(--dur-fast) var(--ease);
 }
 :is(.btn, .icon-btn, .chip, .m3-state, .sidebar a, .cats a, .tabs a, .seg button, .pill, .cover-card .cover, .feature, .style, .pick):hover::before { opacity: var(--state-hover); }
-:is(.btn, .icon-btn, .chip, .m3-state, .sidebar a, .cats a, .tabs a, .seg button, .pill, .cover-card .cover, .feature, .style, .pick):focus-visible::before { opacity: var(--state-focus); }
 :is(.btn, .icon-btn, .chip, .m3-state, .sidebar a, .cats a, .tabs a, .seg button, .pill, .cover-card .cover, .feature, .style, .pick):active::before { opacity: var(--state-pressed); }
 :is(.btn, .icon-btn, .chip, .pill):disabled::before { opacity: 0; }
 
-.m3-ripple {
-  position: absolute; border-radius: 50%; pointer-events: none; z-index: 1;
-  background: currentColor; opacity: 0.16; transform: scale(0);
-  animation: m3-ripple var(--duration-long1) var(--easing-standard) forwards;
-}
-.m3-ripple.out { animation: m3-ripple var(--duration-long1) var(--easing-standard) forwards, m3-ripple-out var(--duration-short4) linear forwards; }
-@keyframes m3-ripple { to { transform: scale(1); } }
-@keyframes m3-ripple-out { to { opacity: 0; } }
-
-/* ---- 按鈕：Filled／Tonal（.soft）／Outlined（.ghost）／Text（.text）。按下時形狀縮成 corner-small 再彈回 ---- */
+/* ---- 按鈕：主要（.btn）、一般（.soft／.ghost）、文字（.text）、破壞性（.danger） ---- */
 .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  height: 40px; padding: 0 24px; border: 0; border-radius: var(--corner-full); cursor: pointer;
-  background: var(--primary); color: var(--on-primary);
-  font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0.1px; white-space: nowrap;
-  transition:
-    border-radius var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial),
-    background-color var(--spring-effects-default-duration) var(--spring-effects-default),
-    box-shadow var(--spring-effects-default-duration) var(--spring-effects-default);
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1);
+  height: var(--ctl-h); padding: 0 var(--space-3); border: 0; border-radius: var(--radius-capsule); cursor: pointer;
+  background: var(--accent); color: var(--on-accent);
+  font-size: var(--text-body); line-height: 1; font-weight: 600; white-space: nowrap; flex-shrink: 0;
+  transition: filter var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
-.btn:active:not(:disabled), .chip:active, .pill:active { border-radius: var(--corner-small); }
-.btn:disabled {
-  cursor: default; box-shadow: none;
-  background: color-mix(in srgb, var(--on-surface) 12%, transparent);
-  color: color-mix(in srgb, var(--on-surface) 38%, transparent);
+.btn:disabled { cursor: default; opacity: var(--opacity-disabled); }
+.btn.soft, .btn.ghost {
+  background: var(--control-bg); color: var(--label-primary); font-weight: 500;
+  box-shadow: 0 0 0 1px var(--control-stroke), 0 1px 1px var(--control-stroke);
 }
-.btn.soft { background: var(--secondary-container); color: var(--on-secondary-container); }
-.btn.ghost {
-  background: transparent; color: var(--primary); border: 1px solid var(--outline); box-shadow: none;
-}
-.btn.ghost:disabled { background: transparent; border-color: color-mix(in srgb, var(--on-surface) 12%, transparent); }
-.btn.text { background: transparent; color: var(--primary); padding: 0 12px; box-shadow: none; }
-.btn.danger { background: var(--error); color: var(--on-error); }
-.btn.ghost.danger-text, .btn.text.danger-text { color: var(--error); }
-.btn.small { height: 32px; padding: 0 16px; font-size: 14px; gap: 6px; }
+.btn.text { background: transparent; color: var(--accent); padding: 0 var(--space-2); font-weight: 500; box-shadow: none; }
+.btn.danger { background: var(--destructive); color: var(--on-destructive); }
+.btn.ghost.danger-text, .btn.text.danger-text, .btn.soft.danger-text { color: var(--destructive); }
+.btn.small { height: var(--ctl-h-small); padding: 0 var(--space-3); font-size: var(--text-callout); }
+.btn:focus-visible { box-shadow: var(--focus-ring); }
 
 /* ---- 圖示按鈕 ---- */
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 40px; height: 40px; border-radius: var(--corner-full); border: 0; cursor: pointer;
+  width: var(--hit); height: var(--hit); border-radius: var(--radius-capsule); border: 0; cursor: pointer;
   background: transparent; color: inherit; flex-shrink: 0;
-  transition: background-color var(--spring-effects-fast-duration) var(--spring-effects-fast),
-    color var(--spring-effects-fast-duration) var(--spring-effects-fast);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-.icon-btn:disabled { color: color-mix(in srgb, currentColor 38%, transparent); cursor: default; }
-.icon-btn.active { color: var(--on-secondary-container); background: var(--secondary-container); }
+.icon-btn:disabled { opacity: var(--opacity-disabled); cursor: default; }
+.icon-btn.active { background: var(--selection-muted); }
 .icon-btn svg { position: relative; z-index: 2; }
 
-/* ---- 輸入框（Outlined text field） ---- */
+/* ---- 輸入框 ---- */
 .input {
-  width: 100%; min-height: 48px; border: 1px solid var(--outline); background: transparent; border-radius: var(--corner-extra-small);
-  padding: 12px 16px; outline: none; color: var(--on-surface); font-size: 16px; line-height: 24px; letter-spacing: 0.5px;
-  transition: border-color var(--spring-effects-fast-duration) var(--spring-effects-fast),
-    box-shadow var(--spring-effects-fast-duration) var(--spring-effects-fast);
+  width: 100%; min-height: var(--ctl-h); border: 0; background: var(--control-bg); border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2); outline: none; color: var(--label-primary); font-size: var(--text-body); line-height: var(--line-body);
+  box-shadow: 0 0 0 1px var(--control-stroke);
+  transition: box-shadow var(--dur-fast) var(--ease);
 }
-.input:hover { border-color: var(--on-surface); }
-.input:focus { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
-.input::placeholder { color: var(--on-surface-variant); }
-select.input { padding-right: 40px; cursor: pointer; }
+.input:focus { box-shadow: var(--focus-ring); }
+.input::placeholder { color: var(--label-placeholder); }
+select.input { padding-right: var(--space-8); cursor: pointer; }
 
-/* 下拉選單：一律用平面的 M3 樣式（不要 macOS 原生的立體按鈕），右邊畫一個小三角 */
+/* 下拉選單：彈出式按鈕的樣子，右邊一個小三角 */
 select {
   appearance: none; -webkit-appearance: none; cursor: pointer;
-  background-color: transparent;
+  background-color: var(--control-bg);
   background-image:
-    linear-gradient(45deg, transparent 50%, var(--on-surface-variant) 50%),
-    linear-gradient(135deg, var(--on-surface-variant) 50%, transparent 50%);
-  background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%;
+    linear-gradient(45deg, transparent 50%, var(--label-secondary) 50%),
+    linear-gradient(135deg, var(--label-secondary) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
   background-size: 5px 5px, 5px 5px;
   background-repeat: no-repeat;
 }
 select:not(.input) {
-  border: 1px solid var(--outline); border-radius: var(--corner-extra-small); color: var(--on-surface);
-  min-height: 40px; padding: 0 36px 0 12px; font-size: 14px;
+  border: 0; border-radius: var(--radius-sm); color: var(--label-primary);
+  box-shadow: 0 0 0 1px var(--control-stroke), 0 1px 1px var(--control-stroke);
+  min-height: var(--ctl-h); padding: 0 var(--space-6) 0 var(--space-2); font-size: var(--text-body);
 }
-select:not(.input):hover { border-color: var(--on-surface); }
-select:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-select option { background: var(--surface-container-high); color: var(--on-surface); }
+select:focus-visible { box-shadow: var(--focus-ring); }
+select option { background: var(--elevated-primary); color: var(--label-primary); }
 textarea.input { min-height: 0; }
 
-/* ---- 開關（設定頁的勾選項目一律用 M3 Switch） ---- */
+/* ---- 開關 ---- */
 .toggle input[type="checkbox"], input[type="checkbox"].switch {
   appearance: none; -webkit-appearance: none; margin: 0; flex-shrink: 0; cursor: pointer;
-  width: 52px; height: 32px; border-radius: var(--corner-full);
-  background: var(--surface-container-highest); border: 2px solid var(--outline); position: relative;
-  transition: background-color var(--spring-effects-default-duration) var(--spring-effects-default),
-    border-color var(--spring-effects-default-duration) var(--spring-effects-default);
+  --w: 38px; --hgt: 22px; --k: 20px;
+  width: var(--w); height: var(--hgt); border-radius: var(--radius-capsule);
+  background: var(--fill-primary); box-shadow: inset 0 0 0 1px var(--hc-stroke); border: 0; position: relative;
+  transition: background-color var(--dur) var(--ease);
 }
 .toggle input[type="checkbox"]::after, input[type="checkbox"].switch::after {
-  content: ""; position: absolute; top: 50%; left: 6px; width: 16px; height: 16px; border-radius: 50%;
-  background: var(--outline); transform: translateY(-50%);
-  transition: left var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial),
-    width var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial),
-    height var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial),
-    background-color var(--spring-effects-fast-duration) var(--spring-effects-fast);
+  content: ""; position: absolute; top: 50%; left: calc((var(--hgt) - var(--k)) / 2); width: var(--k); height: var(--k); border-radius: var(--radius-capsule);
+  background: var(--knob); box-shadow: var(--shadow-knob); transform: translateY(-50%);
+  transition: left var(--dur) var(--spring), width var(--dur-fast) var(--ease);
 }
-.toggle input[type="checkbox"]:checked, input[type="checkbox"].switch:checked { background: var(--primary); border-color: var(--primary); }
-.toggle input[type="checkbox"]:checked::after, input[type="checkbox"].switch:checked::after {
-  left: 22px; width: 24px; height: 24px; background: var(--on-primary);
+.toggle input[type="checkbox"]:checked, input[type="checkbox"].switch:checked { background: var(--toggle-on); }
+.toggle input[type="checkbox"]:checked::after, input[type="checkbox"].switch:checked::after { left: calc(var(--w) - var(--k) - (var(--hgt) - var(--k)) / 2); }
+.toggle input[type="checkbox"]:disabled, input[type="checkbox"].switch:disabled { opacity: var(--opacity-disabled); cursor: default; }
+@media (pointer: coarse) {
+  .toggle input[type="checkbox"], input[type="checkbox"].switch { --w: 51px; --hgt: 31px; --k: 27px; }
 }
-.toggle input[type="checkbox"]:active::after, input[type="checkbox"].switch:active::after { width: 28px; height: 28px; }
-.toggle input[type="checkbox"]:disabled, input[type="checkbox"].switch:disabled { opacity: 0.38; cursor: default; }
 
 /* 一般核取方塊與單選鈕 */
-input[type="checkbox"]:not(.switch), input[type="radio"] { accent-color: var(--primary); width: 18px; height: 18px; }
-.toggle input[type="checkbox"] { width: 52px; height: 32px; }
-/* 滑桿：M3 樣式。已選的部分用主色，其餘用淡色；--pct 由 main.js 依目前數值更新 */
+input[type="checkbox"]:not(.switch), input[type="radio"] { accent-color: var(--accent); width: 14px; height: 14px; }
+.toggle input[type="checkbox"] { width: var(--w); height: var(--hgt); }
+
+/* 滑桿：已選的部分用強調色；--pct 由 lib/range.js 依目前數值更新 */
 input[type="range"] {
-  -webkit-appearance: none; appearance: none; background: transparent; height: 32px; margin: 0; cursor: pointer; width: 100%;
-  --pct: 50%;
+  -webkit-appearance: none; appearance: none; background: transparent; height: var(--target-mac); margin: 0; cursor: pointer; width: 100%;
+  --pct: 50%; --lg-track: 4px; --lg-thumb: 20px;
 }
 input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px; border-radius: 2px;
-  background: linear-gradient(to right, var(--primary) var(--pct), var(--secondary-container) var(--pct));
+  height: var(--lg-track); border-radius: var(--radius-capsule); box-shadow: inset 0 0 0 1px var(--hc-stroke);
+  background: linear-gradient(to right, var(--accent) var(--pct), var(--fill-primary) var(--pct));
 }
-input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--secondary-container); }
-input[type="range"]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--primary); }
+input[type="range"]::-moz-range-track { height: var(--lg-track); border-radius: var(--radius-capsule); background: var(--fill-primary); }
+input[type="range"]::-moz-range-progress { height: var(--lg-track); border-radius: var(--radius-capsule); background: var(--accent); }
 input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--primary); border: 0;
-  margin-top: -8px; transition: box-shadow var(--spring-effects-fast-duration) var(--spring-effects-fast);
+  -webkit-appearance: none; width: var(--lg-thumb); height: var(--lg-thumb); border-radius: var(--radius-capsule); background: var(--knob); border: 0;
+  box-shadow: var(--shadow-knob); margin-top: calc((var(--lg-track) - var(--lg-thumb)) / 2);
 }
-input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--primary); border: 0; }
-/* 滑過與拖曳時的狀態圈（M3 state layer，不是陰影） */
-input[type="range"]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 10px color-mix(in srgb, var(--primary) 8%, transparent); }
-input[type="range"]:active::-webkit-slider-thumb, input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 10px color-mix(in srgb, var(--primary) 12%, transparent); }
-input[type="range"]:focus { outline: none; }
-input[type="range"]:disabled { opacity: .38; cursor: default; }
+input[type="range"]::-moz-range-thumb { width: var(--lg-thumb); height: var(--lg-thumb); border-radius: var(--radius-capsule); background: var(--knob); border: 0; box-shadow: var(--shadow-knob); }
+input[type="range"]:focus { outline: none; box-shadow: none; }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--focus-ring); }
+input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: var(--focus-ring); }
+input[type="range"]:disabled { opacity: var(--opacity-disabled); cursor: default; }
 
-/* 捲軸：細、圓角、沒有底條，平常淡淡的只是暗示這裡可以捲，滑到區塊上才稍微明顯。
+/* 捲軸：細、圓角、沒有底條。
    新版 Safari／Chrome 一旦設定 scrollbar-width／scrollbar-color 就會改畫系統捲軸（Mac 接滑鼠時有一條白底），
    所以標準屬性只給不支援 ::-webkit-scrollbar 的瀏覽器（Firefox）。 */
 @supports not selector(::-webkit-scrollbar) {
-  * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--on-surface) 18%, transparent) transparent; }
+  * { scrollbar-width: thin; scrollbar-color: var(--fill-primary) transparent; }
 }
 ::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner, ::-webkit-scrollbar-track-piece { background: transparent; border: 0; box-shadow: none; }
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--on-surface) 12%, transparent); border-radius: 999px;
+  background: var(--fill-secondary); border-radius: var(--radius-capsule);
   border: 3px solid transparent; background-clip: padding-box; min-height: 40px;
-  transition: background-color var(--duration-short4, .2s);
 }
-:hover::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--on-surface) 24%, transparent); }
-::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active {
-  background-color: color-mix(in srgb, var(--on-surface) 40%, transparent); border-width: 2px;
-}
+:hover::-webkit-scrollbar-thumb { background-color: var(--fill-primary); }
+::-webkit-scrollbar-thumb:hover, ::-webkit-scrollbar-thumb:active { background-color: var(--gray-1); border-width: 2px; }
 ::-webkit-scrollbar-button { display: none; }
 
 /* ---- 文字 ---- */
-.muted { color: var(--on-surface-variant); }
-.small { font-size: 14px; line-height: 20px; }
-.tiny { font-size: 12px; line-height: 16px; letter-spacing: 0.4px; }
-.danger-text { color: var(--error); }
+.muted { color: var(--label-secondary); }
+.small { font-size: var(--text-callout); line-height: var(--line-callout); }
+.tiny { font-size: var(--text-sub); line-height: var(--line-callout); }
+.danger-text { color: var(--destructive); }
 
-.page { padding: 8px 24px 80px; }
-.page-head { display: flex; align-items: center; gap: 12px; min-height: 64px; flex-wrap: wrap; }
-.page-head h1 { font-size: 24px; line-height: 32px; font-weight: 400; margin: 0; flex: 1; min-width: 0; }
-.section-title { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: 0.15px; margin: 24px 0 12px; }
+.page { padding: var(--space-2) var(--space-5) 80px; }
+.page-head { display: flex; align-items: center; gap: var(--space-3); min-height: 52px; flex-wrap: wrap; }
+.page-head h1 { font-size: var(--text-large-title); line-height: 1.25; font-weight: 700; margin: 0; flex: 1; min-width: 0; }
+.section-title { font-size: var(--text-title-3); line-height: var(--line-title-3); font-weight: 600; margin: var(--space-6) 0 var(--space-3); }
 
-/* ---- Chip（Filter chip：未選外框、選取時 secondary-container 加勾） ---- */
+/* ---- 標籤（篩選、關鍵字）：未選是淡底，選取時用強調色並加勾 ---- */
 .chip {
-  display: inline-flex; align-items: center; gap: 8px; cursor: pointer; height: 32px; padding: 0 16px;
-  border: 1px solid var(--outline-variant); background: transparent; color: var(--on-surface-variant);
-  border-radius: var(--corner-small); font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0.1px;
-  transition: background-color var(--spring-effects-default-duration) var(--spring-effects-default),
-    border-color var(--spring-effects-default-duration) var(--spring-effects-default),
-    border-radius var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial),
-    padding var(--spring-standard-fast-spatial-duration) var(--spring-standard-fast-spatial);
+  display: inline-flex; align-items: center; gap: var(--space-1); cursor: pointer; height: var(--ctl-h-small); padding: 0 var(--space-3);
+  border: 0; background: var(--fill-tertiary); color: var(--label-primary); box-shadow: inset 0 0 0 1px var(--hc-stroke);
+  border-radius: var(--radius-capsule); font-size: var(--text-callout); line-height: 1; font-weight: 500; white-space: nowrap;
+  transition: background-color var(--dur) var(--ease);
 }
-.chip.on {
-  background: var(--secondary-container); color: var(--on-secondary-container); border-color: transparent; font-weight: 500;
-  padding-left: 10px;
-}
+.chip.on { background: var(--accent); color: var(--on-accent); }
 .chip.on::after {
-  content: ""; width: 14px; height: 14px; order: -1; flex-shrink: 0; background: currentColor;
+  content: ""; width: 12px; height: 12px; order: -1; flex-shrink: 0; background: currentColor;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z'/%3E%3C/svg%3E") center / contain no-repeat;
           mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z'/%3E%3C/svg%3E") center / contain no-repeat;
-  animation: m3-pop var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
 }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 @keyframes m3-pop { from { transform: scale(0); } }
 
-/* ---- 卡片（Filled card） ---- */
-.card { background: var(--surface-container-low); border-radius: var(--corner-large); padding: 20px 24px; margin-bottom: 16px; }
-.card h2 { font-size: 22px; line-height: 28px; font-weight: 400; margin: 0 0 8px; }
+/* ---- 卡片（設定的群組）：不透明、不加陰影 ---- */
+.card { background: var(--layer-1); border-radius: var(--radius-lg); padding: var(--space-4) var(--space-5); margin-bottom: var(--space-4); }
+.card h2 { font-size: var(--text-title-2); line-height: 1.3; font-weight: 700; margin: 0 0 var(--space-2); }
 
-/* ---- 卡片、封面 ---- */
-.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 24px 16px; }
+/* ---- 封面卡片 ---- */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: var(--space-6) var(--space-4); }
 .cover-card { border: 0; background: none; padding: 0; text-align: left; cursor: pointer; color: inherit; min-width: 0; }
 .cover-card .cover {
-  aspect-ratio: 1; border-radius: var(--corner-large); overflow: hidden; background: var(--surface-container);
-  display: flex; align-items: center; justify-content: center; color: var(--on-surface-variant);
-  transition: border-radius var(--spring-expressive-default-spatial-duration) var(--spring-expressive-default-spatial);
+  aspect-ratio: 1; border-radius: var(--radius-md); overflow: hidden; background: var(--layer-2);
+  display: flex; align-items: center; justify-content: center; color: var(--label-secondary);
 }
-.cover-card .cover img { width: 100%; height: 100%; object-fit: cover; transition: transform var(--spring-standard-slow-spatial-duration) var(--spring-standard-slow-spatial); }
-.cover-card:hover .cover { border-radius: var(--corner-extra-large); }
-.cover-card:hover .cover img { transform: scale(1.04); }
-.cover-card .name { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: 0.15px; margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cover-card .sub { font-size: 14px; line-height: 20px; color: var(--on-surface-variant); }
+.cover-card .cover img { width: 100%; height: 100%; object-fit: cover; }
+.cover-card .name { font-size: var(--text-body); line-height: var(--line-body); font-weight: 600; margin-top: var(--space-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cover-card .sub { font-size: var(--text-callout); line-height: var(--line-callout); color: var(--label-secondary); }
 
 /* ---- 空狀態、載入 ---- */
-.empty { text-align: center; padding: 80px 20px; color: var(--on-surface-variant); animation: m3-enter var(--duration-medium4) var(--easing-emphasized-decelerate); }
-.empty h2 { color: var(--on-surface); font-weight: 400; font-size: 24px; line-height: 32px; }
+.empty { text-align: center; padding: 80px var(--space-5); color: var(--label-secondary); animation: m3-fade var(--dur-slow) var(--ease-out); }
+.empty h2 { color: var(--label-primary); font-weight: 700; font-size: var(--text-title-1); line-height: var(--line-title-1); }
 
 .spinner {
-  width: 18px; height: 18px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent;
+  width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent;
   animation: spin .8s linear infinite; display: inline-block; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-/* 骨架的「一閃一閃」：亮→暗→亮，搭配不同的延遲就成了由上往下的波浪 */
+/* 佔位格的「一閃一閃」：亮→暗→亮，搭配不同的延遲就成了由上往下的波浪 */
 @keyframes m3-skel-wave { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 
-/* ---- 進場動畫：清單、卡片依序由下往上淡入（間隔 30ms） ---- */
-@keyframes m3-enter { from { opacity: 0; transform: translateY(12px); } }
-.m3-stagger > * { animation: m3-enter var(--duration-medium4) var(--easing-emphasized-decelerate) both; }
+/* ---- 進場：清單、卡片依序淡入 ---- */
+@keyframes m3-enter { from { opacity: 0; transform: translateY(8px); } }
+.m3-stagger > * { animation: m3-enter var(--dur-slow) var(--ease-out) both; }
 .m3-stagger > :nth-child(2) { animation-delay: 30ms; }
 .m3-stagger > :nth-child(3) { animation-delay: 60ms; }
 .m3-stagger > :nth-child(4) { animation-delay: 90ms; }
 .m3-stagger > :nth-child(5) { animation-delay: 120ms; }
-.m3-stagger > :nth-child(6) { animation-delay: 150ms; }
-.m3-stagger > :nth-child(7) { animation-delay: 180ms; }
-.m3-stagger > :nth-child(8) { animation-delay: 210ms; }
-.m3-stagger > :nth-child(9) { animation-delay: 240ms; }
-.m3-stagger > :nth-child(n + 10) { animation-delay: 270ms; }
+.m3-stagger > :nth-child(n + 6) { animation-delay: 150ms; }
 
 .scroll-area { overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
 
 @media (max-width: 760px) {
-  .page { padding: 4px 16px 96px; }
-  .card-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px 12px; }
+  .page { padding: var(--space-1) var(--space-4) 96px; }
+  .card-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--space-4) var(--space-3); }
 }
 
-/* ---- 減少動態效果：移除位移、回彈與漣漪，只保留短暫淡入淡出 ---- */
+/* ---- 減少動態效果：取消位移與縮放，只留極短的淡入淡出 ---- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 1ms !important; animation-iteration-count: 1 !important;
     transition-duration: 1ms !important; scroll-behavior: auto !important;
   }
-  .spinner { animation-duration: .8s !important; animation-iteration-count: infinite !important; }
-  .m3-ripple { display: none; }
+  .spinner, .lg-spinner i { animation-duration: .8s !important; animation-iteration-count: infinite !important; }
 }
 @keyframes m3-fade { from { opacity: 0; } }
 
 /* ---- 滑動的選取指示（lib/slider.js）：分段按鈕、單選膠囊、分頁底線、側邊欄 ---- */
 .has-slider > .slider-ind {
   position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; opacity: 0; will-change: transform;
-  background: var(--slider-bg, var(--secondary-container)); border-radius: var(--corner-full);
+  background: var(--slider-bg, var(--selection-muted)); border-radius: var(--radius-capsule);
   transition:
-    transform var(--spring-expressive-default-spatial-duration) var(--spring-expressive-default-spatial),
-    width var(--spring-expressive-default-spatial-duration) var(--spring-expressive-default-spatial),
-    height var(--spring-expressive-default-spatial-duration) var(--spring-expressive-default-spatial),
-    opacity var(--duration-short4, 200ms) var(--easing-standard, ease);
+    transform var(--dur-slow) var(--spring), width var(--dur-slow) var(--spring), height var(--dur-slow) var(--spring),
+    opacity var(--dur-fast) var(--ease);
 }
-.has-slider.slider-underline > .slider-ind { background: var(--slider-bg, var(--primary)); border-radius: 3px 3px 0 0; }
+.has-slider.slider-underline > .slider-ind { background: var(--slider-bg, var(--accent)); border-radius: var(--radius-xs) var(--radius-xs) 0 0; }
 .has-slider > :not(.slider-ind) { position: relative; z-index: 1; }
 .has-slider.slider-pill > :is(.on, .active, [aria-selected="true"], [aria-checked="true"], [aria-current="page"]) { background-color: transparent !important; }
 .has-slider.slider-underline > :is(.on, .active, [aria-selected="true"], [aria-current="page"]) { border-bottom-color: transparent !important; }
@@ -343,24 +265,22 @@ input[type="range"]:disabled { opacity: .38; cursor: default; }
 /* ---- 橫向捲動列（lib/hscroll.js） ---- */
 .hs { position: relative; }
 [data-hscroll] {
-  overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: 4px;
+  overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: var(--space-1);
   -webkit-overflow-scrolling: touch;
 }
 [data-hscroll] > * { scroll-snap-align: start; }
 .hs-nav {
-  position: absolute; top: calc(50% - 24px); z-index: 2; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--outline-variant);
+  position: absolute; top: calc(50% - 20px); z-index: 2; width: var(--hit); height: var(--hit); border-radius: 50%; border: 1px solid var(--glass-edge);
   display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
-  background: var(--surface-container-high); color: var(--on-surface);
-  opacity: 0; pointer-events: none; transform: scale(.8);
-  transition: opacity var(--duration-short4, .2s) var(--easing-standard, ease),
-    transform var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
+  background: var(--elevated-primary); color: var(--label-primary); box-shadow: var(--shadow-glass);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease);
 }
-.hs-nav.prev { left: -8px; }
-.hs-nav.next { right: -8px; }
-.hs-nav:hover { background: var(--surface-container-highest); }
+.hs-nav.prev { left: calc(var(--space-2) * -1); }
+.hs-nav.next { right: calc(var(--space-2) * -1); }
 /* 只有用滑鼠（可以 hover）時才顯示；觸控和觸控板直接滑就好 */
 @media (hover: hover) and (pointer: fine) {
-  .hs:hover.can-prev .hs-nav.prev, .hs:hover.can-next .hs-nav.next { opacity: 1; pointer-events: auto; transform: none; }
+  .hs:hover.can-prev .hs-nav.prev, .hs:hover.can-next .hs-nav.next { opacity: 1; pointer-events: auto; }
 }
 
 /* ---- 卡片長按拖曳排序（lib/reorder.js） ---- */
@@ -369,12 +289,12 @@ input[type="range"]:disabled { opacity: .38; cursor: default; }
 body.reordering, body.reordering * { cursor: grabbing !important; user-select: none !important; -webkit-user-select: none !important; }
 /* 卡片上的收藏星號：收藏的一直顯示，其他的滑過才出現 */
 .fav-btn {
-  position: absolute; top: 8px; right: 8px; z-index: 2; width: 36px; height: 36px; border-radius: 50%; border: 0; padding: 0;
+  position: absolute; top: var(--space-2); right: var(--space-2); z-index: 2; width: var(--hit); height: var(--hit); border-radius: 50%; border: 0; padding: 0;
   display: flex; align-items: center; justify-content: center; cursor: pointer;
-  background: color-mix(in srgb, var(--surface-container-high) 88%, transparent); color: var(--on-surface-variant);
-  opacity: 0; transform: scale(.85);
-  transition: opacity var(--duration-short4, .2s), transform var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
+  background: var(--media-scrim-light); color: var(--media-fg);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
 }
-.fav-btn.on { opacity: 1; transform: none; color: var(--primary); }
-.cover-card:hover .fav-btn, .fav-btn:focus-visible { opacity: 1; transform: none; }
-@media (hover: none) { .fav-btn { opacity: 1; transform: none; } }
+.fav-btn.on { opacity: 1; color: var(--system-yellow); }
+.cover-card:hover .fav-btn, .fav-btn:focus-visible { opacity: 1; }
+@media (hover: none) { .fav-btn { opacity: 1; } }

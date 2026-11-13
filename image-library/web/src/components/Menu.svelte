@@ -63,7 +63,7 @@
   @keyframes menu-in { from { opacity: 0; transform: scale(.85, .6); } }
   .menu button {
     display: flex; align-items: center; gap: 12px; width: 100%; height: 48px; padding: 0 16px 0 12px; border: 0; background: none;
-    color: var(--on-surface); font-size: 14px; letter-spacing: .1px; text-align: left; cursor: pointer; position: relative;
+    color: var(--on-surface); font-size: var(--text-body); text-align: left; cursor: pointer; position: relative;
   }
   .menu button:hover { background: color-mix(in srgb, var(--on-surface) 8%, transparent); }
   .menu button:focus-visible { background: color-mix(in srgb, var(--on-surface) 12%, transparent); outline: none; }
@@ -71,6 +71,6 @@
   .menu button.danger { color: var(--error); }
   .lead { width: 24px; display: flex; justify-content: center; color: var(--on-surface-variant); }
   .menu button[aria-checked="true"] .lead { color: var(--primary); }
-  .section { padding: 12px 16px 4px; font-size: 12px; font-weight: 500; letter-spacing: .5px; color: var(--on-surface-variant); border-top: 1px solid var(--outline-variant); margin-top: 8px; }
+  .section { padding: 12px 16px 4px; font-size: var(--text-callout); font-weight: 500; color: var(--on-surface-variant); border-top: 1px solid var(--outline-variant); margin-top: 8px; }
   .section.first { border-top: 0; margin-top: 0; padding-top: 4px; }
 </style>

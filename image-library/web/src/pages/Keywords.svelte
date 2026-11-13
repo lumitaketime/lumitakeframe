@@ -96,7 +96,7 @@
   .rank { list-style: none; padding: 0; margin: 0; max-width: 640px; }
   .rank li { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px solid var(--outline-variant); }
   .no { width: 32px; text-align: right; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
-  .tag { border: 0; background: none; color: var(--on-surface); cursor: pointer; font-size: 16px; font-weight: 500; padding: 0; flex: 1; text-align: left; }
+  .tag { border: 0; background: none; color: var(--on-surface); cursor: pointer; font-size: var(--text-title-3); font-weight: 500; padding: 0; flex: 1; text-align: left; }
   .tag.mine { color: var(--primary); }
-  .count { color: var(--on-surface-variant); font-size: 14px; }
+  .count { color: var(--on-surface-variant); font-size: var(--text-body); }
 </style>

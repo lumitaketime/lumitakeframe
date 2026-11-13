@@ -97,7 +97,7 @@
   }
   .track { position: absolute; inset: 12px 0; pointer-events: none; }
   .year {
-    position: absolute; right: 16px; transform: translateY(-50%); font-size: 11px; color: var(--on-surface);
+    position: absolute; right: 16px; transform: translateY(-50%); font-size: var(--text-sub); color: var(--on-surface);
     font-weight: 500; background: var(--surface); padding: 0 2px; font-variant-numeric: tabular-nums;
   }
   .tick { position: absolute; right: 6px; width: 6px; height: 1px; background: var(--on-surface-variant); opacity: .45; }
@@ -106,14 +106,14 @@
   }
   .bubble {
     position: absolute; right: 60px; transform: translateY(-50%); background: var(--on-surface); color: var(--surface);
-    border-radius: var(--corner-small); padding: 5px 10px; font-size: 14px; white-space: nowrap; pointer-events: none; z-index: 5;
+    border-radius: var(--corner-small); padding: 5px 10px; font-size: var(--text-body); white-space: nowrap; pointer-events: none; z-index: 5;
     font-variant-numeric: tabular-nums;
   }
   @media (max-width: 760px) {
     .scrubber { width: 26px; position: fixed; right: 0; top: var(--topbar); bottom: 64px; height: auto; z-index: 10; }
     .year, .tick { display: none; }
     .scrubber.dragging .year { display: block; }
-    .indicator { width: 6px; height: 36px; border-radius: 3px; right: 3px; transform: translateY(-50%); opacity: .6; }
+    .indicator { width: 6px; height: 36px; border-radius: var(--radius-xs); right: 3px; transform: translateY(-50%); opacity: .6; }
     .bubble { right: 30px; }
   }
 </style>
