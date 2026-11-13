@@ -1,5 +1,5 @@
 <script>
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import { fade, fly } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
   import Icon from "./components/Icon.svelte";
@@ -73,56 +73,18 @@
     return g.id === "tools" ? [...items, ...pinned.map((t) => ({ ...t, pinned: true }))] : items;
   }
 
-  // 三種版面（像 Google 相簿）：
-  // 電腦（≥1200）：完整選單，≡ 可收成圖示列；
+  // 三種版面：
+  // 電腦（≥1200）：完整選單固定在左邊，沒有 ≡ 按鈕；
   // 平板（841–1199）：只有圖示的窄欄，≡ 從左邊滑出完整選單；
   // 手機（≤840）：選單收起，下方保留小圖示分頁，≡ 滑出和平板相同的選單。
-  let rail = $state(readRail());
   let drawer = $state(false);
   let winW = $state(typeof window === "undefined" ? 1400 : window.innerWidth);
   const wide = $derived(winW >= 1200);
   const narrow = $derived(winW <= 840);
-  const showRail = $derived(!narrow && (!wide || rail));
+  const showRail = $derived(!narrow && !wide);
   let searchOpen = $state(false);
-  function readRail() {
-    try {
-      return localStorage.getItem("navRail") === "1";
-    } catch {
-      return false;
-    }
-  }
   function toggleNav() {
-    if (!wide) {
-      drawer = !drawer;
-      return;
-    }
-    animateNav(() => (rail = !rail));
-    try {
-      localStorage.setItem("navRail", rail ? "1" : "0");
-    } catch {
-      /* 只影響這次 */
-    }
-  }
-
-  // 收合／展開的動畫：版面只重算一次，內容區用 transform 滑過去，選單用 clip-path 展開，不會掉幀
-  async function animateNav(change) {
-    const main = document.querySelector("main.scroll-area");
-    const side = document.querySelector("nav.sidebar:not(.drawer)");
-    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const before = main?.getBoundingClientRect().left ?? 0;
-    const sideBefore = side?.getBoundingClientRect().width ?? 0;
-    change();
-    await tick();
-    if (reduce || !main || !side) return;
-    const after = main.getBoundingClientRect().left;
-    const sideAfter = side.getBoundingClientRect().width;
-    const opts = { duration: 280, easing: "cubic-bezier(0.2, 0, 0, 1)" };
-    main.animate([{ transform: `translateX(${before - after}px)` }, { transform: "none" }], opts);
-    if (sideAfter > sideBefore) {
-      side.animate([{ clipPath: `inset(0 ${sideAfter - sideBefore}px 0 0)` }, { clipPath: "inset(0 0 0 0)" }], opts);
-    } else {
-      side.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: "linear" });
-    }
+    drawer = !drawer;
   }
   // 換版面（電腦／平板／手機）時收起抽屜與展開的搜尋，避免留下看不見的遮罩擋住畫面
   const mode = $derived(wide ? "desktop" : narrow ? "phone" : "tablet");
@@ -309,8 +271,9 @@
 {:else}
   <div class="shell" class:mode-desktop={wide} class:mode-tablet={!wide && !narrow} class:mode-phone={narrow} class:rail={showRail}>
     <header class="topbar">
-      <button class="icon-btn menu-btn" onclick={toggleNav} aria-label={!wide ? "打開選單" : rail ? "展開選單" : "收合選單"}
-        aria-expanded={!wide ? drawer : !rail} title={!wide ? "選單" : rail ? "展開選單" : "收合選單"}><Icon path={mdiMenu} /></button>
+      {#if !wide}
+        <button class="icon-btn menu-btn" onclick={toggleNav} aria-label="打開選單" aria-expanded={drawer} title="選單"><Icon path={mdiMenu} /></button>
+      {/if}
       <a class="brand" href="/" use:link aria-label="Re'memor">
         <img src="/icon.png" alt="" width="32" height="32" />
         <span class="brand-name"><Wordmark size={24} /></span>
@@ -474,6 +437,8 @@
   .menu-btn { color: var(--on-surface-variant); flex-shrink: 0; }
   .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--on-surface); min-width: calc(var(--sidebar) - 64px); padding-right: 16px; flex-shrink: 0; }
   .brand-name { display: flex; align-items: center; }
+  /* 電腦版沒有 ≡ 按鈕：標誌往右讓出一點邊距，搜尋框仍對齊內容區的左邊 */
+  .shell.mode-desktop .brand { min-width: calc(var(--sidebar) - 12px); padding-left: 12px; box-sizing: border-box; }
   .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
   .right .icon-btn { color: var(--on-surface-variant); }
 
