@@ -14,6 +14,8 @@
   import { analyzeAssets } from "../lib/actions.js";
   import { mdiFolderOutline, mdiFolderOpenOutline, mdiCreation, mdiHarddisk, mdiContentCopy, mdiImageOutline, mdiSort, mdiStar, mdiStarOutline } from "../lib/icons.js";
   import { count, bytes } from "../lib/format.js";
+  import { setFrame } from "../shell/frame.svelte.js";
+  import { t, formatNumber, formatBytes, formatDate } from "../i18n/index.svelte.js";
 
   let { rootId = null } = $props();
   let data = $state(null);
@@ -130,6 +132,46 @@
     return [d.name, d.fs_label, d.capacity ? `容量 ${bytes(d.capacity)}` : ""].filter(Boolean).join(" · ");
   }
 
+  // 交給視窗外框：路徑列、狀態列、資訊欄
+  const href = (p) => `/folders/${rootId}${p ? `?path=${encodeURIComponent(p)}` : ""}`;
+  $effect(() => {
+    if (!rootId) {
+      setFrame({ crumbs: [], status: "", location: null, info: null });
+      return;
+    }
+    if (!data?.root) return;
+    const drive = data.root.catalog?.drive;
+    const driveName = drive?.name || data.root.name;
+    const cat = data.catalog;
+    const name = data.crumbs.length ? data.crumbs[data.crumbs.length - 1].name : data.root.name;
+    const sameName = driveName === data.root.name; // 整顆硬碟就是資料夾來源時，不重複顯示兩次
+    setFrame({
+      crumbs: [
+        { label: t("nav.allFiles"), href: "/folders" },
+        ...(sameName ? [] : [{ label: driveName, href: href(""), icon: data.root.online ? "external-drive-fill" : "external-drive" }]),
+        { label: data.root.name, href: href(""), icon: sameName ? (data.root.online ? "external-drive-fill" : "external-drive") : "folder" },
+        ...data.crumbs.map((c) => ({ label: c.name, href: href(c.path) })),
+      ],
+      status: cat ? t("status.summary", { files: formatNumber(cat.total_files), size: formatBytes(cat.total_bytes) }) : "",
+      location: { name: driveName, online: data.root.online },
+      info: {
+        title: name,
+        kind: path ? t("info.kind.folder") : t("info.kind.drive"),
+        rows: [
+          [t("info.where"), data.abs_path],
+          [t("info.files"), cat ? formatNumber(cat.total_files) : ""],
+          [t("info.size"), cat ? formatBytes(cat.total_bytes) : ""],
+          [t("info.drive"), driveName],
+          [t("info.format"), drive?.fs_label],
+          [t("info.capacity"), drive?.capacity ? formatBytes(drive.capacity) : ""],
+          [t("info.status"), (data.root.online ? t("drive.online") : t("drive.offline")) + (data.root.catalog?.scan_state === "partial" ? ` · ${t("drive.incomplete")}` : "")],
+          [t("info.lastScan"), data.root.last_scan ? formatDate(new Date(data.root.last_scan)) : t("drive.neverScanned")],
+        ],
+        kinds: cat?.kinds || [],
+      },
+    });
+  });
+
   async function analyzeFolder() {
     await api("/api/jobs", { body: { kind: "analyze", root_id: rootId, folder: path } });
     toast("已排入 AI 分析（這個資料夾與子資料夾中尚未分析的項目）");
@@ -143,7 +185,7 @@
   {:else if !data}
     <Loading kind="grid" />
   {:else if !rootId}
-    <div class="page-head"><h1>資料夾</h1>{#if data.roots.length > 1}<Menu icon={mdiSort} label="排序" items={sortItems} />{/if}<a class="btn ghost small" href="/settings/library" use:link>+ 加入資料夾</a></div>
+    <div class="page-head"><span class="grow"></span>{#if data.roots.length > 1}<Menu icon={mdiSort} label="排序" items={sortItems} />{/if}<a class="btn ghost small" href="/settings/library" use:link>+ 加入資料夾</a></div>
     {#if !data.roots.length}
       <div class="empty"><h2>還沒有加入任何資料夾</h2><p><a class="btn" href="/settings/library" use:link>加入照片資料夾</a></p></div>
     {/if}
@@ -215,10 +257,6 @@
         storeKey={`folder:${rootId}:${path}`}
         title={data.crumbs.length ? data.crumbs[data.crumbs.length - 1].name : data.root.name}
         subtitle={data.assets.length ? null : data.catalog ? sizeText(data.catalog.total_files, data.catalog.total_bytes) : `${count(data.folders.length)} 個資料夾`}
-        back={path ? `/folders/${rootId}${path.includes("/") ? `?path=${encodeURIComponent(path.slice(0, path.lastIndexOf("/")))}` : ""}` : "/folders"}
-        crumbs={[{ label: "資料夾", href: "/folders" },
-          ...(path ? [{ label: data.root.name, href: `/folders/${rootId}` }] : []),
-          ...data.crumbs.slice(0, -1).map((c) => ({ label: c.name, href: `/folders/${rootId}?path=${encodeURIComponent(c.path)}` }))]}
         menu={[
           { label: "AI 分析這個資料夾", icon: mdiCreation, run: analyzeFolder },
           { label: app.server?.local ? "在 Finder 中打開" : "在 Mac 上打開", icon: mdiFolderOpenOutline, run: revealFolder, disabled: !data.root.online },
@@ -237,6 +275,7 @@
 {/if}
 
 <style>
+  .grow { flex: 1; }
   .offline-note { margin: 0 0 12px; }
   .folders { margin-bottom: 28px; }
   .offline { position: absolute; top: 8px; left: 8px; background: var(--media-scrim); color: var(--media-fg); font-size: var(--text-callout); padding: 2px 8px; border-radius: var(--corner-full); }

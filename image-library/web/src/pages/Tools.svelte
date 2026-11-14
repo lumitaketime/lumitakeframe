@@ -17,11 +17,10 @@
   import { navigate, link } from "../lib/router.svelte.js";
   import { trashAssets, reveal } from "../lib/actions.js";
   import { bytes, count } from "../lib/format.js";
-  import { TOOLS, pinnedKeys } from "../lib/toolkit.js";
-  import { pinnable, pin, unpin } from "../lib/pin.svelte.js";
+  import { TOOLS } from "../lib/toolkit.js";
   import {
     mdiFileExportOutline, mdiCheckAll, mdiDeleteOutline, mdiFolderOpenOutline,
-    mdiChevronRight, mdiVideoOutline, mdiPinOutline, mdiPinOffOutline, mdiSortDescending,
+    mdiChevronRight, mdiVideoOutline, mdiSortDescending,
   } from "../lib/icons.js";
 
   let { sub = "" } = $props();
@@ -46,7 +45,6 @@
     if (key === "large") return `影片共 ${bytes(s.videos_bytes) || "0 KB"}`;
     return s.dups === null ? "尚未尋找" : `${count(s.dups)} 組`;
   }
-  const pinnedSet = $derived(new Set(pinnedKeys(app.server)));
 
   const TITLES = { screens: "截圖與文件", large: "大檔案" };
 
@@ -126,20 +124,15 @@
 
 <div class="page tools">
   {#if !sub}
-    <div class="page-head"><h1>整理工具</h1><span class="muted small hint">長按卡片拖到左側「工具」，或按圖釘，就能加入側邊欄</span></div>
+    <div class="page-head"><h1>整理工具</h1></div>
 
     {#if summary}
       <JobList kinds={["export", "dups"]} compact />
 
       <div class="cards m3-stagger">
         {#each TOOLS as t (t.key)}
-          {@const pinned = pinnedSet.has(t.key)}
-          <a class="tool m3-state" href={t.href} use:link use:pinnable={t.key} title="長按可拖到左側「工具」">
+          <a class="tool m3-state" href={t.href} use:link>
             <span class="ic"><Icon path={t.icon} /></span>
-            <button class="icon-btn pin-btn" class:on={pinned} onclick={(e) => { e.preventDefault(); e.stopPropagation(); pinned ? unpin(t.key) : pin(t.key); }}
-              aria-label={pinned ? `從側邊欄移除${t.label}` : `把${t.label}加到側邊欄`} title={pinned ? "從側邊欄移除" : "加到側邊欄"}>
-              <Icon path={pinned ? mdiPinOffOutline : mdiPinOutline} size={20} />
-            </button>
             <b>{t.label}</b>
             <span class="muted small">{DESC[t.key]}</span>
             <span class="count">{countText(t.key)}</span>
@@ -272,11 +265,6 @@
   }
   a.tool:hover { border-radius: var(--corner-extra-large); background: var(--surface-container); }
   .tool { position: relative; touch-action: manipulation; -webkit-touch-callout: none; user-select: none; }
-  .tool .pin-btn { position: absolute; top: 12px; right: 12px; width: 40px; height: 40px; color: var(--on-surface-variant); opacity: 0; transition: opacity var(--spring-effects-fast-duration) var(--spring-effects-fast); }
-  .tool:hover .pin-btn, .tool .pin-btn.on, .tool .pin-btn:focus-visible { opacity: 1; }
-  .tool .pin-btn.on { color: var(--primary); }
-  @media (hover: none) { .tool .pin-btn { opacity: 1; } }
-  :global(.tool.pin-lifting) { transform: scale(.96); opacity: .6; transition: transform var(--dur-quick), opacity var(--dur-quick); }
   .hint { flex-basis: 100%; margin-top: -10px; }
   .tool b { font-size: var(--text-title-3); line-height: 24px; font-weight: 500; }
   .tool .ic {

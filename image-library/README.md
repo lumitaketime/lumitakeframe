@@ -245,6 +245,8 @@ pnpm dev   # 開發模式，API 轉到 127.0.0.1:8766
 | `web/design-system/` | Liquid Glass 設計系統的原檔（`tokens.json`、元件說明與樣式）；介面規則見 `../docs/rememor-ui-handbook.md` |
 | `web/src/styles/` | `tokens.css`（由 `pnpm tokens` 從 `tokens.json` 產生，四個主題）、元件樣式、App 自己的變數 |
 | `web/src/ui/` | 基礎元件（設計系統的元件改寫成 Svelte）；`pnpm dev` 後開 `/gallery.html` 可以看全部元件 |
+| `web/src/shell/` | 視窗外框：側邊欄、工具列、路徑列、資訊欄、狀態列；頁面用 `setFrame()` 把路徑與資訊交給外框 |
+| `web/src/data/` | 資料層：呼叫引擎 API 的地方（目前是硬碟清單與類型統計） |
 | `web/src/i18n/` | 介面文字的語言檔（繁體中文、英文）；`pnpm check` 會檢查沒有寫死的色碼、字級、圓角，以及兩個語言檔一致 |
 | `desktop/` | Mac App（Tauri 外殼、PyInstaller 打包的伺服器、啟動畫面） |
 | `android/` | Android App（WebView 外殼、QR 配對、下載） |

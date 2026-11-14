@@ -59,3 +59,9 @@ export function riseIn(node, { y = 24, duration = DUR.move } = {}) {
 export function scrim(node, { duration = DUR.base } = {}) {
   return { duration: reduced() ? DUR.fast : duration, css: (t) => `opacity:${t}` };
 }
+
+/** 面板從旁邊滑入（側邊欄、抽屜、資訊欄）：只動 transform，不回彈；減少動態效果時改成淡入淡出 */
+export function slidePanel(node, { x = -240, duration = DUR.slow } = {}) {
+  if (reduced()) return { duration: DUR.fast, css: (t) => `opacity:${t}` };
+  return { duration, easing: decel, css: (t) => `transform: translateX(${(1 - t) * x}px)` };
+}

@@ -1,18 +1,11 @@
 <script>
   import { onMount } from "svelte";
-  import { fade, fly } from "svelte/transition";
-  import { cubicOut } from "svelte/easing";
-  import Icon from "./components/Icon.svelte";
+  import { fade } from "svelte/transition";
   import Viewer from "./components/Viewer.svelte";
   import SelectionBar from "./components/SelectionBar.svelte";
   import Toasts from "./components/Toasts.svelte";
   import Dialogs from "./components/Dialogs.svelte";
-  import JobIndicator from "./components/JobIndicator.svelte";
   import Onboarding from "./components/Onboarding.svelte";
-  import SearchBox from "./components/SearchBox.svelte";
-  import FilterButton from "./components/FilterButton.svelte";
-  import Wordmark from "./components/Wordmark.svelte";
-  import { filterUI } from "./lib/filter.svelte.js";
   import Timeline from "./pages/Timeline.svelte";
   import Explore from "./pages/Explore.svelte";
   import Search from "./pages/Search.svelte";
@@ -27,100 +20,124 @@
   import Person from "./pages/Person.svelte";
   import Settings from "./pages/Settings.svelte";
   import Login from "./pages/Login.svelte";
+  import AppSidebar from "./shell/AppSidebar.svelte";
+  import AppToolbar from "./shell/AppToolbar.svelte";
+  import PathBar from "./shell/PathBar.svelte";
+  import PhotoTabs from "./shell/PhotoTabs.svelte";
+  import Inspector from "./shell/Inspector.svelte";
+  import StatusBar from "./shell/StatusBar.svelte";
+  import { frame, pageFrame, toggleSidebar, toggleInfo, setSidebarWidth, SIDEBAR_MIN, SIDEBAR_MAX, INFO_BREAK, DRAWER_BREAK } from "./shell/frame.svelte.js";
+  import { loadCatalog } from "./data/catalog.svelte.js";
+  import { t } from "./i18n/index.svelte.js";
   import { api } from "./lib/api.js";
   import { app, selection, viewer, refresh, toast } from "./lib/state.svelte.js";
   import { route, navigate, link } from "./lib/router.svelte.js";
-  import { TOOLS, pinnedKeys, toolByKey } from "./lib/toolkit.js";
-  import { drag, unpin } from "./lib/pin.svelte.js";
   import { undoLast } from "./lib/undo.svelte.js";
-  import { DUR, fadeThrough } from "./lib/motion.js";
+  import { DUR, slidePanel } from "./lib/motion.js";
+  import { rubberBand, installShake } from "./lib/alive.js";
+
   // 設定的各分類是同一頁的不同區塊：換分類不重建整頁（避免閃一下、狀態卡重新載入）
   const routeKey = $derived(route.path.startsWith("/settings") ? "/settings" : route.path);
-  import { rubberBand, installShake } from "./lib/alive.js";
-  import {
-    mdiImageMultipleOutline, mdiCompassOutline, mdiFolderOutline, mdiImageAlbum, mdiHeartOutline,
-    mdiVideoOutline, mdiCogOutline, mdiMagnify, mdiClose, mdiHarddisk, mdiContentDuplicate,
-    mdiChevronRight, mdiChevronDown, mdiToolboxOutline, mdiMenu, mdiPinOutline, mdiArrowLeft,
-    filled,
-  } from "./lib/icons.js";
 
-  // 左側選單分組；fixed＝一定顯示，其他可在「設定 → 功能與選單」關掉
-  const NAV_GROUPS = [
-    { id: "library", label: "圖庫", items: [
-      { href: "/", label: "照片", icon: mdiImageMultipleOutline, mobile: true, fixed: true },
-      { href: "/explore", label: "探索", icon: mdiCompassOutline, mobile: true },
-    ] },
-    { id: "organize", label: "整理", items: [
-      { href: "/folders", label: "資料夾", icon: mdiFolderOutline, mobile: true, fixed: true },
-      { href: "/albums", label: "相簿", icon: mdiImageAlbum, mobile: true, fixed: true },
-      { href: "/favorites", label: "我的最愛", icon: mdiHeartOutline },
-      { href: "/videos", label: "影片", icon: mdiVideoOutline },
-    ] },
-    { id: "tools", label: "工具", items: [
-      { href: "/tools", label: "整理工具", icon: mdiToolboxOutline },
-    ] },
-  ];
-  const NAV = NAV_GROUPS.flatMap((g) => g.items);
-  // 人物、關鍵字整合在「探索」的分頁裡
-  const EXPLORE_PAGES = ["/explore", "/people", "/keywords"];
-
-  const hidden = $derived(new Set((app.server?.ui?.nav_hidden || "").split(",").filter(Boolean)));
-  const visible = (n) => n.fixed || !hidden.has(n.href);
-  const pinned = $derived(pinnedKeys(app.server).map(toolByKey));
-  // 「工具」群組：整理工具＋使用者拖進來的常用工具
-  function groupItems(g) {
-    const items = g.items.filter(visible);
-    return g.id === "tools" ? [...items, ...pinned.map((t) => ({ ...t, pinned: true }))] : items;
-  }
-
-  // 三種版面：
-  // 電腦（≥1200）：完整選單固定在左邊，沒有 ≡ 按鈕；
-  // 平板（841–1199）：只有圖示的窄欄，≡ 從左邊滑出完整選單；
-  // 手機（≤840）：選單收起，下方保留小圖示分頁，≡ 滑出和平板相同的選單。
-  let drawer = $state(false);
+  // 視窗外框（手冊「視窗結構」）：側邊欄｜工具列、路徑列、內容、狀態列｜資訊欄。
+  // 寬度小於 800：側邊欄收成抽屜、工具列出現 ≡；小於 1100：資訊欄自動收起（按了才浮在內容上）。
   let winW = $state(typeof window === "undefined" ? 1400 : window.innerWidth);
-  const wide = $derived(winW >= 1200);
-  const narrow = $derived(winW <= 840);
-  const showRail = $derived(!narrow && !wide);
-  let searchOpen = $state(false);
-  function toggleNav() {
-    drawer = !drawer;
+  const compact = $derived(winW < DRAWER_BREAK);
+  const infoDocked = $derived(winW >= INFO_BREAK);
+  let infoFloat = $state(false); // 窄視窗時暫時打開的資訊欄
+  const infoOpen = $derived(!compact && (infoDocked ? frame.info : infoFloat));
+  function onToggleInfo() {
+    if (infoDocked) toggleInfo();
+    else infoFloat = !infoFloat;
   }
-  // 換版面（電腦／平板／手機）時收起抽屜與展開的搜尋，避免留下看不見的遮罩擋住畫面
-  const mode = $derived(wide ? "desktop" : narrow ? "phone" : "tablet");
-  let lastMode = "";
-  $effect(() => {
-    const m = mode;
-    if (lastMode && m !== lastMode) {
-      drawer = false;
-      searchOpen = false;
-    }
-    lastMode = m;
-  });
-  // 換頁後收起抽屜
+  // 換頁或換版面後收起抽屜與浮動的資訊欄，避免留下看不見的遮罩擋住畫面
   $effect(() => {
     route.path;
-    drawer = false;
+    compact;
+    infoDocked;
+    frame.drawer = false;
+    infoFloat = false;
   });
-  let collapsed = $state(readCollapsed());
 
-  function readCollapsed() {
-    try {
-      return new Set(JSON.parse(localStorage.getItem("navCollapsed") || "[]"));
-    } catch {
-      return new Set();
+  const seg = $derived(route.path.split("/").filter(Boolean));
+  const page = $derived(seg[0] || "");
+  // 照片圖庫沿用的頁面：收在「照片」底下，用分頁切換
+  const PHOTO_PAGES = new Set(["", "welcome", "favorites", "videos", "albums", "explore", "people", "keywords", "tools"]);
+  const photoPage = $derived(PHOTO_PAGES.has(page));
+  const pf = $derived(pageFrame());
+  const crumbs = $derived(pf?.crumbs || []);
+  const title = $derived(
+    page === "folders" ? (crumbs.length > 1 ? crumbs[crumbs.length - 1].label : t("nav.allFiles"))
+      : photoPage ? t("nav.photos")
+        : page === "duplicates" ? t("nav.duplicates")
+          : page === "settings" ? t("nav.settings")
+            : page === "search" ? t("nav.search") : "");
+
+  // 側邊欄寬度：拖曳右邊緣，或聚焦後用左右方向鍵（200–320）
+  let dragging = $state(false);
+  function startResize(e) {
+    e.preventDefault();
+    dragging = true;
+    const move = (ev) => setSidebarWidth(ev.clientX - 16);
+    const up = () => {
+      dragging = false;
+      removeEventListener("pointermove", move);
+      removeEventListener("pointerup", up);
+    };
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", up);
+  }
+  function resizeKey(e) {
+    const d = e.key === "ArrowRight" ? 10 : e.key === "ArrowLeft" ? -10 : 0;
+    if (!d) return;
+    e.preventDefault();
+    setSidebarWidth(frame.sidebarWidth + d);
+  }
+
+  // 捲到底的回彈只在觸控裝置保留；Mac 上交給系統
+  const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  const touchBounce = (node) => (touch ? rubberBand(node) : undefined);
+
+  function onKey(e) {
+    const typing = e.target.closest?.("input, textarea, select, [contenteditable]");
+    const mod = e.metaKey || e.ctrlKey;
+    const key = e.key.toLowerCase();
+    if (mod && !e.shiftKey && !e.altKey && key === "z" && !typing && !viewer.open) {
+      e.preventDefault();
+      undoLast();
+    } else if (viewer.open || app.needLogin) {
+      return;
+    } else if (((e.metaKey && e.ctrlKey) || (e.ctrlKey && e.altKey)) && key === "s") {
+      e.preventDefault(); // ⌘⌃S：收合／顯示側邊欄
+      if (compact) frame.drawer = !frame.drawer;
+      else toggleSidebar();
+    } else if (mod && !e.shiftKey && !e.altKey && key === "i" && !typing) {
+      e.preventDefault(); // ⌘I：資訊欄
+      onToggleInfo();
+    } else if (mod && !e.shiftKey && !e.altKey && e.key === ",") {
+      e.preventDefault(); // ⌘,：設定
+      navigate("/settings");
+    } else if (mod && !e.shiftKey && !e.altKey && key === "f") {
+      const input = document.querySelector(".app-toolbar input");
+      if (input) {
+        e.preventDefault(); // ⌘F：搜尋
+        input.focus();
+      }
+    } else if (mod && e.key === "ArrowUp" && !typing && crumbs.length > 1) {
+      e.preventDefault(); // ⌘↑：回上層
+      navigate(crumbs[crumbs.length - 2].href);
+    } else if (e.key === "Escape" && (frame.drawer || infoFloat)) {
+      frame.drawer = false;
+      infoFloat = false;
     }
   }
-  function toggleGroup(id) {
-    const next = new Set(collapsed);
-    next.has(id) ? next.delete(id) : next.add(id);
-    collapsed = next;
-    try {
-      localStorage.setItem("navCollapsed", JSON.stringify([...next]));
-    } catch {
-      /* 只影響這次 */
-    }
-  }
+
+  // 側邊欄的硬碟清單：伺服器狀態有變（掃描進度、工作結束）或頁面要求重新整理時更新
+  $effect(() => {
+    app.server;
+    app.refreshKey;
+    if (app.authChecked && !app.needLogin) loadCatalog();
+  });
 
   let lastFinished = null;
   let wasRunning = false;
@@ -128,17 +145,8 @@
   let lastRefresh = 0;
   let timer;
 
-  const seg = $derived(route.path.split("/").filter(Boolean));
-  const page = $derived(seg[0] || "");
   // 第一次在這台 Mac 上開啟時顯示設定引導（手機、平板不顯示）
   const welcome = $derived(page === "welcome" || (app.server?.local && app.server?.ui?.onboarded === 0 && page !== "settings"));
-
-  function active(href) {
-    if (href === "/") return page === "";
-    if (href === "/tools") return (page === "tools" || page === "duplicates") && !pinned.some((t) => t.href === route.path);
-    if (href === "/explore") return EXPLORE_PAGES.some((p) => route.path === p || route.path.startsWith(p + "/"));
-    return route.path === href || route.path.startsWith(href + "/");
-  }
 
   // 換頁時清除選取與情境
   $effect(() => {
@@ -256,153 +264,83 @@
   });
 </script>
 
-<svelte:window bind:innerWidth={winW} onkeydown={(e) => {
-  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "z"
-    && !e.target.closest?.("input, textarea, select, [contenteditable]") && !viewer.open) {
-    e.preventDefault();
-    undoLast();
-  }
-}} />
+<svelte:window bind:innerWidth={winW} onkeydown={onKey} />
 
 {#if !app.authChecked}
   <div class="boot"><span class="spinner"></span></div>
 {:else if app.needLogin}
   <Login />
 {:else}
-  <div class="shell" class:mode-desktop={wide} class:mode-tablet={!wide && !narrow} class:mode-phone={narrow} class:rail={showRail}>
-    <header class="topbar">
-      {#if !wide}
-        <button class="icon-btn menu-btn" onclick={toggleNav} aria-label="打開選單" aria-expanded={drawer} title="選單"><Icon path={mdiMenu} /></button>
-      {/if}
-      <a class="brand" href="/" use:link aria-label="Re'memor">
-        <img src="/icon.png" alt="" width="32" height="32" />
-        <span class="brand-name"><Wordmark size={24} /></span>
-      </a>
-      {#if narrow && !searchOpen}<span class="spacer"></span>{/if}
-      <SearchBox narrow={winW <= 600} bind:expanded={searchOpen} />
-      {#if filterUI.pages && !(searchOpen && winW <= 600)}<FilterButton />{/if}
-      <div class="right">
-        <JobIndicator />
-        <a class="icon-btn" class:active={page === "settings"} href="/settings" use:link aria-label="設定"><Icon path={mdiCogOutline} /></a>
+  <div class="frame" class:compact class:resizing={dragging}>
+    {#if !compact && frame.sidebar}
+      <div class="side" transition:slidePanel={{ x: -(frame.sidebarWidth + 16) }}>
+        <AppSidebar width={frame.sidebarWidth} />
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+        <div class="resizer" role="separator" aria-orientation="vertical" aria-label={t("nav.resizeSidebar")} tabindex="0"
+          aria-valuemin={SIDEBAR_MIN} aria-valuemax={SIDEBAR_MAX} aria-valuenow={frame.sidebarWidth}
+          onpointerdown={startResize} onkeydown={resizeKey}></div>
       </div>
-    </header>
+    {/if}
 
-    {#snippet navContent(isRail)}
-      {#each NAV_GROUPS as g (g.id)}
-        {@const items = groupItems(g)}
-        {@const isTools = g.id === "tools"}
-        {@const shut = collapsed.has(g.id) && !(isTools && drag.key)}
-        {#if items.length || (isTools && drag.key)}
-          <div class="nav-group" class:drop={isTools && drag.key} class:over={isTools && drag.over} data-pin-drop={isTools ? "" : undefined}>
-            <button class="group" onclick={() => toggleGroup(g.id)} aria-expanded={!shut}>
-              <span>{g.label}</span><Icon path={shut ? mdiChevronRight : mdiChevronDown} size={16} />
-            </button>
-            {#each items.filter((n) => !shut || active(n.href)) as n (n.href)}
-              <a href={n.href} use:link class:active={active(n.href)} class:pinned={n.pinned} title={isRail ? n.label : undefined}>
-                <span class="ind"><Icon path={active(n.href) ? filled(n.icon) : n.icon} /></span><span class="lbl">{n.label}</span>
-                {#if n.pinned}
-                  <button class="unpin" onclick={(e) => { e.preventDefault(); e.stopPropagation(); unpin(n.key); }} aria-label="從側邊欄移除{n.label}" title="從側邊欄移除"><Icon path={mdiClose} size={16} /></button>
-                {/if}
-              </a>
-            {/each}
-            {#if isTools && drag.key}
-              <div class="drop-hint"><Icon path={mdiPinOutline} size={18} /><span>放開以加入「{toolByKey(drag.key)?.label}」</span></div>
+    <div class="pane">
+      <AppToolbar {title} {compact} narrowSearch={winW <= 600} showViews={page === "folders"} {infoOpen} ontoggleinfo={onToggleInfo} />
+      {#if photoPage}<PhotoTabs />{:else if crumbs.length}<PathBar {crumbs} />{/if}
+      <div class="body">
+        <main class="scroll-area" use:touchBounce>
+          <div class="load-bar" class:on={app.busy} aria-hidden="true"><span></span></div>
+          {#key routeKey}
+            <div class="route">
+            {#if page === "" || page === "welcome"}
+              <Timeline />
+            {:else if page === "favorites"}
+              <Timeline scope={{ fav: "1" }} title="我的最愛" emptyText="點照片右上角的愛心，作品就會出現在這裡。" />
+            {:else if page === "videos"}
+              <Timeline scope={{ type: "video" }} title="影片" emptyText="還沒有影片。" />
+            {:else if page === "explore"}
+              <Explore />
+            {:else if page === "search"}
+              <Search />
+            {:else if page === "folders"}
+              <Folders rootId={seg[1] ? Number(seg[1]) : null} />
+            {:else if page === "albums" && seg[1] === "smart" && seg[2]}
+              <SmartAlbum id={Number(seg[2])} />
+            {:else if page === "keywords"}
+              <Keywords />
+            {:else if page === "tools"}
+              <Tools sub={seg[1] || ""} />
+            {:else if page === "duplicates"}
+              <Duplicates />
+            {:else if page === "albums" && seg[1]}
+              <Album id={Number(seg[1])} />
+            {:else if page === "albums"}
+              <Albums />
+            {:else if page === "people" && seg[1]}
+              <Person id={Number(seg[1])} />
+            {:else if page === "people"}
+              <People />
+            {:else if page === "settings"}
+              <Settings section={seg[1] || ""} />
+            {:else}
+              <div class="empty"><h2>{t("nav.notFound")}</h2><a href="/folders" use:link>{t("nav.backToFiles")}</a></div>
             {/if}
+            </div>
+          {/key}
+        </main>
+        {#if infoOpen}
+          <div class="info" class:float={!infoDocked} transition:slidePanel={{ x: 280, duration: DUR.slow }}>
+            <Inspector info={pf?.info || null} />
           </div>
         {/if}
-      {/each}
-      {#if app.server?.favorites?.length}
-        <div class="roots-group">
-          <button class="group" onclick={() => toggleGroup("favs")} aria-expanded={!collapsed.has("favs")}>
-            <span>收藏</span><Icon path={collapsed.has("favs") ? mdiChevronRight : mdiChevronDown} size={16} />
-          </button>
-          {#each collapsed.has("favs") ? [] : app.server.favorites as f (f.href)}
-            {@const on = route.path + (route.query.path ? `?path=${encodeURIComponent(route.query.path)}` : "") === f.href}
-            <a href={f.href} use:link class:active={on} title={isRail ? f.name : undefined}>
-              <span class="ind"><Icon path={f.kind === "album" ? mdiImageAlbum : on ? filled(mdiFolderOutline) : mdiFolderOutline} /></span><span class="lbl">{f.name}</span>
-            </a>
-          {/each}
-        </div>
-      {/if}
-      <div class="roots-group">
-        <button class="group" onclick={() => toggleGroup("roots")} aria-expanded={!collapsed.has("roots")}>
-          <span>資料夾來源</span><Icon path={collapsed.has("roots") ? mdiChevronRight : mdiChevronDown} size={16} />
-        </button>
-        {#each collapsed.has("roots") ? [] : app.server?.roots || [] as r (r.id)}
-          <a href={`/folders/${r.id}`} use:link class:active={route.path === `/folders/${r.id}`} class="root" title={r.path}>
-            <span class="ind"><Icon path={mdiHarddisk} /></span><span class="lbl">{r.name}</span>{#if !r.online}<em>未連接</em>{/if}
-          </a>
-        {/each}
-        {#if !collapsed.has("roots")}<a href="/settings/library" use:link class="add-root">+ 加入資料夾</a>{/if}
-        {#if app.server}
-          <p class="stats">{app.server.stats.photos.toLocaleString()} 張照片 · {app.server.stats.videos.toLocaleString()} 部影片</p>
-        {/if}
       </div>
-    {/snippet}
-    <nav class="sidebar" class:rail={showRail} aria-label="主選單" aria-hidden={narrow} use:rubberBand={{ targets: (n) => [...n.children] }}>
-      {@render navContent(showRail)}
-    </nav>
-    {#if drawer}
-      <button class="scrim" onclick={() => (drawer = false)} aria-label="關閉選單"></button>
-      <nav class="sidebar drawer" aria-label="主選單" use:rubberBand={{ targets: (n) => [...n.children] }} transition:fly={{ x: -300, duration: DUR.base, opacity: 1, easing: cubicOut }}>
-        {@render navContent(false)}
-      </nav>
+      <StatusBar status={pf?.status || ""} location={pf?.location || null} />
+    </div>
+
+    {#if compact && frame.drawer}
+      <button class="scrim" onclick={() => (frame.drawer = false)} aria-label={t("nav.closeMenu")} transition:fade={{ duration: DUR.fast }}></button>
+      <div class="drawer" transition:slidePanel={{ x: -320 }}>
+        <AppSidebar width={Math.min(300, winW - 48)} />
+      </div>
     {/if}
-
-    {#if drag.key}
-      {@const t = toolByKey(drag.key)}
-      <div class="drag-ghost" class:over={drag.over} style:left="{drag.x}px" style:top="{drag.y}px"><Icon path={t.icon} size={20} />{t.label}</div>
-      {#if narrow && !drawer}
-        <div class="drop-float" class:over={drag.over} data-pin-drop><Icon path={mdiPinOutline} />放到這裡，加入側邊欄</div>
-      {/if}
-    {/if}
-
-    <main class="scroll-area" use:rubberBand>
-      <div class="load-bar" class:on={app.busy} aria-hidden="true"><span></span></div>
-      {#key routeKey}
-        <div class="route" in:fadeThrough>
-        {#if page === "" || page === "welcome"}
-          <Timeline />
-        {:else if page === "favorites"}
-          <Timeline scope={{ fav: "1" }} title="我的最愛" emptyText="點照片右上角的愛心，作品就會出現在這裡。" />
-        {:else if page === "videos"}
-          <Timeline scope={{ type: "video" }} title="影片" emptyText="還沒有影片。" />
-        {:else if page === "explore"}
-          <Explore />
-        {:else if page === "search"}
-          <Search />
-        {:else if page === "folders"}
-          <Folders rootId={seg[1] ? Number(seg[1]) : null} />
-        {:else if page === "albums" && seg[1] === "smart" && seg[2]}
-          <SmartAlbum id={Number(seg[2])} />
-        {:else if page === "keywords"}
-          <Keywords />
-        {:else if page === "tools"}
-          <Tools sub={seg[1] || ""} />
-        {:else if page === "duplicates"}
-          <Duplicates />
-        {:else if page === "albums" && seg[1]}
-          <Album id={Number(seg[1])} />
-        {:else if page === "albums"}
-          <Albums />
-        {:else if page === "people" && seg[1]}
-          <Person id={Number(seg[1])} />
-        {:else if page === "people"}
-          <People />
-        {:else if page === "settings"}
-          <Settings section={seg[1] || ""} />
-        {:else}
-          <div class="empty"><h2>找不到頁面</h2><a href="/" use:link>回到照片</a></div>
-        {/if}
-        </div>
-      {/key}
-    </main>
-
-    <nav class="bottom" aria-label="主選單">
-      {#each NAV.filter((n) => n.mobile && visible(n)) as n (n.href)}
-        <a href={n.href} use:link class:active={active(n.href)}><span class="ind"><Icon path={active(n.href) ? filled(n.icon) : n.icon} /></span><span>{n.label}</span></a>
-      {/each}
-    </nav>
   </div>
 
   {#if welcome}<Onboarding startStep={route.query.step || ""} />{/if}
@@ -420,108 +358,30 @@
 <Toasts />
 
 <style>
-  .boot { height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--on-surface-variant); }
-  /* 外框（頂欄＋選單）是一層淡色，內容區是另一層、圓角浮在上面，深淺色都看得出分層 */
-  .shell {
-    --nav-w: var(--sidebar);
-    display: grid; height: 100vh; height: 100dvh; background: var(--surface-container);
-    grid-template-columns: var(--nav-w) minmax(0, 1fr); grid-template-rows: var(--topbar) minmax(0, 1fr);
-    grid-template-areas: "top top" "side main";
-  }
-  /* 版面由程式依視窗寬度加上 class 決定（不用 :has() 或 CSS 斷點），Safari 縮放來回也不會卡住 */
-  .shell.rail { --nav-w: 80px; }
-  .topbar {
-    grid-area: top; display: flex; align-items: center; gap: 8px; padding: 0 16px 0 12px;
-    padding-top: env(safe-area-inset-top); z-index: 20;
-  }
-  .menu-btn { color: var(--on-surface-variant); flex-shrink: 0; }
-  .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--on-surface); min-width: calc(var(--sidebar) - 64px); padding-right: 16px; flex-shrink: 0; }
-  .brand-name { display: flex; align-items: center; }
-  /* 電腦版沒有 ≡ 按鈕：標誌往右讓出一點邊距，搜尋框仍對齊內容區的左邊 */
-  .shell.mode-desktop .brand { min-width: calc(var(--sidebar) - 12px); padding-left: 12px; box-sizing: border-box; }
-  .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-  .right .icon-btn { color: var(--on-surface-variant); }
+  .boot { height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--label-secondary); }
+  /* 外框：視窗底色上浮著玻璃側邊欄；右邊的內容窗格不透明 */
+  .frame { display: flex; height: 100vh; height: 100dvh; background: var(--window-bg); color: var(--label-primary); overflow: hidden; }
+  .frame.resizing { cursor: col-resize; user-select: none; }
+  /* 側邊欄：浮動面板，與視窗邊緣留 8，圓角 radius-lg */
+  .side { position: relative; flex: none; padding: var(--space-2); padding-top: calc(var(--space-2) + env(safe-area-inset-top)); display: flex; }
+  .side :global(.lg-sidebar-floating), .drawer :global(.lg-sidebar-floating) { border-radius: var(--radius-lg); }
+  .resizer { position: absolute; top: var(--space-4); bottom: var(--space-4); right: 0; width: var(--space-2); cursor: col-resize; border-radius: var(--radius-capsule); touch-action: none; }
+  .resizer:hover, .frame.resizing .resizer { background: var(--fill-secondary); }
 
-  /* 導覽抽屜：膠囊形指示器從中心展開 */
-  .sidebar { grid-area: side; padding: 0 12px 24px; overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: none; display: flex; flex-direction: column; }
-  .nav-group, .roots-group { display: flex; flex-direction: column; border-radius: var(--corner-large); }
-  .sidebar a {
-    position: relative; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px; border-radius: var(--corner-full);
-    text-decoration: none; color: var(--on-surface-variant); font-size: var(--text-body); line-height: 20px; font-weight: 500;
-    flex-shrink: 0; isolation: isolate;
-  }
-  .sidebar .ind { display: flex; }
-  .sidebar .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sidebar a.active { color: var(--on-secondary-container); }
-  .sidebar a.active::after {
-    content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--secondary-container); z-index: -1;
-    animation: nav-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
-  }
-  @keyframes nav-pill { from { transform: scaleX(0.3); opacity: 0.4; } }
-  .unpin { border: 0; background: none; color: inherit; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; margin-right: -6px; }
-  .sidebar a:hover .unpin, .unpin:focus-visible { opacity: .8; }
-  .unpin:hover { background: color-mix(in srgb, currentColor 12%, transparent); opacity: 1; }
-  .sidebar .root em { font-style: normal; font-size: var(--text-sub); color: var(--error); }
-  .add-root { color: var(--on-surface-variant) !important; font-weight: 400 !important; height: 44px !important; }
-  .group {
-    display: flex; align-items: center; justify-content: space-between; border: 0; background: none; cursor: pointer;
-    margin: 12px 0 2px; padding: 8px 16px; font-size: var(--text-body); line-height: 20px; color: var(--on-surface-variant); font-weight: 500;
-    border-radius: var(--corner-full);
-    transition: background-color var(--spring-effects-fast-duration) var(--spring-effects-fast);
-  }
-  .nav-group:first-child .group { margin-top: 4px; }
-  .group:hover { background: color-mix(in srgb, var(--on-surface) 8%, transparent); }
-  .stats { margin: 12px 16px 0; font-size: var(--text-callout); line-height: 16px; color: var(--on-surface-variant); }
-
-  /* 拖曳工具卡片時：「工具」區變成放置區 */
-  .nav-group.drop { outline: 2px dashed var(--outline); outline-offset: -2px; background: color-mix(in srgb, var(--primary) 6%, transparent); padding-bottom: 6px;
-    transition: background-color var(--spring-effects-fast-duration) var(--spring-effects-fast), outline-color var(--spring-effects-fast-duration) var(--spring-effects-fast); }
-  .nav-group.over { outline-color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent); }
-  .drop-hint { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: var(--text-body); color: var(--primary); }
-  .drag-ghost {
-    position: fixed; z-index: 400; pointer-events: none; transform: translate(-50%, -130%); display: flex; align-items: center; gap: 8px;
-    padding: 10px 16px; border-radius: var(--corner-full); background: var(--inverse-surface); color: var(--inverse-on-surface);
-    font-size: var(--text-body); font-weight: 500; white-space: nowrap;
-    animation: m3-pop var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
-  }
-  .drag-ghost.over { background: var(--primary); color: var(--on-primary); }
-  .drop-float {
-    position: fixed; z-index: 390; left: 12px; top: 50%; transform: translateY(-50%); width: 132px; padding: 24px 12px; text-align: center;
-    display: flex; flex-direction: column; align-items: center; gap: 8px; border-radius: var(--corner-extra-large);
-    border: 2px dashed var(--outline); background: var(--surface-container-high); color: var(--on-surface-variant); font-size: var(--text-body);
-    animation: m3-enter var(--duration-medium2) var(--easing-emphasized-decelerate);
-  }
-  .drop-float.over { border-color: var(--primary); color: var(--primary); background: var(--primary-container); }
-
-  /* 「每次先問我」：掃描到新照片時的詢問列（和 Snackbar 同樣式，不會自己消失） */
-  .ask {
-    position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 290;
-    display: flex; align-items: center; gap: 4px; flex-wrap: wrap; width: min(600px, calc(100% - 32px)); min-height: 48px;
-    padding: 6px 8px 6px 16px; border-radius: var(--corner-extra-small); background: var(--inverse-surface); color: var(--inverse-on-surface);
-    font-size: var(--text-body); line-height: 20px; animation: m3-enter var(--duration-medium2) var(--easing-emphasized-decelerate);
-  }
-  .ask .msg { flex: 1; min-width: 200px; padding: 8px 0; }
-  .ask .act { border: 0; background: none; color: var(--inverse-primary); font-weight: 500; padding: 10px 12px; border-radius: var(--corner-full); cursor: pointer; }
-  .ask .act:hover { background: color-mix(in srgb, var(--inverse-primary) 8%, transparent); }
-  :global(.shell.mode-phone) ~ .ask { bottom: calc(96px + env(safe-area-inset-bottom)); }
-
-  /* 平板：只有圖示的窄欄（像 Google 相簿）——圓形指示、分組之間一條短線 */
-  .sidebar.rail { padding: 0 12px 24px; align-items: center; }
-  .sidebar.rail .group, .sidebar.rail .roots-group, .sidebar.rail .unpin, .sidebar.rail .drop-hint, .sidebar.rail .lbl { display: none; }
-  .sidebar.rail .nav-group { align-items: center; gap: 4px; border-radius: 0; width: 100%; }
-  .sidebar.rail .nav-group + .nav-group { margin-top: 12px; padding-top: 12px; position: relative; }
-  .sidebar.rail .nav-group + .nav-group::before { content: ""; position: absolute; top: 0; left: 50%; width: 32px; height: 1px; margin-left: -16px; background: var(--outline-variant); }
-  .sidebar.rail .nav-group:first-child { margin-top: 4px; }
-  .sidebar.rail a { width: 56px; height: 56px; padding: 0; justify-content: center; border-radius: 50%; }
-  .sidebar.rail a.active::after { animation: none; }
-  .sidebar.rail a:hover:not(.active)::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: color-mix(in srgb, var(--on-surface) 8%, transparent); z-index: -1; }
-  .sidebar.rail .nav-group.drop { outline: 2px dashed var(--outline); outline-offset: 2px; border-radius: var(--corner-extra-large); }
-
-  main {
-    grid-area: main; position: relative; overscroll-behavior-y: none; /* 到底的回彈由 rubberBand 處理，避免和系統回彈疊在一起 */ background: var(--surface); border-radius: var(--corner-extra-large) var(--corner-extra-large) 0 0;
-    margin-right: 12px;
-  }
+  .pane { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--control-bg); }
+  .frame:not(.compact) .pane { box-shadow: -1px 0 0 var(--separator); }
+  .body { flex: 1; min-height: 0; display: flex; position: relative; }
+  main { flex: 1; min-width: 0; position: relative; overflow-y: auto; overscroll-behavior-y: none; }
   .route { min-height: 100%; }
+  /* 資訊欄：寬視窗時佔一欄；窄視窗時浮在內容右側 */
+  .info { flex: none; width: 280px; border-left: 1px solid var(--separator); background: var(--control-bg); }
+  .info.float { position: absolute; z-index: 40; top: 0; bottom: 0; right: 0; box-shadow: var(--shadow-popover); }
+
+  /* 窄視窗：≡ 滑出的側邊欄 */
+  .scrim { position: fixed; inset: 0; z-index: 250; border: 0; padding: 0; background: var(--media-scrim-light); cursor: default; }
+  .drawer { position: fixed; z-index: 260; left: 0; top: 0; bottom: 0; padding: var(--space-2); padding-top: calc(var(--space-2) + env(safe-area-inset-top));
+    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom)); display: flex; will-change: transform; }
+
   /* 頂端的 M3 線性載入條：請求超過一下子還沒回來才出現 */
   .load-bar { position: sticky; top: 0; height: 0; z-index: 30; }
   .load-bar span {
@@ -536,46 +396,15 @@
   .load-bar.on span::after { animation: lb-b 2s var(--ease-out) 1.15s infinite; }
   @keyframes lb-a { 0% { left: -35%; right: 100%; } 60%, 100% { left: 100%; right: -90%; } }
   @keyframes lb-b { 0% { left: -200%; right: 100%; } 60%, 100% { left: 107%; right: -8%; } }
-  .bottom { display: none; }
-  .spacer { flex: 1; }
 
-  /* ≡ 滑出的完整選單（平板、手機相同）：在頂欄下方，和外框同色，不加陰影也不變暗 */
-  .scrim { position: fixed; inset: var(--topbar) 0 0 0; z-index: 250; border: 0; padding: 0; background: transparent; cursor: default; }
-  .sidebar.drawer {
-    position: fixed; z-index: 260; left: 0; top: calc(var(--topbar) + env(safe-area-inset-top)); bottom: 0; width: 280px; max-width: 86vw;
-    background: var(--surface-container); padding: 0 12px 24px; will-change: transform;
+  /* 「每次先問我」：掃描到新照片時的詢問列（和 Snackbar 同樣式，不會自己消失） */
+  .ask {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 290;
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap; width: min(600px, calc(100% - 32px)); min-height: 48px;
+    padding: 6px 8px 6px 16px; border-radius: var(--corner-extra-small); background: var(--inverse-surface); color: var(--inverse-on-surface);
+    font-size: var(--text-body); line-height: 20px; animation: m3-enter var(--duration-medium2) var(--easing-emphasized-decelerate);
   }
-
-  /* 手機：側邊欄收起，下方是浮起來的膠囊分頁列 */
-  .shell.mode-phone { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "main"; }
-  .shell.mode-phone .sidebar:not(.drawer) { display: none; }
-  .shell.mode-phone .brand { min-width: 0; padding-right: 0; }
-  .shell.mode-phone main { margin: 0 8px; }
-  .shell.mode-phone .route { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
-  .shell.mode-phone .bottom {
-    display: flex; position: fixed; z-index: 30; gap: 4px; padding: 6px;
-    left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right));
-    bottom: calc(12px + env(safe-area-inset-bottom)); height: 68px;
-    background: var(--surface-container-high); border: 1px solid var(--outline-variant); border-radius: var(--corner-full);
-  }
-  .shell.mode-phone .bottom a {
-    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: var(--corner-full);
-    text-decoration: none; color: var(--on-surface-variant); font-size: var(--text-callout); line-height: 16px; font-weight: 500;
-    transition: background-color var(--spring-effects-fast-duration) var(--spring-effects-fast), color var(--spring-effects-fast-duration) var(--spring-effects-fast);
-  }
-  .shell.mode-phone .bottom .ind { display: flex; align-items: center; justify-content: center; }
-  /* M3：選取的膠囊在新項目上由中間展開，圖示換成實心 */
-  .shell.mode-phone .bottom a { position: relative; isolation: isolate; }
-  .shell.mode-phone .bottom a.active { color: var(--on-secondary-container); }
-  .shell.mode-phone .bottom a.active::after {
-    content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--secondary-container); z-index: -1;
-    animation: nav-pill var(--spring-expressive-fast-spatial-duration) var(--spring-expressive-fast-spatial);
-  }
-  .shell.mode-phone .bottom a:active { background: color-mix(in srgb, var(--on-surface) 10%, transparent); }
-  @media (max-width: 600px) {
-    .topbar { gap: 4px; padding: 0 4px; padding-top: env(safe-area-inset-top); }
-    .brand-name :global(.wordmark) { font-size: var(--text-title-2) !important; }
-    main { margin: 0; border-radius: var(--corner-large) var(--corner-large) 0 0; }
-  }
-  @media (max-width: 420px) { .brand-name { display: none; } }
+  .ask .msg { flex: 1; min-width: 200px; padding: 8px 0; }
+  .ask .act { border: 0; background: none; color: var(--inverse-primary); font-weight: 500; padding: 10px 12px; border-radius: var(--corner-full); cursor: pointer; }
+  .ask .act:hover { background: color-mix(in srgb, var(--inverse-primary) 8%, transparent); }
 </style>

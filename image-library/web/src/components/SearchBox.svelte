@@ -260,23 +260,30 @@
 <style>
   .sb { position: relative; flex: 1; max-width: 720px; min-width: 0; }
   .sb.collapsed { flex: 0 0 auto; }
+  /* 工具列上的搜尋欄：膠囊形玻璃（手冊「Liquid Glass 使用規則」） */
   .field {
-    display: flex; align-items: center; gap: 4px; height: 48px; padding: 0 4px; border-radius: var(--corner-full);
-    background: var(--surface-container-high); color: var(--on-surface-variant);
-    transition: background-color var(--spring-effects-default-duration) var(--spring-effects-default);
+    display: flex; align-items: center; gap: 2px; height: var(--ctl-h); padding: 0 var(--space-1); border-radius: var(--radius-capsule);
+    background: var(--glass-regular); color: var(--label-glass-secondary); border: 0.5px solid var(--glass-edge);
+    box-shadow: var(--shadow-rim), var(--shadow-glass);
+    -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(180%); backdrop-filter: blur(var(--blur-glass)) saturate(180%);
   }
-  .field:hover { background: var(--surface-container-highest); }
-  .sb.open .field { background: var(--surface-container-highest); border-radius: var(--corner-extra-large) var(--corner-extra-large) 0 0; }
-  .lead-icon { width: 40px; display: flex; justify-content: center; }
-  .lead { color: var(--on-surface-variant); }
-  .field input { flex: 1; border: 0; outline: none; background: none; color: var(--on-surface); min-width: 0; font-size: var(--text-title-3); line-height: 24px; }
-  .field input::placeholder { color: var(--on-surface-variant); }
+  .field:focus-within { box-shadow: var(--shadow-rim), var(--focus-ring); }
+  .field :global(svg) { width: 16px; height: 16px; }
+  .lead-icon { width: var(--control-small); display: flex; justify-content: center; flex: none; }
+  .lead { color: var(--label-glass-secondary); width: var(--control-small); height: var(--control-small); flex: none; }
+  .field input { flex: 1; border: 0; outline: none; box-shadow: none; background: none; color: var(--label-primary); min-width: 0; font-size: var(--text-body); line-height: var(--line-body); }
+  .field input::placeholder { color: var(--label-glass-secondary); }
   .field input::-webkit-search-cancel-button { display: none; }
-  .clear { width: 36px; height: 36px; color: var(--on-surface-variant); }
+  .clear { width: var(--control-small); height: var(--control-small); color: var(--label-glass-secondary); flex: none; }
+  /* 建議清單：暫時性的玻璃層，從搜尋欄下方出現 */
   .panel {
-    position: absolute; left: 0; right: 0; top: 48px; z-index: 60; max-height: min(70vh, 560px); overflow-y: auto;
-    background: var(--surface-container-highest); border-radius: 0 0 var(--corner-extra-large) var(--corner-extra-large);
-    padding: 0 0 12px; border-top: 1px solid var(--outline-variant);
+    position: absolute; right: 0; top: calc(var(--ctl-h) + var(--space-2)); width: max(100%, min(440px, 92vw)); z-index: 60; max-height: min(70vh, 560px); overflow-y: auto;
+    background: var(--glass-regular); border-radius: var(--radius-lg); border: 0.5px solid var(--glass-edge); padding: var(--space-1) 0 var(--space-3);
+    box-shadow: var(--shadow-rim), var(--shadow-popover);
+    -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(180%); backdrop-filter: blur(var(--blur-glass)) saturate(180%);
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .field, .panel { background: var(--elevated-primary); -webkit-backdrop-filter: none; backdrop-filter: none; }
   }
   .row { display: flex; align-items: center; gap: 16px; min-height: 56px; padding: 4px 16px 4px 20px; cursor: pointer; color: var(--on-surface); }
   .row.on { background: color-mix(in srgb, var(--on-surface) 8%, transparent); }

@@ -14,6 +14,10 @@ const EXTRA = {
   "grid": '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
   "columns": '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.2 4.5v15M14.8 4.5v15"/>',
   "tree": '<path d="M5 5.5h6M5 5.5v13h4M5 12h4M13 12h6M13 18.5h6"/>',
+  "external-drive-fill": '<path d="M5.2 12L7.6 6h8.8l2.4 6"/><rect x="3" y="12" width="18" height="7" rx="2" fill="currentColor"/>',
+  "menu": '<path d="M4.5 7h15M4.5 12h15M4.5 17h15"/>',
+  "files": '<rect x="7.5" y="3.5" width="12" height="15" rx="2.5"/><path d="M7.5 6.5H6A1.5 1.5 0 0 0 4.5 8v11A1.5 1.5 0 0 0 6 20.5h8.5A1.5 1.5 0 0 0 16 19v-.5M11 8.5h5M11 12h5"/>',
+  "sidebar-right": '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M14.5 5v14M17 8.5h1.5M17 11h1.5"/>',
   "treemap": '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M12.5 4.5v15M12.5 11h8M3.5 13.5h9"/>',
 };
 
