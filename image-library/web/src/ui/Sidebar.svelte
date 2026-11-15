@@ -5,6 +5,7 @@
    * 項目：{value, label, icon, href, badge, trailing, muted, sub, meter, progress, children}
    * - href：有網址的項目畫成連結（可以用 ⌘ 加按開新視窗）；按下時一樣呼叫 onchange。
    * - muted：次要文字色（例如未連線的硬碟）；trailing：列尾的文字（例如「未連線」）。狀態不能只靠顏色表示。
+   * - dot：用顏色圓點代替圖示（CSS 顏色）；draggable／droppable：可以拖曳、可以把東西放在這一項上。
    * - sub：第二行的說明（給陣列就是多行）；meter：0–1 的容量條；progress：true 是轉圈、0–1 是進度環。
    */
   import Icon from "./Icon.svelte";
@@ -12,7 +13,9 @@
   import { t } from "../i18n/index.svelte.js";
   import { usePlatform, TYPE } from "./platform.js";
 
-  let { sections = [], bottom = [], value = $bindable(), onchange, floating = true, width = 220, class: cls = "", label = "", header, footer } = $props();
+  let { sections = [], bottom = [], value = $bindable(), onchange, floating = true, width = 220, class: cls = "", label = "", header, footer,
+    onitemdragstart, onitemdrop, onitemcontext } = $props();
+  let over = $state(null);
   const platform = usePlatform();
   let closed = $state({});
   function pick(e, it) {
@@ -31,14 +34,19 @@
   <li>
     <svelte:element this={it.href ? "a" : "button"} href={it.href} type={it.href ? undefined : "button"} role={it.href ? undefined : "button"}
       aria-current={sel ? "page" : undefined} aria-expanded={kids ? open : undefined}
-      class="lg-side-item {TYPE[platform].body}" class:lg-on={sel} class:lg-side-sub={depth > 0} class:rm-tall={tall} onclick={(e) => pick(e, it)}>
+      class="lg-side-item {TYPE[platform].body}" class:lg-on={sel} class:lg-side-sub={depth > 0} class:rm-tall={tall} class:rm-over={over === it.value} onclick={(e) => pick(e, it)}
+      draggable={it.draggable ? "true" : undefined} ondragstart={it.draggable ? (e) => onitemdragstart?.(e, it) : undefined}
+      ondragover={it.droppable ? (e) => { e.preventDefault(); over = it.value; } : undefined}
+      ondragleave={it.droppable ? () => { if (over === it.value) over = null; } : undefined}
+      ondrop={it.droppable ? (e) => { e.preventDefault(); e.stopPropagation(); over = null; onitemdrop?.(e, it); } : undefined}
+      oncontextmenu={onitemcontext && it.context ? (e) => { e.preventDefault(); onitemcontext(e, it); } : undefined}>
       {#if kids}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <span class="lg-side-disc" class:lg-open={open} role="presentation" onclick={(e) => { e.stopPropagation(); e.preventDefault(); closed[it.value] = open; }}>
           <Icon name="chevron-right" size={10} weight="bold" />
         </span>
       {:else if depth === 0}<span class="lg-side-disc-space"></span>{/if}
-      {#if it.icon}<Icon name={it.icon} size={platform === "ios" ? 20 : 15} weight="medium" class="lg-side-icon {it.muted ? 'rm-muted' : ''}" />{/if}
+      {#if it.dot}<i class="rm-dot" style:background={it.dot}></i>{:else if it.icon}<Icon name={it.icon} size={platform === "ios" ? 20 : 15} weight="medium" class="lg-side-icon {it.muted ? 'rm-muted' : ''}" />{/if}
       <span class="rm-text">
         <span class="rm-line">
           <span class="lg-side-label" class:rm-muted={it.muted}>{it.label}</span>
@@ -93,5 +101,7 @@
   /* 可以按的群組標題（例如「硬碟」→ 硬碟總覽） */
   .rm-heading-link { display: flex; align-items: center; gap: var(--space-1); text-decoration: none; border-radius: var(--radius-sm); margin-bottom: var(--space-1); padding-top: 2px; padding-bottom: 2px; }
   .rm-heading-link:hover, .rm-heading-link[aria-current="page"] { color: var(--label-primary); background: var(--fill-quaternary); }
+  .rm-dot { flex: none; width: 11px; height: 11px; margin: 0 2px; border-radius: var(--radius-capsule); box-shadow: inset 0 0 0 1px var(--separator); }
+  .lg-side-item.rm-over { box-shadow: inset 0 2px 0 var(--accent); }
   .rm-note { margin: 0; padding: var(--space-1) var(--space-2); color: var(--label-glass-secondary); }
 </style>

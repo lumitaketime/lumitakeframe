@@ -73,6 +73,7 @@
       : photoPage ? t("nav.photos")
         : page === "duplicates" ? t("nav.duplicates")
           : page === "kind" ? t(`kind.${seg[1]}`)
+          : page === "label" ? t(`label.${seg[1]}`)
           : page === "drives" ? t("nav.drives")
           : page === "settings" ? t("nav.settings")
             : page === "search" ? t("nav.search") : "");
@@ -296,7 +297,7 @@
         <main class="scroll-area" use:touchBounce>
           <div class="load-bar" class:on={app.busy} aria-hidden="true"><span></span></div>
           {#key routeKey}
-            <div class="route" class:fill={page === "folders" || page === "kind"}>
+            <div class="route" class:fill={page === "folders" || page === "kind" || page === "label"}>
             {#if page === "" || page === "welcome"}
               <Timeline />
             {:else if page === "favorites"}
@@ -309,6 +310,8 @@
               <Search />
             {:else if page === "folders"}
               <Browse scope={seg[1] ? { type: "folder", root: Number(seg[1]), path: route.query.path || "" } : { type: "roots" }} />
+            {:else if page === "label" && seg[1]}
+              <Browse scope={{ type: "label", label: seg[1] }} />
             {:else if page === "drives"}
               <Drives />
             {:else if page === "kind" && seg[1]}

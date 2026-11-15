@@ -28,7 +28,7 @@ export default {
   "nav.photos": "照片",
   "nav.duplicates": "重複項目",
   "nav.drives": "硬碟",
-  "nav.favorites": "收藏",
+  "nav.favorites": "喜好項目",
   "nav.scanProgress": "掃描進度",
   "nav.settings": "設定",
   "nav.main": "主要導覽",
@@ -159,6 +159,18 @@ export default {
   "drives.connectToScan": "請接上「{name}」以重新掃描。目錄裡的內容仍然可以瀏覽與搜尋。",
   "drives.barLabel": "已編目 {used}，容量 {total}",
   "drives.addOnMac": "請在執行 Re'memor 的 Mac 上加入硬碟。",
+
+  "nav.labels": "標籤",
+  "label.none": "無標籤",
+  "fav.add": "加到喜好項目",
+  "fav.remove": "從側邊欄移除",
+  "fav.added": "已把「{name}」加到喜好項目",
+  "fav.removed": "已從側邊欄移除「{name}」",
+  "fav.dropHere": "把資料夾拖到這裡",
+  "view.empty.label": "還沒有「{label}」標籤的項目。",
+  "view.empty.labelHint": "在檔案或資料夾上按右鍵，就能加上顏色標籤。標籤只存在 Re'memor 裡，不會寫到硬碟上。",
+
+  "key.space": "空白鍵",
 
   "gallery.title": "基礎元件",
   "gallery.intro": "Liquid Glass 設計系統的元件，改寫成 Svelte。這一頁只在開發時使用，用來檢查四個主題。",

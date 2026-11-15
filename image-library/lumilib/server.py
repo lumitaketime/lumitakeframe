@@ -299,13 +299,13 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     def favorites(c) -> list[dict]:
         """側邊欄的「收藏」：收藏的相簿與資料夾。"""
-        out = [{"kind": "album", "id": r["id"], "name": r["name"], "href": f"/albums/{r['id']}"}
+        out = [{"kind": "album", "id": r["id"], "name": r["name"], "href": f"/albums/{r['id']}"}  # noqa: E501
                for r in c.execute("SELECT id, name FROM albums WHERE favorite = 1 ORDER BY position IS NULL, position, name")]
         for r in c.execute("SELECT p.root_id, p.path, r.name AS root_name FROM folder_prefs p JOIN roots r ON r.id = p.root_id "
                            "WHERE p.favorite = 1 ORDER BY p.position IS NULL, p.position, p.path"):
             name = r["path"].rsplit("/", 1)[-1] if r["path"] else r["root_name"]
             href = f"/folders/{r['root_id']}" + (f"?path={quote(r['path'], safe='')}" if r["path"] else "")
-            out.append({"kind": "folder", "name": name, "href": href})
+            out.append({"kind": "folder", "name": name, "href": href, "root_id": r["root_id"], "path": r["path"]})
         return out
 
     def _root_dict(c, r) -> dict:
@@ -1288,13 +1288,14 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     def drives_api(request: Request, detail: bool = False):
         """側邊欄：所有硬碟與各類型的統計。只讀資料庫，硬碟沒接上也回傳。
         detail＝硬碟總覽頁：加上每顆硬碟各類型佔多少，以及已接上但還沒加入目錄的硬碟（只限本機）。"""
-        from .catalog import drives_overview, kinds_overview, new_volumes
+        from .catalog import drives_overview, kinds_overview, labels_overview, new_volumes
 
         c = conn()
         try:
             snap = jobs().snapshot()
             current = snap.get("current") or {}
-            out = {"drives": drives_overview(c, current.get("scan"), detail=detail), "kinds": kinds_overview(c)}
+            out = {"drives": drives_overview(c, current.get("scan"), detail=detail), "kinds": kinds_overview(c),
+                   "labels": labels_overview(c)}
             if detail:
                 out["new"] = new_volumes(c) if request.state.local else []
                 out["scan_job"] = current.get("id") if current.get("kind") in ("scan", "index") else None
@@ -1394,6 +1395,22 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         else:
             text = raw.decode("utf-8", errors="replace")
         return {"text": text, "truncated": truncated}
+
+    @app.post("/api/items/label")
+    def label_items(body: dict = Body(...)):
+        """替檔案與資料夾加上或拿掉顏色標籤。只改目錄資料庫，不寫到硬碟。"""
+        from .catalog import set_labels
+
+        files, folders = body.get("files") or [], body.get("folders") or []
+        if len(files) + len(folders) > MAX_IDS:
+            raise HTTPException(400, f"一次最多 {MAX_IDS} 個項目")
+        c = conn()
+        try:
+            return {"changed": set_labels(c, files, folders, body.get("label"))}
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        finally:
+            c.close()
 
     @app.get("/api/location")
     def location_api(root: int, path: str = ""):

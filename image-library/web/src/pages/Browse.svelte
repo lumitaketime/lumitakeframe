@@ -13,15 +13,17 @@
   import { prefs, viewFor, toggleColumn, COLUMNS } from "../views/prefs.svelte.js";
   import { createItemSource, createStaticSource } from "../data/items.svelte.js";
   import { catalog, driveOfRoot } from "../data/catalog.svelte.js";
-  import { loadLocation, openItem, saveOpenAction } from "../data/browse.js";
+  import { loadLocation, openItem, saveOpenAction, setLabel, pinFolder, DRAG_FOLDER } from "../data/browse.js";
+  import { loadCatalog } from "../data/catalog.svelte.js";
   import { setFrame, frame, toggleInfo } from "../shell/frame.svelte.js";
   import { t, formatNumber, formatBytes, formatDate } from "../i18n/index.svelte.js";
-  import { app, toast, openViewer } from "../lib/state.svelte.js";
+  import { app, toast, openViewer, refresh } from "../lib/state.svelte.js";
   import { navigate } from "../lib/router.svelte.js";
 
   let { scope } = $props();
 
-  const place = $derived(scope.type === "folder" ? `folder:${scope.root}:${scope.path}` : scope.type === "kind" ? `kind:${scope.kind}` : "roots");
+  const place = $derived(scope.type === "folder" ? `folder:${scope.root}:${scope.path}` : scope.type === "kind" ? `kind:${scope.kind}`
+    : scope.type === "label" ? `label:${scope.label}` : "roots");
   const view = $derived(viewFor(place));
   const sel = createSelection();
 
@@ -30,9 +32,11 @@
     type: "folder", id: `root:${r.id}`, name: r.name, kind: "folder", icon: r.online ? "drive" : "drive-offline", size: r.bytes, files: r.files,
     root_id: r.id, path: "", kindLabel: t("info.kind.drive"), note: r.online ? "" : t("drive.offline"),
   }))));
+  let rev = $state(0); // 在標籤頁改了標籤：重新讀取，讓不再屬於這個標籤的項目消失
   const source = $derived(
     scope.type === "roots" ? createStaticSource(rootItems)
       : scope.type === "kind" ? createItemSource({ kind: scope.kind }, prefs.sort, prefs.desc)
+      : scope.type === "label" ? (rev, createItemSource({ label: scope.label }, prefs.sort, prefs.desc))
         : createItemSource({ root: scope.root, path: scope.path }, prefs.sort, prefs.desc));
   $effect(() => {
     source.start();
@@ -171,23 +175,62 @@
       toast(path);
     }
   }
+  // ---- 標籤與喜好項目 ----
+  const LABELS = ["red", "yellow", "green", "blue", "purple"];
+  const chosen = () => sel.indexes().map((i) => source.peek(i)).filter(Boolean);
+  async function label(items, value) {
+    try {
+      await setLabel(items, value);
+      for (const it of items) it.label = value;
+      source.touch();
+      loadCatalog();
+      if (scope.type === "label") rev++;
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+  const isPinned = (item) => !!app.server?.favorites?.some((f) => f.kind === "folder" && f.root_id === item.root_id && f.path === item.path);
+  async function pin(item, on) {
+    try {
+      await pinFolder(item.root_id, item.path, on);
+      toast(on ? t("fav.added", { name: item.name }) : t("fav.removed", { name: item.name }));
+      refresh();
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+  function dragItem(e, item) {
+    if (item?.type !== "folder") return;
+    e.dataTransfer.setData(DRAG_FOLDER, JSON.stringify({ root_id: item.root_id, path: item.path, name: item.name }));
+    e.dataTransfer.effectAllowed = "copyMove";
+  }
+
   function itemMenu(e, i) {
     const item = source.get(i);
     if (!item) return;
     const local = !!app.server?.local;
+    const items = chosen().filter((it) => typeof it.id === "number");
+    const targets = items.length ? items : typeof item.id === "number" ? [item] : [];
+    const pinned = item.type === "folder" && isPinned(item);
     menu = { x: e.clientX, y: e.clientY, items: [
       { label: t("menu.open"), onSelect: () => open(i) },
-      { label: t("menu.quickLook"), shortcut: "␣", onSelect: () => preview(i) },
+      { label: t("menu.quickLook"), shortcut: t("key.space"), onSelect: () => preview(i) },
       { label: t("menu.reveal"), disabled: !local, onSelect: () => run(item, "reveal") },
       { separator: true },
       { label: t("menu.copyPath"), onSelect: () => copyPath(item) },
       { label: t("menu.info"), shortcut: "⌘I", onSelect: () => { if (!frame.info) toggleInfo(); } },
+      ...(item.type === "folder" ? [{ separator: true }, { label: pinned ? t("fav.remove") : t("fav.add"), onSelect: () => pin(item, !pinned) }] : []),
+      ...(targets.length ? [
+        { separator: true }, { header: t("nav.labels") },
+        ...LABELS.map((key) => ({ label: t(`label.${key}`), checked: targets.every((it) => it.label === key), onSelect: () => label(targets, key) })),
+        { label: t("label.none"), checked: false, disabled: !targets.some((it) => it.label), onSelect: () => label(targets, null) },
+      ] : []),
     ] };
   }
   function headerMenu(e) {
     menu = { x: e.clientX, y: e.clientY, items: [
       { header: t("view.columns") },
-      ...COLUMNS.filter((c) => c !== "name" && (c !== "drive" || scope.type === "kind"))
+      ...COLUMNS.filter((c) => c !== "name" && (c !== "drive" || scope.type !== "folder"))
         .map((c) => ({ label: t(`view.col.${c}`), checked: !prefs.hidden.includes(c), onSelect: () => toggleColumn(c) })),
     ] };
   }
@@ -207,6 +250,9 @@
       {#if scope.type === "roots"}
         <h2 class="mac-title-3">{t("drive.noDrives")}</h2>
         <Button variant="borderedProminent" onclick={() => navigate("/drives")}>{t("nav.addDrive")}</Button>
+      {:else if scope.type === "label"}
+        <h2 class="mac-title-3">{t("view.empty.label", { label: t(`label.${scope.label}`) })}</h2>
+        <p class="mac-body">{t("view.empty.labelHint")}</p>
       {:else if scope.type === "kind"}
         <h2 class="mac-title-3">{t("view.empty.kind", { kind: t(`kind.${scope.kind}`) })}</h2>
         <p class="mac-body">{t("view.empty.kindHint")}</p>
@@ -215,9 +261,9 @@
       {/if}
     </div>
   {:else if view === "icons"}
-    <ItemGrid {source} {sel} onopen={open} onpreview={preview} oncontext={itemMenu} />
+    <ItemGrid {source} {sel} onopen={open} onpreview={preview} oncontext={itemMenu} ondragitem={dragItem} />
   {:else}
-    <ItemList {source} {sel} showDrive={scope.type === "kind"} {driveName} onopen={open} onpreview={preview} oncontext={itemMenu} onheadercontext={headerMenu} />
+    <ItemList {source} {sel} showDrive={scope.type === "kind" || scope.type === "label"} ondragitem={dragItem} {driveName} onopen={open} onpreview={preview} oncontext={itemMenu} onheadercontext={headerMenu} />
   {/if}
 </div>
 

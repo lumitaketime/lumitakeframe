@@ -538,6 +538,34 @@ class ItemsPageTests(CatalogFixture):
             self.assertEqual(c.get("/api/items", params={"root": 999}).status_code, 404)
             self.assertEqual(c.get("/api/location", params={"root": self.root["id"]}).json()["name"], "Archive")
 
+    def test_labels_live_in_the_catalog_only(self):
+        from lumilib import ratings
+        from lumilib.catalog import labels_overview, set_labels
+
+        before = {p: p.stat().st_mtime_ns for p in self.drive.rglob("*")}
+        files = self.files()
+        song, photo = files["音樂/song.mp3"], files["2008 國中/畢業旅行/a.jpg"]
+        folder = self.folder("音樂")
+        self.assertEqual(set_labels(self.conn, [song["id"], photo["id"]], [folder["id"]], "red"), 3)
+        self.assertEqual({i["name"] for i in self.page(label="red")["items"]}, {"音樂", "song.mp3", "a.jpg"})
+        self.assertEqual(self.page(label="red")["items"][0]["type"], "folder")
+        self.assertEqual({x["label"]: x["count"] for x in labels_overview(self.conn)}["red"], 3)
+        # 照片在圖庫裡的標籤跟著變；從照片那邊改，檔案目錄也跟著變
+        self.assertEqual(self.conn.execute("SELECT label FROM images WHERE id = ?", (photo["image_id"],)).fetchone()[0], "red")
+        ratings.update(self.conn, photo["image_id"], label="blue")
+        self.assertEqual(self.files()["2008 國中/畢業旅行/a.jpg"]["label"], "blue")
+        # 重新掃描後標籤還在；拿掉標籤；不認得的顏色不收
+        scan_all(self.conn, self.cfg)
+        self.assertEqual(self.files()["音樂/song.mp3"]["label"], "red")
+        set_labels(self.conn, [song["id"]], [], None)
+        self.assertIsNone(self.files()["音樂/song.mp3"]["label"])
+        with self.assertRaises(ValueError):
+            set_labels(self.conn, [song["id"]], [], "pink")
+        # 硬碟上什麼都沒被改（不寫標籤到檔案，也不建立任何檔案）
+        self.assertEqual({p: p.stat().st_mtime_ns for p in self.drive.rglob("*")}, before)
+        self.drive.rename(self.tmp / "unplugged")  # 硬碟沒接上也能加標籤
+        self.assertEqual(set_labels(self.conn, [song["id"]], [], "green"), 1)
+
     def test_quick_look_reads_only_previewable_files(self):
         from fastapi.testclient import TestClient
 

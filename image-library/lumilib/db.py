@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 17  # v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 18  # v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -379,6 +379,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if "label" not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN label TEXT")
     conn.executescript(CATALOG_INDEXES)
+    # v18：照片原本就有的顏色標籤，帶到檔案目錄（之後兩邊一起更新）
+    conn.execute("UPDATE files SET label = (SELECT i.label FROM images i WHERE i.id = files.image_id) "
+                 "WHERE label IS NULL AND image_id IN (SELECT id FROM images WHERE label IS NOT NULL)")
     album_cols = {row[1] for row in conn.execute("PRAGMA table_info(albums)")}
     if "favorite" not in album_cols:
         conn.execute("ALTER TABLE albums ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")

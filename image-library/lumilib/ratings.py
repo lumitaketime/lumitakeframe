@@ -52,5 +52,7 @@ def update(conn: sqlite3.Connection, image_id: int, rating=None, label=None, key
         params += [json.dumps(clean, ensure_ascii=False) if clean else None, json.dumps(clean, ensure_ascii=False)]
     if updates:
         conn.execute(f"UPDATE images SET {', '.join(updates)} WHERE id = ?", (*params, image_id))
+        if label is not None:  # 檔案目錄裡的同一個檔案跟著換標籤
+            conn.execute("UPDATE files SET label = ? WHERE image_id = ?", (label or None, image_id))
         db.refresh_search_text(conn, image_id)
         conn.commit()

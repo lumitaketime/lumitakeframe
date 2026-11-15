@@ -276,3 +276,34 @@ def location_info(conn: sqlite3.Connection, root_id: int, path: str = "") -> dic
         "files": folder["total_files"], "bytes": folder["total_bytes"], "subfolders": folder["subfolders"],
         "label": folder["label"], "folder_id": folder["id"],
     }
+
+
+# ---- 顏色標籤：只存在目錄裡，不寫到硬碟（硬碟沒接上、唯讀的硬碟也能加）----
+
+def set_labels(conn: sqlite3.Connection, files: list[int], folders: list[int], label: str | None) -> int:
+    """替檔案與資料夾加上或拿掉顏色標籤（label 為 None 或空字串＝拿掉）。照片在圖庫裡的標籤一起更新。"""
+    label = label or None
+    if label is not None and label not in LABELS:
+        raise ValueError("未知的顏色標籤")
+    files, folders = [int(i) for i in files or []], [int(i) for i in folders or []]
+    changed = 0
+    for table, ids in (("files", files), ("folders", folders)):
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            marks = ",".join("?" * len(chunk))
+            changed += conn.execute(f"UPDATE {table} SET label = ? WHERE id IN ({marks})", (label, *chunk)).rowcount
+            if table == "files":
+                conn.execute(f"UPDATE images SET label = ? WHERE id IN (SELECT image_id FROM files WHERE id IN ({marks}) "
+                             "AND image_id IS NOT NULL)", (label, *chunk))
+    conn.commit()
+    return changed
+
+
+def labels_overview(conn: sqlite3.Connection) -> list[dict]:
+    """側邊欄「標籤」：每個顏色有幾個項目。"""
+    counts = dict.fromkeys(LABELS, 0)
+    for table in ("files", "folders"):
+        for r in conn.execute(f"SELECT label, COUNT(*) AS n FROM {table} WHERE label IS NOT NULL AND status = 'ok' GROUP BY label"):
+            if r["label"] in counts:
+                counts[r["label"]] += r["n"]
+    return [{"label": k, "count": v} for k, v in counts.items()]

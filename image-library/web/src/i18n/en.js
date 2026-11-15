@@ -160,6 +160,18 @@ export default {
   "drives.barLabel": "{used} cataloged of {total}",
   "drives.addOnMac": "Add drives on the Mac that runs Re'memor.",
 
+  "nav.labels": "Tags",
+  "label.none": "No Tag",
+  "fav.add": "Add to Favorites",
+  "fav.remove": "Remove from Sidebar",
+  "fav.added": "Added “{name}” to Favorites",
+  "fav.removed": "Removed “{name}” from the sidebar",
+  "fav.dropHere": "Drag a folder here",
+  "view.empty.label": "No items tagged “{label}” yet.",
+  "view.empty.labelHint": "Right-click a file or folder to add a color tag. Tags are kept in Re'memor only and are never written to the drive.",
+
+  "key.space": "Space",
+
   "gallery.title": "Base Components",
   "gallery.intro": "The Liquid Glass design system's components, rewritten in Svelte. This page is for development only, to check the four themes.",
   "gallery.theme": "Theme",

@@ -10,6 +10,9 @@
   import { route, navigate } from "../lib/router.svelte.js";
   import { catalog } from "../data/catalog.svelte.js";
   import { frame } from "./frame.svelte.js";
+  import ContextMenu from "../views/ContextMenu.svelte";
+  import { pinFolder, orderPins, DRAG_FOLDER } from "../data/browse.js";
+  import { toast, refresh } from "../lib/state.svelte.js";
 
   let { width = 240 } = $props();
 
@@ -57,10 +60,61 @@
     ] },
     ...(catalog.drives.length ? [{ title: t("nav.kinds"), items: kindItems }] : []),
     { title: t("nav.drives"), href: "/drives", current: page === "drives", items: catalog.drives.map(driveItem), note: catalog.loaded && !catalog.drives.length ? t("drive.noDrives") : "" },
-    ...(app.server?.favorites?.length ? [{ title: t("nav.favorites"), items: app.server.favorites.map((f) => ({
+    // 喜好項目：從內容區把資料夾拖進來就釘選；拖曳排順序；按右鍵移除
+    ...(favorites.length || dropping ? [{ title: t("nav.favorites"), items: favorites.map((f) => ({
       value: `fav:${f.href}`, label: f.name, href: f.href, icon: f.kind === "album" ? "photo" : "folder",
+      draggable: f.kind === "folder", droppable: f.kind === "folder", context: f.kind === "folder", fav: f,
+    })), note: dropping && !favorites.length ? t("fav.dropHere") : "" }] : []),
+    ...(catalog.drives.length ? [{ title: t("nav.labels"), items: (catalog.labels.length ? catalog.labels : LABELS.map((label) => ({ label, count: 0 }))).map((l) => ({
+      value: `label:${l.label}`, label: t(`label.${l.label}`), dot: `var(--label-${l.label})`, href: `/label/${l.label}`,
+      badge: l.count ? formatNumber(l.count) : undefined,
     })) }] : []),
   ]);
+  const LABELS = ["red", "yellow", "green", "blue", "purple"];
+  const favorites = $derived(app.server?.favorites || []);
+  const pins = $derived(favorites.filter((f) => f.kind === "folder"));
+  let dropping = $state(false); // 正在把資料夾拖過側邊欄
+  let menu = $state(null);
+
+  const isFolderDrag = (e) => [...(e.dataTransfer?.types || [])].includes(DRAG_FOLDER);
+  const samePin = (a, b) => a.root_id === b.root_id && a.path === b.path;
+  async function save(fn, message) {
+    try {
+      await fn();
+      if (message) toast(message);
+      refresh();
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+  /** 把資料夾放進側邊欄：before＝放在哪一個喜好項目前面（沒有就放最後） */
+  function dropFolder(e, before) {
+    dropping = false;
+    let data;
+    try {
+      data = JSON.parse(e.dataTransfer.getData(DRAG_FOLDER));
+    } catch {
+      return;
+    }
+    const rest = pins.filter((p) => !samePin(p, data));
+    const at = before ? rest.findIndex((p) => samePin(p, before)) : -1;
+    const order = at < 0 ? [...rest, data] : [...rest.slice(0, at), data, ...rest.slice(at)];
+    const isNew = !pins.some((p) => samePin(p, data));
+    save(async () => {
+      if (isNew) await pinFolder(data.root_id, data.path, true);
+      await orderPins(order.map((p) => ({ root_id: p.root_id, path: p.path })));
+    }, isNew ? t("fav.added", { name: data.name }) : "");
+  }
+  function dragStart(e, it) {
+    e.dataTransfer.setData(DRAG_FOLDER, JSON.stringify({ root_id: it.fav.root_id, path: it.fav.path, name: it.fav.name }));
+    e.dataTransfer.effectAllowed = "move";
+  }
+  function itemMenu(e, it) {
+    menu = { x: e.clientX, y: e.clientY, items: [
+      { label: t("fav.remove"), onSelect: () => save(() => pinFolder(it.fav.root_id, it.fav.path, false), t("fav.removed", { name: it.fav.name })) },
+    ] };
+  }
+
   const bottom = $derived([
     {
       value: "scan", label: job ? job.label : t("nav.scanProgress"), icon: "clock", href: "/settings/ai",
@@ -77,6 +131,7 @@
     if (page === "settings") return "settings";
     if (page === "duplicates") return "duplicates";
     if (page === "kind") return `kind:${route.path.split("/")[2]}`;
+    if (page === "label") return `label:${route.path.split("/")[2]}`;
     if (page === "folders" && rootId) {
       const d = catalog.drives.find((x) => x.roots.some((r) => r.id === rootId));
       if (d) return d.roots.length > 1 ? `root:${rootId}` : d.key;
@@ -92,16 +147,26 @@
   }
 </script>
 
-<Sidebar {sections} {bottom} {value} {width} label={t("nav.main")} onchange={go} class="app-sidebar">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="drop" class:dropping
+  ondragover={(e) => { if (isFolderDrag(e)) { e.preventDefault(); dropping = true; } }}
+  ondragleave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) dropping = false; }}
+  ondrop={(e) => { if (isFolderDrag(e)) { e.preventDefault(); dropFolder(e, null); } }}>
+<Sidebar {sections} {bottom} {value} {width} label={t("nav.main")} onchange={go} class="app-sidebar"
+  onitemdragstart={dragStart} onitemdrop={(e, it) => dropFolder(e, it.fav)} onitemcontext={itemMenu}>
   {#snippet header()}
     <a class="brand" href="/folders" onclick={(e) => { e.preventDefault(); go(null, { href: "/folders" }); }} aria-label="Re'memor">
       <img src="/icon.png" alt="" width="24" height="24" /><Wordmark size={18} />
     </a>
   {/snippet}
 </Sidebar>
+</div>
+{#if menu}<ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />{/if}
 
 <style>
   .brand { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-1) var(--space-2); text-decoration: none; border-radius: var(--radius-sm); }
   .brand img { display: block; border-radius: var(--radius-sm); }
   :global(.app-sidebar) { height: 100%; }
+  .drop { height: 100%; display: flex; border-radius: var(--radius-lg); }
+  .drop.dropping { box-shadow: 0 0 0 2px var(--accent); }
 </style>

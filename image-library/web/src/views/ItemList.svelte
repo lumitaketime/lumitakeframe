@@ -9,7 +9,7 @@
   import { prefs, COLUMNS, setSort, setWidth } from "./prefs.svelte.js";
   import { t, formatBytes, formatDate } from "../i18n/index.svelte.js";
 
-  let { source, sel, showDrive = false, driveName = () => "", onopen, onpreview, oncontext, onheadercontext } = $props();
+  let { source, sel, showDrive = false, driveName = () => "", onopen, onpreview, oncontext, ondragitem, onheadercontext } = $props();
 
   const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
   const ROW = touch ? 44 : 28;
@@ -97,6 +97,7 @@
         <div class="row" class:on={sel.has(i)} class:alt={i % 2 === 1} id="item-{i}" role="option" aria-selected={sel.has(i)}
           aria-setsize={total} aria-posinset={i + 1} tabindex="-1" style:transform="translateY({i * ROW}px)"
           onclick={(e) => sel.click(i, e)} ondblclick={() => onopen?.(i)}
+          draggable={item?.type === "folder" ? "true" : undefined} ondragstart={(e) => ondragitem?.(e, item)}
           oncontextmenu={(e) => { e.preventDefault(); sel.context(i); oncontext?.(e, i); }}>
           {#if item}
             {#each columns as c (c)}
