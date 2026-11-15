@@ -45,6 +45,20 @@ Re'memor 是以 Lumitake Library（`image-library/`，0.19.2）為基礎擴充�
 - 重大改動前先說明計畫，等確認後再動手；每個階段完成後先用真實硬碟實測。
 - 現有程式碼的註解與介面文字都是繁體中文，新程式碼沿用相同風格。
 
+## 給開發者在 Mac 上執行的指令
+
+開發者的 Mac 上，這個專案放在 `~/Rememor-dev`（不是 `~/lumitakeframe`），Python 虛擬環境在 `~/Rememor-dev/image-library/.venv`。
+每次請開發者在 Mac 上操作時：
+
+- 一律給「一整行、可以直接貼上」的指令，從 `cd ~/Rememor-dev/...` 開始，不假設目前在哪個資料夾，也不假設虛擬環境已啟用。
+- 更新並啟動的標準指令：
+
+  ```bash
+  cd ~/Rememor-dev && git pull && cd image-library && source .venv/bin/activate && pip install -q -e . && rememor serve --open
+  ```
+
+- 不要把雲端環境的路徑（`/home/user/lumitakeframe`）寫給開發者。
+
 ## 程式位置與測試
 
 - 引擎（Python、FastAPI）：`image-library/lumilib/`；掃描器 `scanner.py`、資料庫 `db.py`、背景工作 `jobs.py`。
