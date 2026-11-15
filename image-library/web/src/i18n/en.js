@@ -134,6 +134,11 @@ export default {
   "settings.open.ask": "Ask me the first time",
   "settings.open.hint": "Applies to files other than photos and videos, which always open in Re'memor.",
 
+  "quick.title": "Quick Look: {name}",
+  "quick.truncated": "(Long file; only the beginning is shown)",
+  "quick.offline": "Connect “{name}” to preview the original",
+  "menu.quickLook": "Quick Look",
+
   "gallery.title": "Base Components",
   "gallery.intro": "The Liquid Glass design system's components, rewritten in Svelte. This page is for development only, to check the four themes.",
   "gallery.theme": "Theme",

@@ -1336,6 +1336,58 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             raise HTTPException(500, "無法在這台電腦上開啟檔案。") from e
         return {"ok": True}
 
+    # 快速預覽（空白鍵）：只讀取，硬碟要接著。可以直接播放或顯示的類型才送出原檔，文字檔只讀開頭一段
+    PREVIEW_MEDIA = {".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".pdf", ".mp4", ".mov", ".m4v", ".webm",
+                     ".jpg", ".jpeg", ".png", ".gif", ".webp"}
+    PREVIEW_TEXT = {".txt", ".md", ".csv", ".tsv", ".json", ".log", ".xml", ".html", ".htm", ".css", ".js", ".py", ".srt",
+                    ".yml", ".yaml", ".ini", ".conf", ".sh", ".tex"}
+    PREVIEW_TEXT_BYTES = 200_000
+
+    def _preview_target(root: int, path: str) -> Path:
+        c = conn()
+        try:
+            r = db.get_root(c, root)
+        finally:
+            c.close()
+        if r is None:
+            raise HTTPException(404, "找不到這個位置")
+        try:
+            target = fileops.safe_folder(Path(r["path"]), path)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        if not target.is_file():
+            raise HTTPException(409, f"請接上「{r['name']}」以預覽這個檔案。")
+        return target
+
+    @app.get("/api/items/raw")
+    def item_raw(root: int, path: str):
+        target = _preview_target(root, path)
+        if target.suffix.lower() not in PREVIEW_MEDIA:
+            raise HTTPException(415, "這種檔案無法直接預覽")
+        return FileResponse(target, media_type=mimetypes.guess_type(target.name)[0] or "application/octet-stream",
+                            headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=60"})
+
+    @app.get("/api/items/text")
+    def item_text(root: int, path: str):
+        target = _preview_target(root, path)
+        if target.suffix.lower() not in PREVIEW_TEXT:
+            raise HTTPException(415, "這種檔案無法直接預覽")
+        with open(target, "rb") as f:
+            raw = f.read(PREVIEW_TEXT_BYTES + 1)
+        truncated = len(raw) > PREVIEW_TEXT_BYTES
+        raw = raw[:PREVIEW_TEXT_BYTES]
+        # UTF-16 幾乎任何內容都「解得開」，所以開頭有它的標記才用；其餘依序試常見的中文編碼
+        bom16 = raw[:2] in (b"\xff\xfe", b"\xfe\xff")
+        for enc in (("utf-16",) if bom16 else ()) + ("utf-8-sig", "big5", "gb18030"):
+            try:
+                text = raw.decode(enc)
+                break
+            except UnicodeError:
+                continue
+        else:
+            text = raw.decode("utf-8", errors="replace")
+        return {"text": text, "truncated": truncated}
+
     @app.get("/api/location")
     def location_api(root: int, path: str = ""):
         from .catalog import location_info

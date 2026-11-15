@@ -134,6 +134,11 @@ export default {
   "settings.open.ask": "每次第一次先問我",
   "settings.open.hint": "適用於照片與影片以外的檔案。照片與影片一律在 Re'memor 裡開啟。",
 
+  "quick.title": "快速預覽：{name}",
+  "quick.truncated": "（檔案較長，只顯示開頭的部分）",
+  "quick.offline": "請接上「{name}」以預覽原檔",
+  "menu.quickLook": "快速預覽",
+
   "gallery.title": "基礎元件",
   "gallery.intro": "Liquid Glass 設計系統的元件，改寫成 Svelte。這一頁只在開發時使用，用來檢查四個主題。",
   "gallery.theme": "主題",

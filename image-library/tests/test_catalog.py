@@ -513,6 +513,31 @@ class ItemsPageTests(CatalogFixture):
             self.assertEqual(c.get("/api/items", params={"root": 999}).status_code, 404)
             self.assertEqual(c.get("/api/location", params={"root": self.root["id"]}).json()["name"], "Archive")
 
+    def test_quick_look_reads_only_previewable_files(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib.server import create_app
+
+        (self.drive / "2008 國中" / "big5.txt").write_bytes("繁體中文筆記".encode("big5"))
+        with TestClient(create_app(self.cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8766",
+                        client=("127.0.0.1", 1)) as c:
+            rid = self.root["id"]
+            self.assertEqual(c.get("/api/items/text", params={"root": rid, "path": "2008 國中/notes.txt"}).json(),
+                             {"text": "hello", "truncated": False})
+            self.assertEqual(c.get("/api/items/text", params={"root": rid, "path": "2008 國中/big5.txt"}).json()["text"], "繁體中文筆記")
+            long = c.get("/api/items/text", params={"root": rid, "path": "很多檔案/file119.txt"}).json()
+            self.assertEqual((len(long["text"]), long["truncated"]), (120, False))
+            r = c.get("/api/items/raw", params={"root": rid, "path": "音樂/song.mp3"})
+            self.assertEqual((r.status_code, r.headers["content-type"], len(r.content)), (200, "audio/mpeg", 3000))
+            # 不能直接顯示的類型不送出內容；不能跑到硬碟以外
+            self.assertEqual(c.get("/api/items/raw", params={"root": rid, "path": "備份.zip"}).status_code, 415)
+            self.assertEqual(c.get("/api/items/text", params={"root": rid, "path": "2008 國中/自然科報告.docx"}).status_code, 415)
+            self.assertEqual(c.get("/api/items/text", params={"root": rid, "path": "../home/config.txt"}).status_code, 400)
+            self.drive.rename(self.tmp / "unplugged")
+            r = c.get("/api/items/raw", params={"root": rid, "path": "音樂/song.mp3"})
+            self.assertEqual(r.status_code, 409)
+            self.assertIn("Archive", r.text)
+
     def test_open_item_needs_the_drive_and_stays_inside_it(self):
         from fastapi.testclient import TestClient
 

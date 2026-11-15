@@ -8,6 +8,7 @@
   import ItemList from "../views/ItemList.svelte";
   import ItemGrid from "../views/ItemGrid.svelte";
   import ContextMenu from "../views/ContextMenu.svelte";
+  import QuickLook from "../views/QuickLook.svelte";
   import { createSelection } from "../views/selection.svelte.js";
   import { prefs, viewFor, toggleColumn, COLUMNS } from "../views/prefs.svelte.js";
   import { createItemSource, createStaticSource } from "../data/items.svelte.js";
@@ -147,11 +148,17 @@
     }
     run(item, action);
   }
+  // ---- 快速預覽（空白鍵）：跟著目前選到的項目 ----
+  let quick = $state(false);
+  const quickItem = $derived(quick && sel.focus >= 0 ? source.get(sel.focus) : null);
+  const rootOnline = (rootId) => !!catalog.drives.some((d) => d.roots.some((r) => r.id === rootId && r.online));
   function preview(i) {
-    const item = source.get(i);
-    if (item?.image_id) openViewer([{ id: item.image_id, type: item.kind === "video" ? "video" : "photo", name: item.name }], 0);
-    else if (item && !frame.info) toggleInfo(); // 其他檔案：先顯示資訊欄（完整的快速預覽在之後的步驟）
+    if (source.get(i)) quick = true;
   }
+  $effect(() => {
+    place; // 換位置就關掉
+    quick = false;
+  });
 
   // ---- 右鍵選單 ----
   let menu = $state(null);
@@ -170,6 +177,7 @@
     const local = !!app.server?.local;
     menu = { x: e.clientX, y: e.clientY, items: [
       { label: t("menu.open"), onSelect: () => open(i) },
+      { label: t("menu.quickLook"), shortcut: "␣", onSelect: () => preview(i) },
       { label: t("menu.reveal"), disabled: !local, onSelect: () => run(item, "reveal") },
       { separator: true },
       { label: t("menu.copyPath"), onSelect: () => copyPath(item) },
@@ -213,6 +221,11 @@
   {/if}
 </div>
 
+{#if quickItem}
+  <QuickLook item={quickItem} online={rootOnline(quickItem.root_id)} driveName={driveName(quickItem)} canOpen={!!app.server?.local}
+    onclose={() => (quick = false)} onmove={(d) => sel.moveTo(sel.focus + d, total)}
+    onopen={() => { const i = sel.focus; quick = false; open(i); }} onreveal={() => run(quickItem, "reveal")} />
+{/if}
 {#if menu}<ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />{/if}
 {#if asking}
   <div class="backdrop">
