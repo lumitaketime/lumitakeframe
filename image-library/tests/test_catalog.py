@@ -434,6 +434,86 @@ class DrivesApiTests(CatalogFixture):
             self.assertEqual(len(data["kinds"]), 8)
 
 
+class ItemsPageTests(CatalogFixture):
+    """列表與圖像檢視用的分段讀取。"""
+
+    def setUp(self):
+        super().setUp()
+        big = self.drive / "很多檔案"
+        big.mkdir()
+        for i in range(120):
+            (big / f"file{i:03d}.txt").write_bytes(b"x" * (i + 1))
+        scan_all(self.conn, self.cfg)
+
+    def page(self, **kw):
+        from lumilib.catalog import items_page
+
+        return items_page(self.conn, **kw)
+
+    def test_folders_first_then_files_in_pages(self):
+        top = self.page(root_id=self.root["id"])
+        self.assertEqual((top["total"], top["folders"]), (6, 4))
+        self.assertEqual([i["type"] for i in top["items"]], ["folder"] * 4 + ["file"] * 2)
+        self.assertEqual({i["name"] for i in top["items"] if i["type"] == "file"}, {"備份.zip", "Photos Library.photoslibrary"})
+        # 一段一段拿，接起來和一次拿完一樣，而且跨過「資料夾 → 檔案」的交界
+        joined = self.page(root_id=self.root["id"], offset=0, limit=3)["items"] + self.page(root_id=self.root["id"], offset=3, limit=3)["items"]
+        self.assertEqual([i["name"] for i in joined], [i["name"] for i in top["items"]])
+
+    def test_window_in_the_middle_of_a_big_folder(self):
+        p = self.page(root_id=self.root["id"], path="很多檔案", offset=50, limit=10)
+        self.assertEqual((p["total"], [i["name"] for i in p["items"]]), (120, [f"file{i:03d}.txt" for i in range(50, 60)]))
+        self.assertEqual(p["items"][0]["path"], "很多檔案/file050.txt")
+
+    def test_sort_by_size_and_descending(self):
+        p = self.page(root_id=self.root["id"], path="很多檔案", sort="size", desc=True, limit=3)
+        self.assertEqual([i["size"] for i in p["items"]], [120, 119, 118])
+        folders = self.page(root_id=self.root["id"], sort="size", desc=True)["items"]
+        self.assertEqual(folders[0]["name"], "很多檔案")  # 資料夾依「含子資料夾的總大小」排
+
+    def test_kind_filter_across_drives(self):
+        docs = self.page(kind="document", limit=500)
+        self.assertEqual(docs["total"], 122)  # 120 個 txt＋原本的 docx、txt
+        self.assertTrue(all(i["kind"] == "document" for i in docs["items"]))
+        names = [i["name"].casefold() for i in docs["items"]]
+        self.assertEqual(names, sorted(names))
+        self.assertEqual(self.page(kind="document", sort="size", desc=True, limit=1)["items"][0]["name"], "自然科報告.docx")
+        self.assertEqual(self.page(kind="photo")["total"], 1)
+        self.assertIsNone(self.page(kind="nonsense"))
+
+    def test_queries_use_indexes_instead_of_sorting(self):
+        plan = " ".join(r[3] for r in self.conn.execute(
+            "EXPLAIN QUERY PLAN SELECT id FROM files INDEXED BY idx_files_all_name WHERE status = 'ok' AND kind IN ('photo','raw') "
+            "ORDER BY name COLLATE NOCASE LIMIT 50 OFFSET 1000"))
+        self.assertNotIn("TEMP B-TREE", plan)
+        plan = " ".join(r[3] for r in self.conn.execute(
+            "EXPLAIN QUERY PLAN SELECT f.id FROM files f WHERE f.folder_id = 1 AND f.status = 'ok' ORDER BY f.name COLLATE NOCASE, f.id LIMIT 50"))
+        self.assertIn("idx_files_folder_name", plan)
+        self.assertNotIn("TEMP B-TREE", plan)
+
+    def test_still_browsable_when_unplugged_and_location(self):
+        from lumilib.catalog import location_info
+
+        self.drive.rename(self.tmp / "unplugged")
+        self.assertEqual(self.page(root_id=self.root["id"], path="音樂")["items"][0]["name"], "song.mp3")
+        loc = location_info(self.conn, self.root["id"], "2008 國中/畢業旅行")
+        self.assertEqual((loc["root"]["online"], loc["name"], [c["name"] for c in loc["crumbs"]], loc["files"]),
+                         (False, "畢業旅行", ["2008 國中", "畢業旅行"], 1))
+        self.assertIsNone(location_info(self.conn, self.root["id"], "不存在"))
+
+    def test_items_api(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib.server import create_app
+
+        with TestClient(create_app(self.cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8766",
+                        client=("127.0.0.1", 1)) as c:
+            r = c.get("/api/items", params={"root": self.root["id"], "path": "很多檔案", "offset": 100, "limit": 500}).json()
+            self.assertEqual((r["total"], len(r["items"])), (120, 20))
+            self.assertEqual(c.get("/api/items").status_code, 400)
+            self.assertEqual(c.get("/api/items", params={"root": 999}).status_code, 404)
+            self.assertEqual(c.get("/api/location", params={"root": self.root["id"]}).json()["name"], "Archive")
+
+
 class UpgradeTests(unittest.TestCase):
     def test_existing_library_gets_catalog_without_losing_data(self):
         """舊版（v14）的圖庫升級後，照片、分析與相簿都保留，第一次掃描補上完整目錄。"""

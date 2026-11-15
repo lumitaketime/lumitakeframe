@@ -144,3 +144,107 @@ def kinds_overview(conn: sqlite3.Connection) -> list[dict]:
     got = {r["kind"]: (r["n"], r["b"]) for r in conn.execute(
         "SELECT kind, COUNT(*) AS n, COALESCE(SUM(size), 0) AS b FROM files WHERE status = 'ok' GROUP BY kind")}
     return [{"kind": k, "files": got.get(k, (0, 0))[0], "bytes": got.get(k, (0, 0))[1]} for k in filetypes.KINDS]
+
+
+# ---- 瀏覽：列表與圖像檢視只要求「看得到的那一段」----
+
+# 側邊欄「類型」的六個分組（RAW 算照片，App 與套件算其他）
+KIND_GROUPS = {
+    "video": ("video",), "photo": ("photo", "raw"), "document": ("document",), "audio": ("audio",),
+    "archive": ("archive",), "other": ("package", "other"),
+}
+LABELS = ("red", "yellow", "green", "blue", "purple")
+PAGE_MAX = 500
+_FILE_ORDER = {"name": "f.name COLLATE NOCASE", "size": "f.size", "mtime": "f.mtime", "kind": "f.kind"}
+_FOLDER_ORDER = {"name": "d.name COLLATE NOCASE", "size": "d.total_bytes", "mtime": "d.mtime", "kind": "d.name COLLATE NOCASE"}
+_ALL_INDEX = {"name": "idx_files_all_name", "size": "idx_files_all_size", "mtime": "idx_files_all_mtime"}
+
+
+def _file_item(r: sqlite3.Row) -> dict:
+    folder = r["folder_path"]
+    return {"type": "file", "id": r["id"], "name": r["name"], "kind": r["kind"], "size": r["size"], "mtime": r["mtime"],
+            "root_id": r["root_id"], "folder": folder, "path": f"{folder}/{r['name']}" if folder else r["name"],
+            "image_id": r["image_id"], "label": r["label"]}
+
+
+def _folder_item(r: sqlite3.Row) -> dict:
+    return {"type": "folder", "id": r["id"], "name": r["name"], "kind": "folder", "size": r["total_bytes"], "mtime": r["mtime"],
+            "root_id": r["root_id"], "folder": r["path"].rpartition("/")[0], "path": r["path"],
+            "files": r["total_files"], "label": r["label"]}
+
+
+def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: str = "", kind: str | None = None,
+               label: str | None = None, offset: int = 0, limit: int = 200, sort: str = "name", desc: bool = False) -> dict | None:
+    """一段項目（offset 起 limit 筆）與總數。排序、篩選都交給 SQLite，不把整個資料夾讀進來。
+
+    三種範圍：root_id＋path＝一個資料夾的內容（資料夾排前面）；kind＝所有硬碟上這個類型的檔案；
+    label＝所有硬碟上有這個顏色標籤的資料夾與檔案。硬碟沒接上也能查。
+    """
+    sort = sort if sort in _FILE_ORDER else "name"
+    offset, limit = max(0, int(offset)), max(1, min(PAGE_MAX, int(limit)))
+    way = "DESC" if desc else "ASC"
+    file_cols = "f.id, f.name, f.kind, f.size, f.mtime, f.root_id, f.image_id, f.label, d.path AS folder_path"
+
+    if kind is not None:
+        kinds = KIND_GROUPS.get(kind)
+        if not kinds:
+            return None
+        marks = ",".join("?" * len(kinds))
+        total = conn.execute(f"SELECT COUNT(*) FROM files WHERE status = 'ok' AND kind IN ({marks})", kinds).fetchone()[0]
+        # 沿著「狀態＋排序欄位＋類型」的索引走，邊走邊挑類型：不必先把幾十萬筆排好再取一段
+        index = f"INDEXED BY {_ALL_INDEX[sort]}" if sort in _ALL_INDEX else ""
+        rows = conn.execute(
+            f"SELECT {file_cols} FROM (SELECT id FROM files {index} WHERE status = 'ok' AND kind IN ({marks}) "
+            f"ORDER BY {_FILE_ORDER[sort].replace('f.', '')} {way} LIMIT ? OFFSET ?) p "
+            "JOIN files f ON f.id = p.id JOIN folders d ON d.id = f.folder_id", (*kinds, limit, offset)).fetchall()
+        return {"total": total, "folders": 0, "offset": offset, "items": [_file_item(r) for r in rows]}
+
+    if label is not None:
+        if label not in LABELS:
+            return None
+        folders = conn.execute(
+            f"SELECT d.* FROM folders d WHERE d.label = ? AND d.status = 'ok' ORDER BY {_FOLDER_ORDER[sort]} {way}", (label,)).fetchall()
+        files = conn.execute(
+            f"SELECT {file_cols} FROM files f JOIN folders d ON d.id = f.folder_id WHERE f.label = ? AND f.status = 'ok' "
+            f"ORDER BY {_FILE_ORDER[sort]} {way}, f.id", (label,)).fetchall()
+        items = [_folder_item(r) for r in folders] + [_file_item(r) for r in files]
+        return {"total": len(items), "folders": len(folders), "offset": offset, "items": items[offset:offset + limit]}
+
+    here = conn.execute("SELECT id FROM folders WHERE root_id = ? AND path = ?", (root_id, path.strip("/"))).fetchone()
+    if here is None:
+        return None
+    n_folders = conn.execute("SELECT COUNT(*) FROM folders WHERE parent_id = ? AND status = 'ok'", (here["id"],)).fetchone()[0]
+    n_files = conn.execute("SELECT COUNT(*) FROM files WHERE folder_id = ? AND status = 'ok'", (here["id"],)).fetchone()[0]
+    items: list[dict] = []
+    if offset < n_folders:
+        items += [_folder_item(r) for r in conn.execute(
+            f"SELECT d.* FROM folders d WHERE d.parent_id = ? AND d.status = 'ok' ORDER BY {_FOLDER_ORDER[sort]} {way}, d.id "
+            "LIMIT ? OFFSET ?", (here["id"], limit, offset))]
+    if len(items) < limit:
+        items += [_file_item(r) for r in conn.execute(
+            f"SELECT {file_cols} FROM files f JOIN folders d ON d.id = f.folder_id WHERE f.folder_id = ? AND f.status = 'ok' "
+            f"ORDER BY {_FILE_ORDER[sort]} {way}, f.id LIMIT ? OFFSET ?",
+            (here["id"], limit - len(items), max(0, offset - n_folders)))]
+    return {"total": n_folders + n_files, "folders": n_folders, "offset": offset, "items": items}
+
+
+def location_info(conn: sqlite3.Connection, root_id: int, path: str = "") -> dict | None:
+    """目前位置的資訊（路徑列、狀態列、資訊欄用）：所在硬碟、每一層的名稱、總檔案數與大小。"""
+    path = path.strip("/")
+    root = conn.execute("SELECT * FROM roots WHERE id = ?", (root_id,)).fetchone()
+    folder = conn.execute("SELECT * FROM folders WHERE root_id = ? AND path = ?", (root_id, path)).fetchone() if root else None
+    if folder is None:
+        return None
+    drive = conn.execute("SELECT * FROM drives WHERE id = ?", (root["drive_id"],)).fetchone() if root["drive_id"] else None
+    online = Path(root["path"]).is_dir()
+    parts, crumbs = [p for p in path.split("/") if p], []
+    for i, name in enumerate(parts):
+        crumbs.append({"name": name, "path": "/".join(parts[:i + 1])})
+    return {
+        "root": {"id": root["id"], "name": root["name"], "online": online, "last_scan": root["last_scan"], "scan_state": root["scan_state"]},
+        "drive": drive_dict(drive, online),
+        "path": path, "name": folder["name"] if path else root["name"], "crumbs": crumbs,
+        "abs_path": str(Path(root["path"]).joinpath(*parts)),
+        "files": folder["total_files"], "bytes": folder["total_bytes"], "subfolders": folder["subfolders"],
+        "label": folder["label"], "folder_id": folder["id"],
+    }

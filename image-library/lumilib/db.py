@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 15  # v15：硬碟目錄（drives、folders、files）
+SCHEMA_VERSION = 16  # v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS folders (
     subfolders INTEGER NOT NULL DEFAULT 0,
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL,
+    label TEXT,
     UNIQUE (root_id, path)
 );
 
@@ -190,6 +191,7 @@ CREATE TABLE IF NOT EXISTS files (
     image_id INTEGER REFERENCES images(id) ON DELETE SET NULL,
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL,
+    label TEXT,
     UNIQUE (folder_id, name)
 );
 """
@@ -205,11 +207,19 @@ ROOT_COLUMNS = [
 CATALOG_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
 CREATE INDEX IF NOT EXISTS idx_files_root_status ON files(root_id, status);
-CREATE INDEX IF NOT EXISTS idx_files_kind ON files(kind, status);
+DROP INDEX IF EXISTS idx_files_kind;
 -- 側邊欄「類型」的檔案數與總大小：只讀這個索引就能算完，不必讀整張表
 CREATE INDEX IF NOT EXISTS idx_files_kind_size ON files(status, kind, size);
 CREATE INDEX IF NOT EXISTS idx_files_size ON files(size);
 CREATE INDEX IF NOT EXISTS idx_files_image ON files(image_id);
+-- v16：列表與圖像檢視只讀「看得到的那一段」，排序交給這些索引（不必把整個資料夾讀出來再排）
+CREATE INDEX IF NOT EXISTS idx_files_folder_name ON files(folder_id, status, name COLLATE NOCASE);
+-- 跨硬碟的類型篩選：依名稱、大小、日期排序時沿著索引走，邊走邊挑出要的類型
+CREATE INDEX IF NOT EXISTS idx_files_all_name ON files(status, name COLLATE NOCASE, kind);
+CREATE INDEX IF NOT EXISTS idx_files_all_size ON files(status, size, kind);
+CREATE INDEX IF NOT EXISTS idx_files_all_mtime ON files(status, mtime, kind);
+CREATE INDEX IF NOT EXISTS idx_files_label ON files(label) WHERE label IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_folders_label ON folders(label) WHERE label IS NOT NULL;
 """
 
 # v13：全文索引。中文、日文、韓文逐字＋兩字一組，其他文字依單字（可前綴比對）；
@@ -363,6 +373,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for name, ddl in ROOT_COLUMNS:
         if name not in root_cols:
             conn.execute(f"ALTER TABLE roots ADD COLUMN {name} {ddl}")
+    for table in ("files", "folders"):  # v16：顏色標籤（只存在目錄裡，不寫到硬碟）
+        if "label" not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN label TEXT")
     conn.executescript(CATALOG_INDEXES)
     album_cols = {row[1] for row in conn.execute("PRAGMA table_info(albums)")}
     if "favorite" not in album_cols:
