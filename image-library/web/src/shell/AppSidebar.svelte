@@ -56,7 +56,7 @@
       { value: "duplicates", label: t("nav.duplicates"), icon: "duplicate", href: "/duplicates" },
     ] },
     ...(catalog.drives.length ? [{ title: t("nav.kinds"), items: kindItems }] : []),
-    { title: t("nav.drives"), items: catalog.drives.map(driveItem), note: catalog.loaded && !catalog.drives.length ? t("drive.noDrives") : "" },
+    { title: t("nav.drives"), href: "/drives", current: page === "drives", items: catalog.drives.map(driveItem), note: catalog.loaded && !catalog.drives.length ? t("drive.noDrives") : "" },
     ...(app.server?.favorites?.length ? [{ title: t("nav.favorites"), items: app.server.favorites.map((f) => ({
       value: `fav:${f.href}`, label: f.name, href: f.href, icon: f.kind === "album" ? "photo" : "folder",
     })) }] : []),

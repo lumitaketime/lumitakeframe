@@ -10,6 +10,7 @@
   import Explore from "./pages/Explore.svelte";
   import Search from "./pages/Search.svelte";
   import Browse from "./pages/Browse.svelte";
+  import Drives from "./pages/Drives.svelte";
   import Albums from "./pages/Albums.svelte";
   import Album from "./pages/Album.svelte";
   import People from "./pages/People.svelte";
@@ -72,6 +73,7 @@
       : photoPage ? t("nav.photos")
         : page === "duplicates" ? t("nav.duplicates")
           : page === "kind" ? t(`kind.${seg[1]}`)
+          : page === "drives" ? t("nav.drives")
           : page === "settings" ? t("nav.settings")
             : page === "search" ? t("nav.search") : "");
 
@@ -307,6 +309,8 @@
               <Search />
             {:else if page === "folders"}
               <Browse scope={seg[1] ? { type: "folder", root: Number(seg[1]), path: route.query.path || "" } : { type: "roots" }} />
+            {:else if page === "drives"}
+              <Drives />
             {:else if page === "kind" && seg[1]}
               <Browse scope={{ type: "kind", kind: seg[1] }} />
             {:else if page === "albums" && seg[1] === "smart" && seg[2]}

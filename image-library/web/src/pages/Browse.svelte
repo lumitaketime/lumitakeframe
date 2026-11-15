@@ -206,7 +206,7 @@
     <div class="state">
       {#if scope.type === "roots"}
         <h2 class="mac-title-3">{t("drive.noDrives")}</h2>
-        <Button variant="borderedProminent" onclick={() => navigate("/settings/library")}>{t("nav.addDrive")}</Button>
+        <Button variant="borderedProminent" onclick={() => navigate("/drives")}>{t("nav.addDrive")}</Button>
       {:else if scope.type === "kind"}
         <h2 class="mac-title-3">{t("view.empty.kind", { kind: t(`kind.${scope.kind}`) })}</h2>
         <p class="mac-body">{t("view.empty.kindHint")}</p>

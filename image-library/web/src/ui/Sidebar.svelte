@@ -1,7 +1,7 @@
 <script>
   /**
    * 側邊欄：App 的主要導覽，浮在內容上的玻璃面板；最多兩層。
-   * sections：[{title, items}]；bottom：固定在底部的項目（例如「掃描進度」「設定」）。
+   * sections：[{title, items, href}]（有 href 的群組標題可以按）；bottom：固定在底部的項目（例如「掃描進度」「設定」）。
    * 項目：{value, label, icon, href, badge, trailing, muted, sub, meter, progress, children}
    * - href：有網址的項目畫成連結（可以用 ⌘ 加按開新視窗）；按下時一樣呼叫 onchange。
    * - muted：次要文字色（例如未連線的硬碟）；trailing：列尾的文字（例如「未連線」）。狀態不能只靠顏色表示。
@@ -61,7 +61,10 @@
   <div class="rm-scroll">
     {#each sections as s, i (i)}
       <div class="lg-side-section">
-        {#if s.title}<div class="lg-side-heading {platform === 'ios' ? 'ios-title-3' : 'mac-subheadline'}">{s.title}</div>{/if}
+        {#if s.title && s.href}
+          <a class="lg-side-heading rm-heading-link {platform === 'ios' ? 'ios-title-3' : 'mac-subheadline'}" href={s.href} aria-current={s.current ? "page" : undefined}
+            onclick={(e) => pick(e, { href: s.href, value: undefined })}>{s.title}<Icon name="chevron-right" size={9} weight="bold" /></a>
+        {:else if s.title}<div class="lg-side-heading {platform === 'ios' ? 'ios-title-3' : 'mac-subheadline'}">{s.title}</div>{/if}
         <ul class="lg-side-list">{#each s.items as it (it.value)}{@render row(it, 0)}{/each}</ul>
         {#if s.note}<p class="rm-note {TYPE[platform].callout}">{s.note}</p>{/if}
       </div>
@@ -87,5 +90,8 @@
   .rm-meter i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
   .rm-meter.rm-muted i { background: var(--label-glass-secondary); }
   .rm-sub { color: var(--label-glass-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 400; }
+  /* 可以按的群組標題（例如「硬碟」→ 硬碟總覽） */
+  .rm-heading-link { display: flex; align-items: center; gap: var(--space-1); text-decoration: none; border-radius: var(--radius-sm); margin-bottom: var(--space-1); padding-top: 2px; padding-bottom: 2px; }
+  .rm-heading-link:hover, .rm-heading-link[aria-current="page"] { color: var(--label-primary); background: var(--fill-quaternary); }
   .rm-note { margin: 0; padding: var(--space-1) var(--space-2); color: var(--label-glass-secondary); }
 </style>
