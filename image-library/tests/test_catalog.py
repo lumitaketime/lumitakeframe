@@ -415,6 +415,31 @@ class DrivesApiTests(CatalogFixture):
         scan_all(self.conn, self.cfg, progress=plain.append)  # 只收文字的呼叫方式（指令列）照舊
         self.assertTrue(all(isinstance(m, str) for m in plain))
 
+    def test_detail_has_kinds_per_drive_and_new_volumes(self):
+        from lumilib import volumes as vol
+        from lumilib.catalog import drives_overview, new_volumes
+
+        with separate_drives(self.drive):
+            scan_all(self.conn, self.cfg)
+        (d,) = drives_overview(self.conn, detail=True)
+        kinds = {k["kind"]: (k["files"], k["bytes"]) for k in d["kinds"]}
+        self.assertEqual((kinds["audio"], kinds["archive"]), ((1, 3000), (1, 500)))
+        self.assertEqual(sum(k["files"] for k in d["kinds"]), d["files"])
+        plan = " ".join(r[3] for r in self.conn.execute(
+            "EXPLAIN QUERY PLAN SELECT root_id, kind, COUNT(*), SUM(size) FROM files INDEXED BY idx_files_root_kind WHERE status = 'ok' GROUP BY root_id, kind"))
+        self.assertIn("COVERING INDEX", plan)
+        # 已接上但還沒加入目錄的硬碟：列出來等使用者按「加入目錄」，不會自動加入或掃描
+        other = self.tmp / "NewDisk"
+        other.mkdir()
+        real = vol.mounted_volumes
+        vol.mounted_volumes = lambda: [Path("/"), self.drive, other]
+        try:
+            with separate_drives(self.drive, other):
+                self.assertEqual([(v["name"], v["path"]) for v in new_volumes(self.conn)], [("NewDisk", str(other))])
+        finally:
+            vol.mounted_volumes = real
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM roots").fetchone()[0], 1)
+
     def test_kinds_and_api(self):
         from fastapi.testclient import TestClient
 

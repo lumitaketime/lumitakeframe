@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 16  # v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 17  # v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -206,7 +206,9 @@ ROOT_COLUMNS = [
 
 CATALOG_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
-CREATE INDEX IF NOT EXISTS idx_files_root_status ON files(root_id, status);
+-- v17：硬碟總覽「每顆硬碟各類型佔多少」只讀這個索引（也涵蓋原本依 root_id、status 的查詢）
+DROP INDEX IF EXISTS idx_files_root_status;
+CREATE INDEX IF NOT EXISTS idx_files_root_kind ON files(root_id, status, kind, size);
 DROP INDEX IF EXISTS idx_files_kind;
 -- 側邊欄「類型」的檔案數與總大小：只讀這個索引就能算完，不必讀整張表
 CREATE INDEX IF NOT EXISTS idx_files_kind_size ON files(status, kind, size);

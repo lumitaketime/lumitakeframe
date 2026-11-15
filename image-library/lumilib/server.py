@@ -1285,14 +1285,21 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     # ---- 資料夾 ----
     @app.get("/api/drives")
-    def drives_api():
-        """側邊欄：所有硬碟與各類型的統計。只讀資料庫，硬碟沒接上也回傳。"""
-        from .catalog import drives_overview, kinds_overview
+    def drives_api(request: Request, detail: bool = False):
+        """側邊欄：所有硬碟與各類型的統計。只讀資料庫，硬碟沒接上也回傳。
+        detail＝硬碟總覽頁：加上每顆硬碟各類型佔多少，以及已接上但還沒加入目錄的硬碟（只限本機）。"""
+        from .catalog import drives_overview, kinds_overview, new_volumes
 
         c = conn()
         try:
-            current = jobs().snapshot().get("current") or {}
-            return {"drives": drives_overview(c, current.get("scan")), "kinds": kinds_overview(c)}
+            snap = jobs().snapshot()
+            current = snap.get("current") or {}
+            out = {"drives": drives_overview(c, current.get("scan"), detail=detail), "kinds": kinds_overview(c)}
+            if detail:
+                out["new"] = new_volumes(c) if request.state.local else []
+                out["scan_job"] = current.get("id") if current.get("kind") in ("scan", "index") else None
+                out["queued"] = [j["id"] for j in snap.get("queued", []) if j["kind"] in ("scan", "index")]
+            return out
         finally:
             c.close()
 

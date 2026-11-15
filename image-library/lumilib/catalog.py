@@ -97,7 +97,7 @@ def folder_listing(conn: sqlite3.Connection, root_id: int, path: str = "") -> di
     }
 
 
-def drives_overview(conn: sqlite3.Connection, scanning: dict | None = None) -> list[dict]:
+def drives_overview(conn: sqlite3.Connection, scanning: dict | None = None, detail: bool = False) -> list[dict]:
     """側邊欄的硬碟清單：每顆硬碟（不論有沒有接上）的容量、已編目的檔案數與大小、連線與掃描狀態。
 
     scanning 是正在執行的掃描工作回報的 {"root_id", "files"}。只讀資料庫，另外用「資料夾還在不在」判斷有沒有接上。
@@ -136,7 +136,35 @@ def drives_overview(conn: sqlite3.Connection, scanning: dict | None = None) -> l
             # 以前完整掃過才估得出百分比（用上次的檔案數當總數）；第一次掃描只知道「正在掃」
             if r["last_scan"] and r["files"]:
                 item["progress"] = min(0.99, (scanning.get("files") or 0) / r["files"])
+    if detail:  # 硬碟總覽：每顆硬碟各類型的檔案數與大小（容量條依類型分色）
+        by_root: dict[int, dict[str, list[int]]] = {}
+        for r in conn.execute("SELECT root_id, kind, COUNT(*) AS n, COALESCE(SUM(size), 0) AS b FROM files INDEXED BY idx_files_root_kind "
+                              "WHERE status = 'ok' GROUP BY root_id, kind"):
+            by_root.setdefault(r["root_id"], {})[r["kind"]] = [r["n"], r["b"]]
+        for item in out.values():
+            total: dict[str, list[int]] = {}
+            for root in item["roots"]:
+                for kind, (n, b) in by_root.get(root["id"], {}).items():
+                    t = total.setdefault(kind, [0, 0])
+                    t[0] += n
+                    t[1] += b
+            item["kinds"] = [{"kind": k, "files": total[k][0], "bytes": total[k][1]} for k in filetypes.KINDS if k in total]
     return sorted(out.values(), key=lambda x: x["name"].casefold())
+
+
+def new_volumes(conn: sqlite3.Connection) -> list[dict]:
+    """這台電腦上已經接著、但還沒加入目錄的硬碟（只讀取名稱、格式與容量，不讀內容；開機磁碟不列）。"""
+    roots = [Path(r["path"]) for r in conn.execute("SELECT path FROM roots")]
+    out = []
+    for mount in volumes.mounted_volumes():
+        if mount == Path("/") or any(r == mount or mount in r.parents for r in roots):
+            continue
+        info = volumes.volume_info(mount)
+        if not info:
+            continue
+        out.append({"path": str(mount), "name": info.get("name") or mount.name, "fs_label": volumes.fs_label(info.get("fs_type")),
+                    "capacity": info.get("capacity"), "read_only": bool(info.get("read_only"))})
+    return out
 
 
 def kinds_overview(conn: sqlite3.Connection) -> list[dict]:
