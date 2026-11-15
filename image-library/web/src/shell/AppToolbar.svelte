@@ -3,7 +3,8 @@
    * 工具列：（窄視窗或側邊欄收起時的選單鈕）、上一頁／下一頁、標題、檢視切換、搜尋、資訊欄開關。
    * 按鈕群組是膠囊形玻璃；工具列本身不墊色塊。
    */
-  import { Toolbar, SegmentedControl } from "../ui/index.js";
+  import { Toolbar, SegmentedControl, Slider } from "../ui/index.js";
+  import { prefs, viewFor, setView, setIconSize, VIEWS, ALL_VIEWS, ICON_MIN, ICON_MAX } from "../views/prefs.svelte.js";
   import SearchBox from "../components/SearchBox.svelte";
   import FilterButton from "../components/FilterButton.svelte";
   import { filterUI } from "../lib/filter.svelte.js";
@@ -11,7 +12,7 @@
   import { route } from "../lib/router.svelte.js";
   import { frame, toggleSidebar } from "./frame.svelte.js";
 
-  let { title = "", compact = false, narrowSearch = false, showViews = false, infoOpen = false, ontoggleinfo } = $props();
+  let { title = "", compact = false, narrowSearch = false, place = "", infoOpen = false, ontoggleinfo } = $props();
   let searchOpen = $state(false);
 
   // 上一頁／下一頁：記住在 App 裡走到過的最遠一步，才知道「下一頁」能不能按
@@ -25,10 +26,10 @@
     idx = now;
   });
 
-  const VIEWS = ["icons", "list", "columns", "tree", "treemap"];
   const VIEW_ICONS = { icons: "grid", list: "list", columns: "columns", tree: "tree", treemap: "treemap" };
-  // 檢視切換在步驟 3、4 接上；這一步先固定在「圖像」
-  const views = $derived(VIEWS.map((v) => ({ value: v, icon: VIEW_ICONS[v], ariaLabel: t(`toolbar.view.${v}`), disabled: v !== "icons" })));
+  // 圖像與列表可以用；直欄、樹狀、佔比在下一步接上
+  const views = $derived(ALL_VIEWS.map((v) => ({ value: v, icon: VIEW_ICONS[v], ariaLabel: t(`toolbar.view.${v}`), disabled: !VIEWS.includes(v) })));
+  const view = $derived(place ? viewFor(place) : "");
 
   const leading = $derived([
     ...(compact ? [[{ icon: "menu", label: t("nav.openMenu"), onClick: () => (frame.drawer = true) }]]
@@ -43,7 +44,12 @@
 
 <Toolbar platform="mac" title={searchOpen && narrowSearch ? "" : title} {leading} {trailing} edgeEffect={false} class="app-toolbar">
   {#snippet centerExtra()}
-    {#if showViews && !compact}<SegmentedControl segments={views} value="icons" ariaLabel={t("toolbar.view")} />{/if}
+    {#if place}
+      <SegmentedControl segments={compact ? views.filter((v) => !v.disabled) : views} value={view} onchange={(v) => setView(place, v)} ariaLabel={t("toolbar.view")} />
+      {#if view === "icons" && !compact}
+        <div class="size"><Slider value={prefs.iconSize} min={ICON_MIN} max={ICON_MAX} step={8} onchange={setIconSize} ariaLabel={t("view.iconSize")} /></div>
+      {/if}
+    {/if}
   {/snippet}
   {#snippet trailingExtra()}
     <div class="search" class:narrow={narrowSearch}><SearchBox narrow={narrowSearch} bind:expanded={searchOpen} /></div>
@@ -55,4 +61,5 @@
   :global(.app-toolbar) { flex: none; padding-top: env(safe-area-inset-top); }
   .search { display: flex; justify-content: flex-end; width: clamp(180px, 26vw, 360px); }
   .search.narrow { width: auto; }
+  .size { width: 110px; flex: none; margin: 0 var(--space-2); }
 </style>

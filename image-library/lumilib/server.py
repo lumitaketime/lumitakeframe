@@ -35,13 +35,13 @@ from .search import STACK_COUNT_SQL, search, summarize, tag_covers, top_tags
 
 WEB_DIR = Path(__file__).parent / "web"
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
-LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path"}
+LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -277,7 +277,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "ai": cached_ai_status(),
                 "ui": {"viewer_rating_bar": cfg.viewer_rating_bar, "nav_hidden": cfg.nav_hidden, "pinned_tools": cfg.pinned_tools,
                        "grid_style": cfg.grid_style, "onboarded": cfg.onboarded,
-                       "album_sort": cfg.album_sort, "folder_sort": cfg.folder_sort},
+                       "album_sort": cfg.album_sort, "folder_sort": cfg.folder_sort, "open_action": cfg.open_action},
                 "favorites": favorites(c),
                 "local": request.state.local,
                 "platform": sys.platform,
@@ -1312,6 +1312,29 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             return page
         finally:
             c.close()
+
+    @app.post("/api/items/open")
+    def open_item(body: dict = Body(...)):
+        """用 Mac 預設的 App 打開檔案，或在 Finder 中顯示（只限本機、硬碟要接著）。只讀取，不修改檔案。"""
+        action = "reveal" if body.get("action") == "reveal" else "open"
+        c = conn()
+        try:
+            r = db.get_root(c, int(body["root_id"]))
+        finally:
+            c.close()
+        if r is None:
+            raise HTTPException(404, "找不到這個位置")
+        try:
+            target = fileops.safe_folder(Path(r["path"]), str(body.get("path", "")))
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        if not target.exists():
+            raise HTTPException(409, f"請接上「{r['name']}」以開啟這個項目。")
+        try:
+            fileops.reveal(target, select=action == "reveal")
+        except OSError as e:  # 這台電腦沒有可以開啟檔案的程式（例如在沒有桌面的系統上執行）
+            raise HTTPException(500, "無法在這台電腦上開啟檔案。") from e
+        return {"ok": True}
 
     @app.get("/api/location")
     def location_api(root: int, path: str = ""):

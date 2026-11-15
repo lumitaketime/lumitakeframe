@@ -66,6 +66,7 @@ DEFAULTS = {
     "large_files_limit": 200,  # 大檔案列出幾個
     "album_sort": "updated",  # 相簿排序：updated／name／created／count／custom（拖曳排的順序）
     "folder_sort": "name",  # 資料夾排序：name／updated／count／custom
+    "open_action": "",  # 按兩下照片以外的檔案：open＝用預設的 App 打開／reveal＝在 Finder 中顯示／空白＝第一次先問
     "stack_enabled": 1,
     "burst_seconds": 2,
     # 人臉辨識
@@ -126,6 +127,7 @@ class Config:
     large_files_limit: int = DEFAULTS["large_files_limit"]
     album_sort: str = DEFAULTS["album_sort"]
     folder_sort: str = DEFAULTS["folder_sort"]
+    open_action: str = DEFAULTS["open_action"]
     stack_enabled: int = DEFAULTS["stack_enabled"]
     burst_seconds: int = DEFAULTS["burst_seconds"]
     face_enabled: int = DEFAULTS["face_enabled"]

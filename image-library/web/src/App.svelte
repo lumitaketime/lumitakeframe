@@ -9,7 +9,7 @@
   import Timeline from "./pages/Timeline.svelte";
   import Explore from "./pages/Explore.svelte";
   import Search from "./pages/Search.svelte";
-  import Folders from "./pages/Folders.svelte";
+  import Browse from "./pages/Browse.svelte";
   import Albums from "./pages/Albums.svelte";
   import Album from "./pages/Album.svelte";
   import People from "./pages/People.svelte";
@@ -28,6 +28,7 @@
   import StatusBar from "./shell/StatusBar.svelte";
   import { frame, pageFrame, toggleSidebar, toggleInfo, setSidebarWidth, SIDEBAR_MIN, SIDEBAR_MAX, INFO_BREAK, DRAWER_BREAK } from "./shell/frame.svelte.js";
   import { loadCatalog } from "./data/catalog.svelte.js";
+  import { setView } from "./views/prefs.svelte.js";
   import { t } from "./i18n/index.svelte.js";
   import { api } from "./lib/api.js";
   import { app, selection, viewer, refresh, toast } from "./lib/state.svelte.js";
@@ -70,6 +71,7 @@
     page === "folders" ? (crumbs.length > 1 ? crumbs[crumbs.length - 1].label : t("nav.allFiles"))
       : photoPage ? t("nav.photos")
         : page === "duplicates" ? t("nav.duplicates")
+          : page === "kind" ? t(`kind.${seg[1]}`)
           : page === "settings" ? t("nav.settings")
             : page === "search" ? t("nav.search") : "");
 
@@ -123,6 +125,9 @@
         e.preventDefault(); // ⌘F：搜尋
         input.focus();
       }
+    } else if (mod && !e.shiftKey && !e.altKey && (e.key === "1" || e.key === "2") && pf?.browse && !typing) {
+      e.preventDefault(); // ⌘1 圖像、⌘2 列表
+      setView(pf.browse, e.key === "1" ? "icons" : "list");
     } else if (mod && e.key === "ArrowUp" && !typing && crumbs.length > 1) {
       e.preventDefault(); // ⌘↑：回上層
       navigate(crumbs[crumbs.length - 2].href);
@@ -283,13 +288,13 @@
     {/if}
 
     <div class="pane">
-      <AppToolbar {title} {compact} narrowSearch={winW <= 600} showViews={page === "folders"} {infoOpen} ontoggleinfo={onToggleInfo} />
+      <AppToolbar {title} {compact} narrowSearch={winW <= 600} place={pf?.browse || ""} {infoOpen} ontoggleinfo={onToggleInfo} />
       {#if photoPage}<PhotoTabs />{:else if crumbs.length}<PathBar {crumbs} />{/if}
       <div class="body">
         <main class="scroll-area" use:touchBounce>
           <div class="load-bar" class:on={app.busy} aria-hidden="true"><span></span></div>
           {#key routeKey}
-            <div class="route">
+            <div class="route" class:fill={page === "folders" || page === "kind"}>
             {#if page === "" || page === "welcome"}
               <Timeline />
             {:else if page === "favorites"}
@@ -301,7 +306,9 @@
             {:else if page === "search"}
               <Search />
             {:else if page === "folders"}
-              <Folders rootId={seg[1] ? Number(seg[1]) : null} />
+              <Browse scope={seg[1] ? { type: "folder", root: Number(seg[1]), path: route.query.path || "" } : { type: "roots" }} />
+            {:else if page === "kind" && seg[1]}
+              <Browse scope={{ type: "kind", kind: seg[1] }} />
             {:else if page === "albums" && seg[1] === "smart" && seg[2]}
               <SmartAlbum id={Number(seg[2])} />
             {:else if page === "keywords"}
@@ -373,6 +380,7 @@
   .body { flex: 1; min-height: 0; display: flex; position: relative; }
   main { flex: 1; min-width: 0; position: relative; overflow-y: auto; overscroll-behavior-y: none; }
   .route { min-height: 100%; }
+  .route.fill { height: 100%; min-height: 0; }
   /* 資訊欄：寬視窗時佔一欄；窄視窗時浮在內容右側 */
   .info { flex: none; width: 280px; border-left: 1px solid var(--separator); background: var(--control-bg); }
   .info.float { position: absolute; z-index: 40; top: 0; bottom: 0; right: 0; box-shadow: var(--shadow-popover); }

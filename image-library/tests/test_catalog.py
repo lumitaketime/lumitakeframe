@@ -513,6 +513,30 @@ class ItemsPageTests(CatalogFixture):
             self.assertEqual(c.get("/api/items", params={"root": 999}).status_code, 404)
             self.assertEqual(c.get("/api/location", params={"root": self.root["id"]}).json()["name"], "Archive")
 
+    def test_open_item_needs_the_drive_and_stays_inside_it(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib import fileops
+        from lumilib.server import create_app
+
+        calls, real = [], fileops.reveal
+        fileops.reveal = lambda path, select=True: calls.append((Path(path).name, select))
+        try:
+            with TestClient(create_app(self.cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8766",
+                            client=("127.0.0.1", 1)) as c:
+                body = {"root_id": self.root["id"], "path": "音樂/song.mp3"}
+                self.assertEqual(c.post("/api/items/open", json=body).status_code, 200)
+                self.assertEqual(c.post("/api/items/open", json={**body, "action": "reveal"}).status_code, 200)
+                self.assertEqual(calls, [("song.mp3", False), ("song.mp3", True)])
+                self.assertEqual(c.post("/api/items/open", json={**body, "path": "../外面.txt"}).status_code, 400)
+                self.drive.rename(self.tmp / "unplugged")  # 硬碟沒接上：說明要接上哪一顆
+                r = c.post("/api/items/open", json=body)
+                self.assertEqual(r.status_code, 409)
+                self.assertIn("Archive", r.text)
+                self.assertEqual(len(calls), 2)
+        finally:
+            fileops.reveal = real
+
 
 class UpgradeTests(unittest.TestCase):
     def test_existing_library_gets_catalog_without_losing_data(self):

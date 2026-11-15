@@ -5,7 +5,7 @@
    */
   import { Sidebar } from "../ui/index.js";
   import Wordmark from "../components/Wordmark.svelte";
-  import { t, formatBytes, formatDate } from "../i18n/index.svelte.js";
+  import { t, formatBytes, formatDate, formatNumber } from "../i18n/index.svelte.js";
   import { app } from "../lib/state.svelte.js";
   import { route, navigate } from "../lib/router.svelte.js";
   import { catalog } from "../data/catalog.svelte.js";
@@ -37,6 +37,17 @@
     };
   }
 
+  // 類型：六個分組（RAW 算照片，App 與套件算其他），每項顯示檔案數與總大小
+  const KIND_GROUPS = { video: ["video"], photo: ["photo", "raw"], document: ["document"], audio: ["audio"], archive: ["archive"], other: ["package", "other"] };
+  const KIND_ICONS = { video: "video", photo: "photo", document: "document", audio: "music-note", archive: "archive", other: "file" };
+  const kindItems = $derived(Object.entries(KIND_GROUPS).map(([group, kinds]) => {
+    const rows = catalog.kinds.filter((k) => kinds.includes(k.kind));
+    const files = rows.reduce((n, k) => n + k.files, 0);
+    const bytes = rows.reduce((n, k) => n + k.bytes, 0);
+    return { value: `kind:${group}`, label: t(`kind.${group}`), icon: KIND_ICONS[group], href: `/kind/${group}`,
+      badge: files ? `${formatNumber(files, { notation: "compact", maximumFractionDigits: 1 })} · ${formatBytes(bytes)}` : "0" };
+  }));
+
   const job = $derived(app.server?.jobs?.current);
   const sections = $derived([
     { title: t("nav.library"), items: [
@@ -44,6 +55,7 @@
       { value: "photos", label: t("nav.photos"), icon: "photo", href: "/" },
       { value: "duplicates", label: t("nav.duplicates"), icon: "duplicate", href: "/duplicates" },
     ] },
+    ...(catalog.drives.length ? [{ title: t("nav.kinds"), items: kindItems }] : []),
     { title: t("nav.drives"), items: catalog.drives.map(driveItem), note: catalog.loaded && !catalog.drives.length ? t("drive.noDrives") : "" },
     ...(app.server?.favorites?.length ? [{ title: t("nav.favorites"), items: app.server.favorites.map((f) => ({
       value: `fav:${f.href}`, label: f.name, href: f.href, icon: f.kind === "album" ? "photo" : "folder",
@@ -64,6 +76,7 @@
     if (fav) return `fav:${fav.href}`;
     if (page === "settings") return "settings";
     if (page === "duplicates") return "duplicates";
+    if (page === "kind") return `kind:${route.path.split("/")[2]}`;
     if (page === "folders" && rootId) {
       const d = catalog.drives.find((x) => x.roots.some((r) => r.id === rootId));
       if (d) return d.roots.length > 1 ? `root:${rootId}` : d.key;

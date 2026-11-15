@@ -27,6 +27,12 @@
   --layer-4: color-mix(in srgb, var(--label-primary) 14%, var(--control-bg));
 
   /* ---- 檔案類型色（手冊「檔案類型色」）：佔比圖、容量條、類型圖示 ---- */
+  /* 顏色標籤（五色，和照片的標籤共用） */
+  --label-red: var(--system-red);
+  --label-yellow: var(--system-yellow);
+  --label-green: var(--system-green);
+  --label-blue: var(--system-blue);
+  --label-purple: var(--system-purple);
   --kind-video: var(--system-indigo);
   --kind-photo: var(--system-mint);
   --kind-raw: var(--system-teal);

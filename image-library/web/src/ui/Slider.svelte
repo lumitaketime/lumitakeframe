@@ -3,7 +3,7 @@
   import Icon from "./Icon.svelte";
   import { usePlatform, TYPE, uid } from "./platform.js";
 
-  let { value = $bindable(50), min = 0, max = 100, step = 1, onchange, ticks = 0, minIcon = "", maxIcon = "", label = "", valueLabel = undefined, disabled = false, class: cls = "" } = $props();
+  let { value = $bindable(50), min = 0, max = 100, step = 1, onchange, ticks = 0, minIcon = "", maxIcon = "", label = "", ariaLabel = "", valueLabel = undefined, disabled = false, class: cls = "" } = $props();
   const platform = usePlatform();
   const id = uid("slider");
   const pct = $derived(((value - min) / (max - min)) * 100);
@@ -14,7 +14,7 @@
   <div class="lg-slider-row">
     {#if minIcon}<Icon name={minIcon} size={platform === "ios" ? 17 : 13} class="lg-slider-end" />{/if}
     <div class="lg-slider-track-wrap">
-      <input {id} type="range" {min} {max} {step} bind:value {disabled} aria-valuetext={valueLabel ? valueLabel(value) : undefined}
+      <input {id} type="range" aria-label={label ? undefined : ariaLabel || undefined} {min} {max} {step} bind:value {disabled} aria-valuetext={valueLabel ? valueLabel(value) : undefined}
         oninput={() => onchange?.(value)} style:--lg-pct="{pct}%" style:--pct="{pct}%" class="lg-range" />
       {#if ticks > 1}<div class="lg-ticks" aria-hidden="true">{#each Array(ticks) as _, i (i)}<i></i>{/each}</div>{/if}
     </div>

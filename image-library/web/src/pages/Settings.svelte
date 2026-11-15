@@ -1,4 +1,6 @@
 <script>
+  import { RadioGroup } from "../ui/index.js";
+  import { t } from "../i18n/index.svelte.js";
   import { slider } from "../lib/slider.js";
   import Loading from "../components/Loading.svelte";
   import { tick } from "svelte";
@@ -967,6 +969,15 @@
         </div>
         <p class="tiny muted">手機螢幕較窄，一律用正方形顯示。</p>
       {:else}<Loading kind="rows" count={2} />{/if}
+      <h3>{t("settings.open.title")}</h3>
+      {#if settings}
+        <RadioGroup value={settings.open_action || ""} onchange={(v) => saveSetting("open_action", v)} options={[
+          { value: "open", label: t("open.optOpen") },
+          { value: "reveal", label: t("open.optReveal") },
+          { value: "", label: t("settings.open.ask") },
+        ]} />
+        <p class="tiny muted">{t("settings.open.hint")}</p>
+      {/if}
       <h3>系統</h3>
       {#if s}
         <ul class="sys small">
