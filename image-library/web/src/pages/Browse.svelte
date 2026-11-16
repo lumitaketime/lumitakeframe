@@ -7,13 +7,18 @@
   import { Alert, Button, ProgressIndicator } from "../ui/index.js";
   import ItemList from "../views/ItemList.svelte";
   import ItemGrid from "../views/ItemGrid.svelte";
+  import ItemTree from "../views/ItemTree.svelte";
+  import ItemColumns from "../views/ItemColumns.svelte";
+  import ItemUsage from "../views/ItemUsage.svelte";
+  import { buildUnits } from "../views/usage.js";
+  import { createTreeSource } from "../data/tree.svelte.js";
   import ContextMenu from "../views/ContextMenu.svelte";
   import QuickLook from "../views/QuickLook.svelte";
   import { createSelection } from "../views/selection.svelte.js";
   import { prefs, viewFor, toggleColumn, COLUMNS } from "../views/prefs.svelte.js";
   import { createItemSource, createStaticSource } from "../data/items.svelte.js";
   import { catalog, driveOfRoot } from "../data/catalog.svelte.js";
-  import { loadLocation, openItem, saveOpenAction, setLabel, pinFolder, DRAG_FOLDER } from "../data/browse.js";
+  import { loadLocation, openItem, saveOpenAction, setLabel, pinFolder, DRAG_FOLDER, loadUsage, loadKinds } from "../data/browse.js";
   import { loadCatalog } from "../data/catalog.svelte.js";
   import { setFrame, frame, toggleInfo } from "../shell/frame.svelte.js";
   import { t, formatNumber, formatBytes, formatDate } from "../i18n/index.svelte.js";
@@ -38,11 +43,30 @@
       : scope.type === "kind" ? createItemSource({ kind: scope.kind }, prefs.sort, prefs.desc)
       : scope.type === "label" ? (rev, createItemSource({ label: scope.label }, prefs.sort, prefs.desc))
         : createItemSource({ root: scope.root, path: scope.path }, prefs.sort, prefs.desc));
+  // 樹狀檢視：把展開的資料夾攤平成一條清單；佔比檢視：兩層的大小統計。兩者的介面和一般來源相同
+  const treeSource = $derived(scope.type === "folder" && view === "tree" ? createTreeSource(scope.root, scope.path, prefs.sort, prefs.desc) : null);
+  let usage = $state(null);
+  let usageError = $state("");
   $effect(() => {
+    usage = null;
+    usageError = "";
+    if (scope.type !== "folder" || view !== "treemap") return;
+    const { root, path } = scope;
+    app.refreshKey;
+    loadUsage(root, path).then((d) => {
+      if (scope.type === "folder" && scope.root === root && scope.path === path) usage = d;
+    }).catch((e) => (usageError = e.message));
+  });
+  const chart = $derived(usage ? buildUnits(usage, scope.root, t, formatNumber) : { units: [], tops: [] });
+  const usageSource = $derived(createStaticSource(chart.units));
+  /** 目前這個檢視在用的來源：選取、開啟、右鍵選單、快速預覽都透過它 */
+  const active = $derived(view === "tree" && treeSource ? treeSource : view === "treemap" && scope.type === "folder" ? usageSource : source);
+  $effect(() => {
+    active;
     source.start();
     sel.clear();
   });
-  const total = $derived(source.state.total);
+  const total = $derived(view === "treemap" && scope.type === "folder" && !usage ? null : active.state.total);
 
   // 超過 300 毫秒還沒讀到才顯示「載入中」，避免一閃而過
   let slow = $state(false);
@@ -71,7 +95,18 @@
   const driveName = (item) => driveOfRoot(item.root_id)?.name || "";
   const hrefOf = (rootId, path) => `/folders/${rootId}${path ? `?path=${encodeURIComponent(path)}` : ""}`;
 
-  const picked = $derived(sel.size === 1 ? source.get(sel.indexes()[0]) : null);
+  const picked = $derived(sel.size === 1 ? active.get(sel.indexes()[0]) : null);
+  // 資訊欄打開時才讀「各類型佔多少」（要統計整個子樹，不需要時不算）
+  let kinds = $state(null);
+  $effect(() => {
+    kinds = null;
+    if (scope.type !== "folder" || !frame.info) return;
+    const { root, path } = scope;
+    app.refreshKey;
+    loadKinds(root, path).then((d) => {
+      if (scope.type === "folder" && scope.root === root && scope.path === path) kinds = d;
+    }).catch(() => {});
+  });
   $effect(() => {
     const drive = scope.type === "folder" ? driveOfRoot(scope.root) : null;
     const online = loc ? loc.root.online : drive?.online;
@@ -105,6 +140,7 @@
           [t("info.status"), (loc.root.online ? t("drive.online") : t("drive.offline")) + (loc.root.scan_state === "partial" ? ` · ${t("drive.incomplete")}` : "")],
           [t("info.lastScan"), loc.root.last_scan ? formatDate(new Date(loc.root.last_scan)) : t("drive.neverScanned")],
         ],
+        kinds: kinds || [],
       };
     }
     const driveLabel = loc?.drive?.name;
@@ -133,9 +169,13 @@
     }
   }
   function open(i) {
-    const item = source.get(i);
+    const item = active.get(i);
     if (!item) return;
     if (item.type === "folder") return navigate(hrefOf(item.root_id, item.path));
+    if (item.type === "group") { // 佔比圖上「直接放在某個資料夾裡的檔案」或「其他」：進入那個資料夾
+      if (scope.type === "folder" && item.path !== scope.path) navigate(hrefOf(item.root_id, item.path));
+      return;
+    }
     if (item.image_id) return openViewer([{ id: item.image_id, type: item.kind === "video" ? "video" : "photo", name: item.name }], 0);
     if (!app.server?.local) return toast(t("open.localOnly"));
     const action = app.server?.ui?.open_action;
@@ -154,10 +194,10 @@
   }
   // ---- 快速預覽（空白鍵）：跟著目前選到的項目 ----
   let quick = $state(false);
-  const quickItem = $derived(quick && sel.focus >= 0 ? source.get(sel.focus) : null);
+  const quickItem = $derived(quick && sel.focus >= 0 ? active.get(sel.focus) : null);
   const rootOnline = (rootId) => !!catalog.drives.some((d) => d.roots.some((r) => r.id === rootId && r.online));
   function preview(i) {
-    if (source.get(i)) quick = true;
+    if (active.get(i)) quick = true;
   }
   $effect(() => {
     place; // 換位置就關掉
@@ -177,12 +217,12 @@
   }
   // ---- 標籤與喜好項目 ----
   const LABELS = ["red", "yellow", "green", "blue", "purple"];
-  const chosen = () => sel.indexes().map((i) => source.peek(i)).filter(Boolean);
+  const chosen = () => sel.indexes().map((i) => active.peek(i)).filter(Boolean);
   async function label(items, value) {
     try {
       await setLabel(items, value);
       for (const it of items) it.label = value;
-      source.touch();
+      active.touch();
       loadCatalog();
       if (scope.type === "label") rev++;
     } catch (e) {
@@ -206,8 +246,12 @@
   }
 
   function itemMenu(e, i) {
-    const item = source.get(i);
+    const item = active.get(i);
     if (!item) return;
+    if (item.type === "group") {
+      menu = { x: e.clientX, y: e.clientY, items: [{ label: t("menu.open"), disabled: item.path === scope.path, onSelect: () => open(i) }] };
+      return;
+    }
     const local = !!app.server?.local;
     const items = chosen().filter((it) => typeof it.id === "number");
     const targets = items.length ? items : typeof item.id === "number" ? [item] : [];
@@ -237,10 +281,10 @@
 </script>
 
 <div class="browse">
-  {#if source.state.error || locError}
+  {#if source.state.error || locError || usageError}
     <div class="state" role="alert">
       <h2 class="mac-title-3">{t("view.error")}</h2>
-      <p class="mac-body">{source.state.error || locError}</p>
+      <p class="mac-body">{source.state.error || locError || usageError}</p>
       <Button variant="bordered" onclick={() => source.retry()}>{t("view.retry")}</Button>
     </div>
   {:else if total === null}
@@ -260,16 +304,23 @@
         <h2 class="mac-title-3">{t("view.empty.folder")}</h2>
       {/if}
     </div>
+  {:else if view === "treemap" && scope.type === "folder"}
+    <ItemUsage {usage} units={chart.units} tops={chart.tops} {sel} onopen={open} onpreview={preview} oncontext={itemMenu} />
+  {:else if view === "tree" && treeSource}
+    <ItemTree source={treeSource} {sel} totalBytes={loc?.bytes || 0} onopen={open} onpreview={preview} oncontext={itemMenu} ondragitem={dragItem} />
+  {:else if view === "columns" && scope.type === "folder"}
+    <ItemColumns root={scope.root} path={scope.path} {source} {sel} onnavigate={(p) => navigate(hrefOf(scope.root, p))}
+      onopen={open} onpreview={preview} oncontext={itemMenu} ondragitem={dragItem} />
   {:else if view === "icons"}
     <ItemGrid {source} {sel} onopen={open} onpreview={preview} oncontext={itemMenu} ondragitem={dragItem} />
   {:else}
-    <ItemList {source} {sel} showDrive={scope.type === "kind" || scope.type === "label"} ondragitem={dragItem} {driveName} onopen={open} onpreview={preview} oncontext={itemMenu} onheadercontext={headerMenu} />
+    <ItemList {source} {sel} totalBytes={scope.type === "folder" ? loc?.bytes || 0 : 0} showDrive={scope.type === "kind" || scope.type === "label"} ondragitem={dragItem} {driveName} onopen={open} onpreview={preview} oncontext={itemMenu} onheadercontext={headerMenu} />
   {/if}
 </div>
 
 {#if quickItem}
   <QuickLook item={quickItem} online={rootOnline(quickItem.root_id)} driveName={driveName(quickItem)} canOpen={!!app.server?.local}
-    onclose={() => (quick = false)} onmove={(d) => sel.moveTo(sel.focus + d, total)}
+    onclose={() => (quick = false)} onmove={(d) => sel.moveTo(sel.focus + d, total ?? 0)}
     onopen={() => { const i = sel.focus; quick = false; open(i); }} onreveal={() => run(quickItem, "reveal")} />
 {/if}
 {#if menu}<ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />{/if}

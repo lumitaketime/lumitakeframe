@@ -553,6 +553,7 @@ class ItemsPageTests(CatalogFixture):
         self.assertEqual(sum(c["bytes"] for c in school["children"]), school["bytes"])
         self.assertIn("畢業旅行", {c.get("name") for c in school["children"]})
         self.assertNotIn("空資料夾", blocks)  # 沒有大小的不畫
+        self.assertEqual((big["kind"], blocks["音樂"]["kind"], school["kind"]), ("document", "audio", "document"))  # 主要類型
         self.assertIsNone(usage_map(self.conn, self.root["id"], "不存在"))
         # 太小的合併成「其他」
         (self.drive / "音樂" / "huge.bin").write_bytes(b"0" * 3_000_000)

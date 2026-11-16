@@ -172,6 +172,21 @@ export default {
 
   "key.space": "Space",
 
+  "view.col.share": "Share of Parent",
+  "view.expand": "Expand",
+  "view.collapse": "Collapse",
+  "view.preview": "Preview",
+  "usage.chart": "Chart type",
+  "usage.treemap": "Treemap",
+  "usage.sunburst": "Sunburst",
+  "usage.label": "Space used in “{name}”",
+  "usage.filesHere": "Files in this folder",
+  "usage.rest": "{count} other items",
+  "usage.restKind": "Smaller items",
+  "view.empty.usage": "Nothing in this folder takes up space.",
+
+  "usage.colorNote": "Folders take the color of their largest file type",
+
   "gallery.title": "Base Components",
   "gallery.intro": "The Liquid Glass design system's components, rewritten in Svelte. This page is for development only, to check the four themes.",
   "gallery.theme": "Theme",

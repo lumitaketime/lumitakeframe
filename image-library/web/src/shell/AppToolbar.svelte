@@ -4,7 +4,7 @@
    * 按鈕群組是膠囊形玻璃；工具列本身不墊色塊。
    */
   import { Toolbar, SegmentedControl, Slider } from "../ui/index.js";
-  import { prefs, viewFor, setView, setIconSize, VIEWS, ALL_VIEWS, ICON_MIN, ICON_MAX } from "../views/prefs.svelte.js";
+  import { prefs, viewFor, viewsFor, setView, setIconSize, ALL_VIEWS, ICON_MIN, ICON_MAX } from "../views/prefs.svelte.js";
   import SearchBox from "../components/SearchBox.svelte";
   import FilterButton from "../components/FilterButton.svelte";
   import { filterUI } from "../lib/filter.svelte.js";
@@ -27,8 +27,8 @@
   });
 
   const VIEW_ICONS = { icons: "grid", list: "list", columns: "columns", tree: "tree", treemap: "treemap" };
-  // 圖像與列表可以用；直欄、樹狀、佔比在下一步接上
-  const views = $derived(ALL_VIEWS.map((v) => ({ value: v, icon: VIEW_ICONS[v], ariaLabel: t(`toolbar.view.${v}`), disabled: !VIEWS.includes(v) })));
+  // 直欄、樹狀、佔比只有在資料夾裡能用；類型與標籤是跨硬碟的平面清單
+  const views = $derived(ALL_VIEWS.map((v) => ({ value: v, icon: VIEW_ICONS[v], ariaLabel: t(`toolbar.view.${v}`), disabled: !viewsFor(place).includes(v) })));
   const view = $derived(place ? viewFor(place) : "");
 
   const leading = $derived([

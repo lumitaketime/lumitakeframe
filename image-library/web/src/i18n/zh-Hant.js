@@ -172,6 +172,21 @@ export default {
 
   "key.space": "空白鍵",
 
+  "view.col.share": "佔上層比例",
+  "view.expand": "展開",
+  "view.collapse": "收合",
+  "view.preview": "預覽",
+  "usage.chart": "圖表種類",
+  "usage.treemap": "方塊圖",
+  "usage.sunburst": "環狀圖",
+  "usage.label": "「{name}」的空間佔比",
+  "usage.filesHere": "這一層的檔案",
+  "usage.rest": "其他 {count} 個項目",
+  "usage.restKind": "較小的項目",
+  "view.empty.usage": "這個資料夾裡沒有佔空間的檔案。",
+
+  "usage.colorNote": "資料夾依裡面最大的類型上色",
+
   "gallery.title": "基礎元件",
   "gallery.intro": "Liquid Glass 設計系統的元件，改寫成 Svelte。這一頁只在開發時使用，用來檢查四個主題。",
   "gallery.theme": "主題",

@@ -17,9 +17,16 @@ def update_folder_totals(conn: sqlite3.Connection, root_id: int) -> None:
         "SELECT id, parent_id, path FROM folders WHERE root_id = ? AND status = 'ok'", (root_id,)).fetchall()
     if not folders:
         return
-    direct = {r[0]: (r[1], r[2]) for r in conn.execute(
-        "SELECT folder_id, COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE root_id = ? AND status = 'ok' GROUP BY folder_id",
-        (root_id,))}
+    # 每個資料夾直接放的檔案，依類型的大小；順便得到檔案數與總大小
+    direct: dict[int, tuple[int, int]] = {}
+    kinds: dict[int, dict[str, int]] = {}
+    for fid, kind, n, size in conn.execute(
+            "SELECT folder_id, kind, COUNT(*), COALESCE(SUM(size), 0) FROM files WHERE root_id = ? AND status = 'ok' GROUP BY folder_id, kind",
+            (root_id,)):
+        have = direct.get(fid, (0, 0))
+        direct[fid] = (have[0] + n, have[1] + size)
+        group = _kind_group(kind)
+        kinds.setdefault(fid, {})[group] = kinds.get(fid, {}).get(group, 0) + size
     total = {r["id"]: list(direct.get(r["id"], (0, 0))) for r in folders}
     subs = dict.fromkeys(total, 0)
     depth = lambda p: 0 if not p else p.count("/") + 1  # noqa: E731
@@ -29,12 +36,28 @@ def update_folder_totals(conn: sqlite3.Connection, root_id: int) -> None:
             total[parent][0] += total[r["id"]][0]
             total[parent][1] += total[r["id"]][1]
             subs[parent] += 1
+            mine = kinds.get(r["id"])
+            if mine:  # 各類型的大小也往上累加，才知道每個資料夾「主要是什麼類型」
+                up = kinds.setdefault(parent, {})
+                for k, v in mine.items():
+                    up[k] = up.get(k, 0) + v
+
+    def main_kind(fid: int) -> str | None:
+        mine = kinds.get(fid)
+        return max(mine, key=mine.get) if mine and max(mine.values()) > 0 else None
+
     conn.executemany(
-        "UPDATE folders SET files = ?, bytes = ?, total_files = ?, total_bytes = ?, subfolders = ? WHERE id = ?",
-        [(*direct.get(fid, (0, 0)), t[0], t[1], subs[fid], fid) for fid, t in total.items()],
+        "UPDATE folders SET files = ?, bytes = ?, total_files = ?, total_bytes = ?, subfolders = ?, main_kind = ? WHERE id = ?",
+        [(*direct.get(fid, (0, 0)), t[0], t[1], subs[fid], main_kind(fid), fid) for fid, t in total.items()],
     )
+    # 遺失的資料夾不計入大小
     conn.execute("UPDATE folders SET files = 0, bytes = 0, total_files = 0, total_bytes = 0, subfolders = 0 "
                  "WHERE root_id = ? AND status != 'ok' AND total_files != 0", (root_id,))
+
+
+def _kind_group(kind: str) -> str:
+    """類型的六個分組：RAW 算照片，App 與套件算其他。"""
+    return "photo" if kind == "raw" else "other" if kind == "package" else kind
 
 
 def drive_dict(row: sqlite3.Row | None, online: bool | None = None) -> dict | None:
@@ -311,12 +334,9 @@ def labels_overview(conn: sqlite3.Connection) -> list[dict]:
 
 # ---- 佔比圖（方塊圖與環狀圖共用）：一次只取兩層 ----
 
-USAGE_MIN_SHARE = 0.005  # 小於總量 0.5% 的合併成「其他」
+USAGE_MIN_SHARE = 0.005  # 第一層：小於總量 0.5% 的合併成「其他」
+USAGE_MIN_SHARE_INNER = 0.001  # 第二層畫得比較細（不然每個資料夾裡常常只剩一塊「其他」），數量另外受 500 塊上限控制
 USAGE_MAX_BLOCKS = 500
-
-
-def _kind_group(kind: str) -> str:
-    return "photo" if kind == "raw" else "other" if kind == "package" else kind
 
 
 def _direct_kinds(conn: sqlite3.Connection, folder_ids: list[int]) -> dict[int, dict[str, list[int]]]:
@@ -347,15 +367,18 @@ def usage_map(conn: sqlite3.Connection, root_id: int, path: str = "") -> dict | 
     floor = total * USAGE_MIN_SHARE
 
     def folder_block(r) -> dict:
-        return {"type": "folder", "id": r["id"], "name": r["name"], "path": r["path"], "bytes": r["total_bytes"], "files": r["total_files"]}
+        return {"type": "folder", "id": r["id"], "name": r["name"], "path": r["path"], "bytes": r["total_bytes"], "files": r["total_files"],
+                "kind": r["main_kind"]}  # 這個資料夾裡佔最多空間的類型（佔比圖上色用）
 
     def kind_blocks(kinds: dict[str, list[int]], folder_path: str) -> list[dict]:
         return [{"type": "kind", "kind": k, "bytes": v[1], "files": v[0], "path": folder_path} for k, v in kinds.items() if v[1] > 0]
 
-    def trim(blocks: list[dict], limit: int) -> list[dict]:
+    def trim(blocks: list[dict], limit: int, least: float = floor) -> list[dict]:
         """由大到小；太小的與超過數量上限的合併成一塊「其他」。"""
         blocks.sort(key=lambda b: -b["bytes"])
-        keep = [b for b in blocks if b["bytes"] >= floor][:limit]
+        keep = [b for b in blocks if b["bytes"] >= least][:limit]
+        if len(keep) == len(blocks) - 1:  # 只剩一個要合併：直接留著，不必多一塊「其他 1 個項目」
+            keep = blocks[:]
         rest = blocks[len(keep):]
         if rest and sum(b["bytes"] for b in rest) > 0:
             keep.append({"type": "rest", "bytes": sum(b["bytes"] for b in rest), "files": sum(b.get("files") or 0 for b in rest),
@@ -363,7 +386,7 @@ def usage_map(conn: sqlite3.Connection, root_id: int, path: str = "") -> dict | 
         return keep
 
     level1 = [folder_block(r) for r in conn.execute(
-        "SELECT id, name, path, total_bytes, total_files FROM folders WHERE parent_id = ? AND status = 'ok' AND total_bytes > 0", (here["id"],))]
+        "SELECT id, name, path, total_bytes, total_files, main_kind FROM folders WHERE parent_id = ? AND status = 'ok' AND total_bytes > 0", (here["id"],))]
     direct = _direct_kinds(conn, [here["id"]]).get(here["id"], {})
     top = trim(level1 + kind_blocks(direct, path), 200)
 
@@ -373,14 +396,14 @@ def usage_map(conn: sqlite3.Connection, root_id: int, path: str = "") -> dict | 
     for start in range(0, len(ids), 500):
         chunk = ids[start:start + 500]
         marks = ",".join("?" * len(chunk))
-        for r in conn.execute(f"SELECT id, parent_id, name, path, total_bytes, total_files FROM folders "
+        for r in conn.execute(f"SELECT id, parent_id, name, path, total_bytes, total_files, main_kind FROM folders "
                               f"WHERE parent_id IN ({marks}) AND status = 'ok' AND total_bytes > 0", chunk):
             children[r["parent_id"]].append(folder_block(r))
     kinds = _direct_kinds(conn, ids)
     budget = max(0, USAGE_MAX_BLOCKS - len(top))
     for b in big:
         share = max(1, round(budget * b["bytes"] / total)) if total else 1
-        b["children"] = trim(children[b["id"]] + kind_blocks(kinds.get(b["id"], {}), b["path"]), share)
+        b["children"] = trim(children[b["id"]] + kind_blocks(kinds.get(b["id"], {}), b["path"]), max(share, 4), total * USAGE_MIN_SHARE_INNER)
     return {"name": here["name"], "path": path, "bytes": total, "files": here["total_files"], "children": top}
 
 

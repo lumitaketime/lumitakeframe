@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 18  # v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 19  # v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS folders (
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL,
     label TEXT,
+    main_kind TEXT,
     UNIQUE (root_id, path)
 );
 
@@ -378,6 +379,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for table in ("files", "folders"):  # v16：顏色標籤（只存在目錄裡，不寫到硬碟）
         if "label" not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN label TEXT")
+    if "main_kind" not in {r[1] for r in conn.execute("PRAGMA table_info(folders)")}:
+        conn.execute("ALTER TABLE folders ADD COLUMN main_kind TEXT")
+        from .catalog import update_folder_totals  # v19：替現有的資料夾補上「主要類型」
+
+        for r in conn.execute("SELECT id FROM roots").fetchall():
+            update_folder_totals(conn, r[0])
     conn.executescript(CATALOG_INDEXES)
     # v18：照片原本就有的顏色標籤，帶到檔案目錄（之後兩邊一起更新）
     conn.execute("UPDATE files SET label = (SELECT i.label FROM images i WHERE i.id = files.image_id) "

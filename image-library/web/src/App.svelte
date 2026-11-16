@@ -128,9 +128,9 @@
         e.preventDefault(); // ⌘F：搜尋
         input.focus();
       }
-    } else if (mod && !e.shiftKey && !e.altKey && (e.key === "1" || e.key === "2") && pf?.browse && !typing) {
-      e.preventDefault(); // ⌘1 圖像、⌘2 列表
-      setView(pf.browse, e.key === "1" ? "icons" : "list");
+    } else if (mod && !e.shiftKey && !e.altKey && "12345".includes(e.key) && pf?.browse && !typing) {
+      e.preventDefault(); // ⌘1 圖像、⌘2 列表、⌘3 直欄、⌘4 樹狀、⌘5 佔比
+      setView(pf.browse, ["icons", "list", "columns", "tree", "treemap"][Number(e.key) - 1]);
     } else if (mod && e.key === "ArrowUp" && !typing && crumbs.length > 1) {
       e.preventDefault(); // ⌘↑：回上層
       navigate(crumbs[crumbs.length - 2].href);

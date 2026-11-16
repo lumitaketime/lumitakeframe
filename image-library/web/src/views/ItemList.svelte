@@ -9,7 +9,7 @@
   import { prefs, COLUMNS, setSort, setWidth } from "./prefs.svelte.js";
   import { t, formatBytes, formatDate } from "../i18n/index.svelte.js";
 
-  let { source, sel, showDrive = false, driveName = () => "", onopen, onpreview, oncontext, ondragitem, onheadercontext } = $props();
+  let { source, sel, totalBytes = 0, showDrive = false, driveName = () => "", onopen, onpreview, oncontext, ondragitem, onheadercontext } = $props();
 
   const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
   const ROW = touch ? 44 : 28;
@@ -109,7 +109,10 @@
                   {#if item.note}<span class="note mac-callout">{item.note}</span>{/if}
                 </span>
               {:else if c === "size"}
-                <span class="cell num">{item.size ? formatBytes(item.size) : "—"}</span>
+                <span class="cell num">
+                  {item.size ? formatBytes(item.size) : "—"}
+                  {#if totalBytes > 0 && item.size}<i class="share" style:width="{Math.min(100, (item.size / totalBytes) * 100)}%" aria-hidden="true"></i>{/if}
+                </span>
               {:else if c === "kind"}
                 <span class="cell">{item.kindLabel || kindLabel(item)}</span>
               {:else if c === "mtime"}
@@ -152,7 +155,10 @@
   .row.on .cell, .row.on .note { color: inherit; }
   .cell { min-width: 0; padding: 0 var(--space-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--label-secondary); }
   .cell.name { display: flex; align-items: center; gap: var(--space-2); color: var(--label-primary); }
-  .cell.num { text-align: right; font-feature-settings: "tnum"; }
+  .cell.num { position: relative; text-align: right; font-feature-settings: "tnum"; }
+  /* 大小欄底下的比例條：這個項目佔目前資料夾的多少 */
+  .share { position: absolute; right: var(--space-2); bottom: 1px; max-width: calc(100% - var(--space-4)); height: 2px; border-radius: var(--radius-capsule); background: var(--accent); opacity: .55; }
+  .row.on .share { background: var(--on-accent); }
   .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .label { flex: none; width: var(--space-2); height: var(--space-2); border-radius: var(--radius-capsule); }
   .note { flex: none; color: var(--label-secondary); }

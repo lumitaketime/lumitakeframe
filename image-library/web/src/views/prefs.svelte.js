@@ -18,9 +18,10 @@ function save(key, value) {
   }
 }
 
-/** 這一步可以用的檢視（直欄、樹狀、佔比在下一步接上） */
-export const VIEWS = ["icons", "list"];
-export const ALL_VIEWS = ["icons", "list", "columns", "tree", "treemap"];
+/** 五種檢視；直欄、樹狀、佔比只有在「資料夾」裡才有意義（類型與標籤是跨硬碟的平面清單） */
+export const VIEWS = ["icons", "list", "columns", "tree", "treemap"];
+export const FLAT_VIEWS = ["icons", "list"];
+export const ALL_VIEWS = VIEWS;
 export const ICON_MIN = 64;
 export const ICON_MAX = 256;
 export const COLUMNS = ["name", "size", "kind", "mtime", "drive"];
@@ -34,11 +35,18 @@ export const prefs = $state({
   desc: read("view.desc", false),
   hidden: read("view.hiddenColumns", []), // 不顯示的欄位
   widths: { ...WIDTHS, ...read("view.widths", {}) },
+  columnWidth: Math.min(480, Math.max(160, read("view.columnWidth", 220))), // 直欄檢視每一欄的寬度
+  chart: read("view.chart", "treemap") === "sunburst" ? "sunburst" : "treemap", // 佔比檢視：方塊圖或環狀圖
 });
 
-export const viewFor = (place) => (VIEWS.includes(prefs.views[place]) ? prefs.views[place] : VIEWS.includes(prefs.last) ? prefs.last : "list");
+const allowed = (place) => (place.startsWith("folder:") ? VIEWS : FLAT_VIEWS);
+export const viewsFor = allowed;
+export function viewFor(place) {
+  const ok = allowed(place);
+  return ok.includes(prefs.views[place]) ? prefs.views[place] : ok.includes(prefs.last) ? prefs.last : "list";
+}
 export function setView(place, view) {
-  if (!VIEWS.includes(view)) return;
+  if (!allowed(place).includes(view)) return;
   prefs.views[place] = view;
   prefs.last = view;
   const keys = Object.keys(prefs.views);
@@ -67,4 +75,12 @@ export function toggleColumn(column) {
 export function setWidth(column, px) {
   prefs.widths[column] = Math.round(Math.min(400, Math.max(60, px)));
   save("view.widths", prefs.widths);
+}
+export function setColumnWidth(px) {
+  prefs.columnWidth = Math.round(Math.min(480, Math.max(160, px)));
+  save("view.columnWidth", prefs.columnWidth);
+}
+export function setChart(kind) {
+  prefs.chart = kind === "sunburst" ? "sunburst" : "treemap";
+  save("view.chart", prefs.chart);
 }

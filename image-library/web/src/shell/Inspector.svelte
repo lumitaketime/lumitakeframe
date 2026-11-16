@@ -16,6 +16,17 @@
   });
   const kinds = $derived((shown.kinds || []).filter((k) => k.files > 0).sort((a, b) => b.bytes - a.bytes));
   const kindTotal = $derived(kinds.reduce((n, k) => n + k.bytes, 0) || 1);
+  // 小圓環：每個類型一段弧（至少留一點寬度，太小的類型才看得到）
+  const CIRC = 2 * Math.PI * 46;
+  const arcs = $derived.by(() => {
+    let start = 0;
+    return kinds.map((k) => {
+      const len = Math.max(kinds.length > 1 ? 1.5 : 0, (k.bytes / kindTotal) * CIRC - (kinds.length > 1 ? 1.5 : 0));
+      const arc = { kind: k.kind, start, len };
+      start += (k.bytes / kindTotal) * CIRC;
+      return arc;
+    });
+  });
 </script>
 
 <aside class="inspector" aria-label={t("info.title")}>
@@ -33,8 +44,15 @@
     </dl>
     {#if kinds.length}
       <h3 class="mac-subheadline">{t("info.byKind")}</h3>
-      <div class="bar" aria-hidden="true">
-        {#each kinds as k (k.kind)}<i style:width="{(k.bytes / kindTotal) * 100}%" style:background="var(--kind-{k.kind === 'package' ? 'other' : k.kind})"></i>{/each}
+      <div class="donut">
+        <svg viewBox="0 0 120 120" role="img" aria-label={t("info.byKind")}>
+          <circle cx="60" cy="60" r="46" class="track" />
+          {#each arcs as a (a.kind)}
+            <circle cx="60" cy="60" r="46" class="arc" style:stroke="var(--kind-{a.kind === 'package' ? 'other' : a.kind})"
+              stroke-dasharray="{a.len} {CIRC - a.len}" stroke-dashoffset={-a.start} transform="rotate(-90 60 60)" />
+          {/each}
+        </svg>
+        <div class="center"><b class="mac-headline">{formatBytes(kindTotal)}</b><span class="mac-caption-1">{formatNumber(kinds.reduce((n, k) => n + k.files, 0))}</span></div>
       </div>
       <ul class="mac-body">
         {#each kinds as k (k.kind)}
@@ -61,8 +79,12 @@
   dt { color: var(--label-secondary); flex: none; }
   dd { margin: 0; text-align: right; overflow-wrap: anywhere; min-width: 0; }
   h3 { margin: var(--space-5) 0 var(--space-2); color: var(--label-secondary); font-weight: 600; }
-  .bar { display: flex; height: var(--space-2); border-radius: var(--radius-capsule); overflow: hidden; gap: 1px; background: var(--fill-quaternary); }
-  .bar i { display: block; min-width: 2px; }
+  .donut { position: relative; width: 132px; margin: var(--space-2) auto var(--space-3); }
+  .donut svg { display: block; width: 100%; }
+  .donut circle { fill: none; stroke-width: 14; }
+  .track { stroke: var(--fill-tertiary); }
+  .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; text-align: center; }
+  .center span { color: var(--label-secondary); }
   ul { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
   li { display: flex; align-items: center; gap: var(--space-2); }
   .dot { width: var(--space-2); height: var(--space-2); border-radius: var(--radius-capsule); flex: none; }

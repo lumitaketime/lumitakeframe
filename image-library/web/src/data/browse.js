@@ -36,3 +36,8 @@ export const orderPins = (items) => api("/api/folders/order", { body: { items } 
 
 /** 拖曳資料夾時帶著的資料類型（拖到側邊欄就釘選） */
 export const DRAG_FOLDER = "application/x-rememor-folder";
+
+/** 佔比圖（方塊圖、環狀圖）：目前層與下一層的大小 */
+export const loadUsage = (root, path) => api("/api/usage", { params: { root, path }, quiet: true });
+/** 資訊欄：這個資料夾（含子資料夾）裡各類型佔多少 */
+export const loadKinds = (root, path) => api("/api/location/kinds", { params: { root, path }, quiet: true }).then((d) => d.kinds);
