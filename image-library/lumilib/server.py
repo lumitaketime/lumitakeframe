@@ -1412,6 +1412,45 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    # ---- 重複項目：內容完全相同的檔案與資料夾（這裡只查詢，不刪除任何東西）----
+    @app.get("/api/dupes/summary")
+    def dupes_summary():
+        from .dupes import compare_plan, duplicate_files, duplicate_folders
+
+        c = conn()
+        try:
+            folders = duplicate_folders(c, limit=0)
+            files = duplicate_files(c, limit=0)
+            waiting = duplicate_files(c, limit=0, pending=True)
+            return {
+                "plan": compare_plan(c),
+                "folders": {"total": folders["total"], "confirmed": folders["confirmed"], "releasable": folders["releasable"]},
+                "files": {"confirmed": files["total"], "releasable": files["releasable"],
+                          "pending": waiting["total"], "pending_releasable": waiting["pending_releasable"]},
+            }
+        finally:
+            c.close()
+
+    @app.get("/api/dupes/folders")
+    def dupes_folders(offset: int = 0, limit: int = 100):
+        from .dupes import duplicate_folders
+
+        c = conn()
+        try:
+            return duplicate_folders(c, max(0, offset), max(1, min(200, limit)))
+        finally:
+            c.close()
+
+    @app.get("/api/dupes/files")
+    def dupes_files(offset: int = 0, limit: int = 100, pending: bool = False):
+        from .dupes import duplicate_files
+
+        c = conn()
+        try:
+            return duplicate_files(c, max(0, offset), max(1, min(200, limit)), pending=pending)
+        finally:
+            c.close()
+
     @app.get("/api/usage")
     def usage_api(root: int, path: str = ""):
         """佔比圖（方塊圖、環狀圖）：目前層與下一層的大小。只讀資料庫。"""
@@ -1894,7 +1933,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     @app.post("/api/jobs")
     def start_job(body: dict = Body(...)):
         kind = body.get("kind")
-        opts = {k: body[k] for k in ("roots", "folder", "root_id", "album_id", "redo", "retry_failed") if body.get(k) is not None}
+        opts = {k: body[k] for k in ("roots", "folder", "root_id", "album_id", "redo", "retry_failed", "large") if body.get(k) is not None}
         if kind in ("pull", "face_model", "clip_model"):
             opts = {"model": str(body["model"])}
         if kind == "export":

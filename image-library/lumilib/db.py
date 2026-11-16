@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 19  # v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 20  # v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -174,6 +174,8 @@ CREATE TABLE IF NOT EXISTS folders (
     last_seen TEXT NOT NULL,
     label TEXT,
     main_kind TEXT,
+    shape_sig TEXT,
+    content_sig TEXT,
     UNIQUE (root_id, path)
 );
 
@@ -193,6 +195,8 @@ CREATE TABLE IF NOT EXISTS files (
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL,
     label TEXT,
+    content_hash TEXT,
+    hashed_at TEXT,
     UNIQUE (folder_id, name)
 );
 """
@@ -223,6 +227,11 @@ CREATE INDEX IF NOT EXISTS idx_files_all_size ON files(status, size, kind);
 CREATE INDEX IF NOT EXISTS idx_files_all_mtime ON files(status, mtime, kind);
 CREATE INDEX IF NOT EXISTS idx_files_label ON files(label) WHERE label IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_folders_label ON folders(label) WHERE label IS NOT NULL;
+-- v20：重複項目。完整內容指紋相同的檔案、簽章相同的資料夾
+CREATE INDEX IF NOT EXISTS idx_files_hash ON files(content_hash, size) WHERE content_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_folders_shape ON folders(shape_sig) WHERE shape_sig IS NOT NULL;
+-- 還沒比對內容的檔案：找「檔名與大小都相同」的待確認組別、算還要讀多少資料，都只讀這個索引
+CREATE INDEX IF NOT EXISTS idx_files_unhashed ON files(size, name, root_id) WHERE content_hash IS NULL AND status = 'ok' AND size > 0;
 """
 
 # v13：全文索引。中文、日文、韓文逐字＋兩字一組，其他文字依單字（可前綴比對）；
@@ -385,6 +394,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
         for r in conn.execute("SELECT id FROM roots").fetchall():
             update_folder_totals(conn, r[0])
+    # v20：完整內容指紋（要整個檔案讀過才有）與資料夾簽章
+    file_cols = {r[1] for r in conn.execute("PRAGMA table_info(files)")}
+    for name in ("content_hash", "hashed_at"):
+        if name not in file_cols:
+            conn.execute(f"ALTER TABLE files ADD COLUMN {name} TEXT")
+    if "shape_sig" not in {r[1] for r in conn.execute("PRAGMA table_info(folders)")}:
+        conn.execute("ALTER TABLE folders ADD COLUMN shape_sig TEXT")
+        conn.execute("ALTER TABLE folders ADD COLUMN content_sig TEXT")
+        from .dupes import update_folder_signatures
+
+        for r in conn.execute("SELECT id FROM roots").fetchall():
+            update_folder_signatures(conn, r[0])
     conn.executescript(CATALOG_INDEXES)
     # v18：照片原本就有的顏色標籤，帶到檔案目錄（之後兩邊一起更新）
     conn.execute("UPDATE files SET label = (SELECT i.label FROM images i WHERE i.id = files.image_id) "

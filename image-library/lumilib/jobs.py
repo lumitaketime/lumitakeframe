@@ -21,7 +21,7 @@ from .media import MediaError
 from .scanner import scan_all
 
 LABELS = {
-    "scan": "掃描", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
+    "scan": "掃描", "compare": "比對內容", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
     "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
@@ -341,6 +341,14 @@ class JobRunner:
                                    progress=lambda i, n, m: upd(done=i, total=n, message=f"人臉 {i}/{n}　{m}"))
                 c = cluster_faces(conn, self.cfg, stop=stop)
                 parts.append(f"人臉：處理 {res.scanned} 張、找到 {res.faces} 張臉、新人物 {c.people_new} 位")
+            if kind == "compare":
+                from .dupes import describe as describe_compare
+                from .dupes import run_compare
+
+                res = run_compare(conn, large=bool(opts.get("large")), stop=stop,
+                                  progress=lambda done, total, name: upd(done=done, total=total, message=name, unit="bytes"))
+                job["result"] = {"hashed": res.hashed, "interrupted": res.interrupted, "stopped": res.stopped}
+                parts.append(describe_compare(res))
             if kind == "cluster":
                 from .faces import recluster
 

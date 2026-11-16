@@ -480,7 +480,9 @@ class _Scan:
                     conn.execute("UPDATE files SET status = 'ok', last_seen = ? WHERE id = ?", (self.now, rec["id"]))
                     self.pending += 1
                 return rec["id"]
-            conn.execute("UPDATE files SET size = ?, mtime = ?, ctime = ?, kind = ?, status = 'ok', last_seen = ? WHERE id = ?",
+            # 內容變了：之前算的完整指紋作廢，要重新比對才算數
+            conn.execute("UPDATE files SET size = ?, mtime = ?, ctime = ?, kind = ?, status = 'ok', last_seen = ?, "
+                         "content_hash = NULL, hashed_at = NULL WHERE id = ?",
                          (size, mtime, ctime, kind, self.now, rec["id"]))
             self.pending += 1
             return rec["id"]
@@ -613,6 +615,9 @@ def scan_root(
     from .catalog import update_folder_totals
 
     update_folder_totals(conn, root["id"])
+    from .dupes import update_folder_signatures
+
+    update_folder_signatures(conn, root["id"])
     conn.commit()
     scan.report(force=True)
     return result
