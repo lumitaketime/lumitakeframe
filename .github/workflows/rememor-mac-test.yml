@@ -1,0 +1,77 @@
+name: Re'memor Mac App（測試用）
+
+# 只在 rememor 分支的 Mac App 外殼有變動時建置，產出一個可以下載的測試版 App。
+# 不會動到 Releases 上的「最新版」安裝檔（那是 apps.yml 在 main 與 Library 分支上做的事）。
+on:
+  push:
+    branches: [rememor]
+    paths:
+      - "image-library/desktop/**"
+      - ".github/workflows/rememor-mac-test.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rememor-mac-test
+  cancel-in-progress: true
+
+jobs:
+  mac:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 打包伺服器（PyInstaller）
+        working-directory: image-library
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+          cd desktop/server
+          pyinstaller --noconfirm lumilib-server.spec
+
+      - name: 內建 exiftool
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/exiftool/exiftool/tags \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['name'])")
+          curl -fsSL "https://github.com/exiftool/exiftool/archive/refs/tags/$TAG.tar.gz" | tar xz
+          DEST=image-library/desktop/server/dist/lumilib-server/tools/exiftool
+          mkdir -p "$DEST"
+          cp -R "exiftool-$TAG/exiftool" "exiftool-$TAG/lib" "$DEST/"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: 建置 Mac App
+        working-directory: image-library/desktop
+        run: |
+          npm install
+          npx tauri build --bundles app
+
+      - name: 放入伺服器、簽章、壓縮
+        working-directory: image-library/desktop
+        run: |
+          APP="src-tauri/target/release/bundle/macos/Re'memor.app"
+          ditto server/dist/lumilib-server "$APP/Contents/Resources/server"
+          test -x "$APP/Contents/Resources/server/lumilib-server"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+          mkdir -p out
+          ditto -c -k --keepParent "$APP" "out/Rememor-test.zip"
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rememor-mac-test
+          path: image-library/desktop/out/Rememor-test.zip
+          if-no-files-found: error
+          retention-days: 14
