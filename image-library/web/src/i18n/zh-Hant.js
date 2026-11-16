@@ -223,6 +223,18 @@ export default {
   "dupes.inFolder": "在重複資料夾中",
   "dupes.inFolderHint": "這些檔案所在的資料夾已經整個列在「重複資料夾」裡，處理資料夾就會一併處理。",
 
+  "sort.by": "排序方式",
+  "sort.button": "排序：{by}",
+  "sort.name": "名稱",
+  "sort.kind": "種類",
+  "sort.mtime": "修改日期",
+  "sort.created": "製作日期",
+  "sort.added": "加入日期",
+  "sort.size": "大小",
+  "sort.label": "標籤",
+  "sort.asc": "遞增（A 到 Z、舊到新、小到大）",
+  "sort.desc": "遞減（Z 到 A、新到舊、大到小）",
+
   "gallery.title": "基礎元件",
   "gallery.intro": "Liquid Glass 設計系統的元件，改寫成 Svelte。這一頁只在開發時使用，用來檢查四個主題。",
   "gallery.theme": "主題",

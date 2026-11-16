@@ -206,8 +206,16 @@ KIND_GROUPS = {
 }
 LABELS = ("red", "yellow", "green", "blue", "purple")
 PAGE_MAX = 500
-_FILE_ORDER = {"name": "f.name COLLATE NOCASE", "size": "f.size", "mtime": "f.mtime", "kind": "f.kind"}
-_FOLDER_ORDER = {"name": "d.name COLLATE NOCASE", "size": "d.total_bytes", "mtime": "d.mtime", "kind": "d.name COLLATE NOCASE"}
+# 排序方式：名稱、大小、修改日期、類型、製作日期、加入日期（第一次被掃描到的時間）、標籤。{w} 會換成 ASC 或 DESC
+_FILE_ORDER = {
+    "name": "f.name COLLATE NOCASE {w}", "size": "f.size {w}", "mtime": "f.mtime {w}", "kind": "f.kind {w}, f.name COLLATE NOCASE",
+    "created": "f.ctime {w}", "added": "f.first_seen {w}, f.name COLLATE NOCASE",
+    "label": "f.label IS NULL, f.label {w}, f.name COLLATE NOCASE",  # 沒有標籤的排最後
+}
+_FOLDER_ORDER = {
+    "name": "d.name COLLATE NOCASE {w}", "size": "d.total_bytes {w}", "mtime": "d.mtime {w}", "kind": "d.name COLLATE NOCASE",
+    "created": "d.mtime {w}", "added": "d.first_seen {w}, d.name COLLATE NOCASE", "label": "d.label IS NULL, d.label {w}, d.name COLLATE NOCASE",
+}
 _ALL_INDEX = {"name": "idx_files_all_name", "size": "idx_files_all_size", "mtime": "idx_files_all_mtime"}
 
 
@@ -234,6 +242,7 @@ def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: st
     sort = sort if sort in _FILE_ORDER else "name"
     offset, limit = max(0, int(offset)), max(1, min(PAGE_MAX, int(limit)))
     way = "DESC" if desc else "ASC"
+    file_order, folder_order = _FILE_ORDER[sort].format(w=way), _FOLDER_ORDER[sort].format(w=way)
     file_cols = "f.id, f.name, f.kind, f.size, f.mtime, f.root_id, f.image_id, f.label, d.path AS folder_path"
 
     if kind is not None:
@@ -246,7 +255,7 @@ def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: st
         index = f"INDEXED BY {_ALL_INDEX[sort]}" if sort in _ALL_INDEX else ""
         rows = conn.execute(
             f"SELECT {file_cols} FROM (SELECT id FROM files {index} WHERE status = 'ok' AND kind IN ({marks}) "
-            f"ORDER BY {_FILE_ORDER[sort].replace('f.', '')} {way} LIMIT ? OFFSET ?) p "
+            f"ORDER BY {file_order.replace('f.', '')} LIMIT ? OFFSET ?) p "
             "JOIN files f ON f.id = p.id JOIN folders d ON d.id = f.folder_id", (*kinds, limit, offset)).fetchall()
         return {"total": total, "folders": 0, "offset": offset, "items": [_file_item(r) for r in rows]}
 
@@ -254,10 +263,10 @@ def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: st
         if label not in LABELS:
             return None
         folders = conn.execute(
-            f"SELECT d.* FROM folders d WHERE d.label = ? AND d.status = 'ok' ORDER BY {_FOLDER_ORDER[sort]} {way}", (label,)).fetchall()
+            f"SELECT d.* FROM folders d WHERE d.label = ? AND d.status = 'ok' ORDER BY {folder_order}", (label,)).fetchall()
         files = conn.execute(
             f"SELECT {file_cols} FROM files f JOIN folders d ON d.id = f.folder_id WHERE f.label = ? AND f.status = 'ok' "
-            f"ORDER BY {_FILE_ORDER[sort]} {way}, f.id", (label,)).fetchall()
+            f"ORDER BY {file_order}, f.id", (label,)).fetchall()
         items = [_folder_item(r) for r in folders] + [_file_item(r) for r in files]
         return {"total": len(items), "folders": len(folders), "offset": offset, "items": items[offset:offset + limit]}
 
@@ -269,12 +278,12 @@ def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: st
     items: list[dict] = []
     if offset < n_folders:
         items += [_folder_item(r) for r in conn.execute(
-            f"SELECT d.* FROM folders d WHERE d.parent_id = ? AND d.status = 'ok' ORDER BY {_FOLDER_ORDER[sort]} {way}, d.id "
+            f"SELECT d.* FROM folders d WHERE d.parent_id = ? AND d.status = 'ok' ORDER BY {folder_order}, d.id "
             "LIMIT ? OFFSET ?", (here["id"], limit, offset))]
     if len(items) < limit:
         items += [_file_item(r) for r in conn.execute(
             f"SELECT {file_cols} FROM files f JOIN folders d ON d.id = f.folder_id WHERE f.folder_id = ? AND f.status = 'ok' "
-            f"ORDER BY {_FILE_ORDER[sort]} {way}, f.id LIMIT ? OFFSET ?",
+            f"ORDER BY {file_order}, f.id LIMIT ? OFFSET ?",
             (here["id"], limit - len(items), max(0, offset - n_folders)))]
     return {"total": n_folders + n_files, "folders": n_folders, "offset": offset, "items": items}
 

@@ -3,8 +3,8 @@
    * 工具列：（窄視窗或側邊欄收起時的選單鈕）、上一頁／下一頁、標題、檢視切換、搜尋、資訊欄開關。
    * 按鈕群組是膠囊形玻璃；工具列本身不墊色塊。
    */
-  import { Toolbar, SegmentedControl, Slider } from "../ui/index.js";
-  import { prefs, viewFor, viewsFor, setView, setIconSize, ALL_VIEWS, ICON_MIN, ICON_MAX } from "../views/prefs.svelte.js";
+  import { Toolbar, SegmentedControl, Slider, PullDownButton } from "../ui/index.js";
+  import { prefs, viewFor, viewsFor, setView, setIconSize, chooseSort, setDesc, SORTS, ALL_VIEWS, ICON_MIN, ICON_MAX } from "../views/prefs.svelte.js";
   import SearchBox from "../components/SearchBox.svelte";
   import FilterButton from "../components/FilterButton.svelte";
   import { filterUI } from "../lib/filter.svelte.js";
@@ -30,6 +30,14 @@
   // 直欄、樹狀、佔比只有在資料夾裡能用；類型與標籤是跨硬碟的平面清單
   const views = $derived(ALL_VIEWS.map((v) => ({ value: v, icon: VIEW_ICONS[v], ariaLabel: t(`toolbar.view.${v}`), disabled: !viewsFor(place).includes(v) })));
   const view = $derived(place ? viewFor(place) : "");
+  // 排序方式：所有檢視共用（佔比圖固定依大小，所以不顯示）
+  const sortItems = $derived([
+    { header: t("sort.by") },
+    ...SORTS.map((key) => ({ label: t(`sort.${key}`), checked: prefs.sort === key, onSelect: () => chooseSort(key) })),
+    { separator: true },
+    { label: t("sort.asc"), checked: !prefs.desc, onSelect: () => setDesc(false) },
+    { label: t("sort.desc"), checked: prefs.desc, onSelect: () => setDesc(true) },
+  ]);
 
   const leading = $derived([
     ...(compact ? [[{ icon: "menu", label: t("nav.openMenu"), onClick: () => (frame.drawer = true) }]]
@@ -46,6 +54,9 @@
   {#snippet centerExtra()}
     {#if place}
       <SegmentedControl segments={compact ? views.filter((v) => !v.disabled) : views} value={view} onchange={(v) => setView(place, v)} ariaLabel={t("toolbar.view")} />
+      {#if view !== "treemap" && place !== "roots"}
+        <PullDownButton label={t("sort.button", { by: t(`sort.${prefs.sort}`) })} icon="sort" iconOnly={compact} variant="glass" items={sortItems} menuWidth={260} />
+      {/if}
       {#if view === "icons" && !compact}
         <div class="size"><Slider value={prefs.iconSize} min={ICON_MIN} max={ICON_MAX} step={8} onchange={setIconSize} ariaLabel={t("view.iconSize")} /></div>
       {/if}

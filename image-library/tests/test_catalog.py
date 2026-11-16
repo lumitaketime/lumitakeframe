@@ -495,6 +495,20 @@ class ItemsPageTests(CatalogFixture):
         folders = self.page(root_id=self.root["id"], sort="size", desc=True)["items"]
         self.assertEqual(folders[0]["name"], "很多檔案")  # 資料夾依「含子資料夾的總大小」排
 
+    def test_sort_by_label_added_and_created(self):
+        from lumilib.catalog import set_labels
+
+        files = {i["name"]: i for i in self.page(root_id=self.root["id"], path="很多檔案", limit=500)["items"]}
+        set_labels(self.conn, [files["file050.txt"]["id"]], [], "red")
+        set_labels(self.conn, [files["file010.txt"]["id"]], [], "blue")
+        p = self.page(root_id=self.root["id"], path="很多檔案", sort="label", limit=3)
+        self.assertEqual([i["name"] for i in p["items"]], ["file010.txt", "file050.txt", "file000.txt"])  # 有標籤的在前，沒有的排最後
+        self.conn.execute("UPDATE files SET first_seen = '2030-01-01T00:00:00+00:00' WHERE name = 'file077.txt'")
+        self.assertEqual(self.page(root_id=self.root["id"], path="很多檔案", sort="added", desc=True, limit=1)["items"][0]["name"], "file077.txt")
+        self.assertEqual(len(self.page(root_id=self.root["id"], path="很多檔案", sort="created", limit=5)["items"]), 5)
+        self.assertEqual(self.page(kind="document", sort="label", limit=2)["items"][0]["name"], "file010.txt")  # 跨硬碟的類型頁也能用
+        self.assertEqual(self.page(root_id=self.root["id"], sort="不存在")["items"][0]["type"], "folder")  # 不認得的排序當成名稱
+
     def test_kind_filter_across_drives(self):
         docs = self.page(kind="document", limit=500)
         self.assertEqual(docs["total"], 122)  # 120 個 txt＋原本的 docx、txt

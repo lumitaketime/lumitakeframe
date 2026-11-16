@@ -399,7 +399,8 @@
   /* Mac App：紅綠燈按鈕在左上角（約 70×28）。側邊欄的標誌往下讓位；側邊欄收起時，工具列往右讓位 */
   .mac-titlebar .side :global(.lg-side-top:first-child) { padding-top: var(--space-6); }
   .mac-titlebar.no-side .bar { padding-left: 72px; }
-  .bar { flex: none; }
+  /* 工具列的選單（排序、搜尋建議）要蓋在內容上面 */
+  .bar { flex: none; position: relative; z-index: 40; }
   .pane { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--control-bg); }
   .frame:not(.compact) .pane { box-shadow: -1px 0 0 var(--separator); }
   .body { flex: 1; min-height: 0; display: flex; position: relative; }
@@ -416,7 +417,7 @@
     padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom)); display: flex; will-change: transform; }
 
   /* 頂端的 M3 線性載入條：請求超過一下子還沒回來才出現 */
-  .load-bar { position: sticky; top: 0; height: 0; z-index: 30; }
+  .load-bar { position: sticky; top: 0; height: 0; z-index: 30; pointer-events: none; }
   .load-bar span {
     position: absolute; left: 0; right: 0; top: 0; height: 4px; overflow: hidden; opacity: 0;
     background: var(--secondary-container); transition: opacity var(--duration-short4) var(--easing-standard);

@@ -223,6 +223,18 @@ export default {
   "dupes.inFolder": "In a duplicate folder",
   "dupes.inFolderHint": "These files sit in folders already listed under Duplicate Folders; handling the folder covers them.",
 
+  "sort.by": "Sort By",
+  "sort.button": "Sort: {by}",
+  "sort.name": "Name",
+  "sort.kind": "Kind",
+  "sort.mtime": "Date Modified",
+  "sort.created": "Date Created",
+  "sort.added": "Date Added",
+  "sort.size": "Size",
+  "sort.label": "Tags",
+  "sort.asc": "Ascending",
+  "sort.desc": "Descending",
+
   "gallery.title": "Base Components",
   "gallery.intro": "The Liquid Glass design system's components, rewritten in Svelte. This page is for development only, to check the four themes.",
   "gallery.theme": "Theme",

@@ -58,6 +58,20 @@ export function setIconSize(px) {
   prefs.iconSize = Math.round(Math.min(ICON_MAX, Math.max(ICON_MIN, px)));
   save("view.iconSize", prefs.iconSize);
 }
+/** 工具列「排序方式」選單裡的選項（列表的欄位標題只有其中四種） */
+export const SORTS = ["name", "kind", "mtime", "created", "added", "size", "label"];
+/** 從選單選排序方式：選同一個不變，換一個時大小與日期預設由大到小、由新到舊 */
+export function chooseSort(key) {
+  if (!SORTS.includes(key) || prefs.sort === key) return;
+  prefs.sort = key;
+  prefs.desc = ["size", "mtime", "created", "added"].includes(key);
+  save("view.sort", prefs.sort);
+  save("view.desc", prefs.desc);
+}
+export function setDesc(desc) {
+  prefs.desc = !!desc;
+  save("view.desc", prefs.desc);
+}
 export function setSort(column) {
   if (prefs.sort === column) prefs.desc = !prefs.desc;
   else {
