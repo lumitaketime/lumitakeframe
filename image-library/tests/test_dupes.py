@@ -160,6 +160,44 @@ class DupesTests(CatalogTestCase):
             self.assertEqual((g["confirmed"], len(g["items"]), g["items"][0]["online"]), (True, 2, True))
 
 
+class ActivityTests(CatalogTestCase):
+    """掃描進度：工作紀錄存在資料庫裡，關掉再開仍然看得到，中斷的可以繼續。"""
+
+    def wait(self, c):
+        for _ in range(200):
+            if not c.get("/api/jobs").json()["running"]:
+                return
+            threading.Event().wait(0.05)
+
+    def test_job_log_survives_restart_and_can_resume(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib.server import create_app
+
+        tree(self.tmp / "硬碟一", {"a.bin": b"A" * 4000})
+        tree(self.tmp / "硬碟二", {"a.bin": b"A" * 4000})
+        db.add_root(self.conn, self.tmp / "硬碟一", "硬碟一")
+        db.add_root(self.conn, self.tmp / "硬碟二", "硬碟二")
+        scan_all(self.conn, self.cfg)
+        kw = dict(base_url="http://127.0.0.1:8766", client=("127.0.0.1", 1))
+        with TestClient(create_app(self.cfg, start_jobs_on_boot=False), **kw) as c:
+            c.post("/api/jobs", json={"kind": "compare"})
+            self.wait(c)
+            done = c.get("/api/activity").json()["history"][0]
+            self.assertEqual((done["kind"], done["state"], done["resumable"]), ("compare", "done", False))
+        # 模擬「做到一半 App 被關掉」：留下一筆還在執行中的紀錄
+        self.conn.execute("INSERT INTO job_log (kind, label, options, state, created_at) VALUES ('compare', '比對內容', '{}', 'running', ?)", (db.now_iso(),))
+        self.conn.execute("UPDATE files SET content_hash = NULL")
+        self.conn.commit()
+        with TestClient(create_app(self.cfg, start_jobs_on_boot=False), **kw) as c:
+            top = c.get("/api/activity").json()["history"][0]
+            self.assertEqual((top["state"], top["resumable"]), ("interrupted", True))
+            self.assertEqual(c.post("/api/activity/resume", json={"id": top["id"]}).status_code, 200)
+            self.wait(c)
+            self.assertEqual(c.get("/api/dupes/summary").json()["files"]["confirmed"], 1)  # 接著做完了
+            self.assertEqual(c.post("/api/activity/resume", json={"id": 99999}).status_code, 400)
+
+
 class PendingTests(CatalogTestCase):
     """待刪除：標記的規則，以及移到垃圾桶之前的再次驗證。每一個測試都是一種「不可以刪錯」的情況。"""
 

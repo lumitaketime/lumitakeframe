@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 21  # v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 22  # v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -213,6 +213,21 @@ CREATE TABLE IF NOT EXISTS delete_marks (
     sig TEXT NOT NULL,
     marked_at TEXT NOT NULL,
     UNIQUE (kind, item_id)
+);
+
+-- v22：背景工作的紀錄。state：queued／running／done／stopped／interrupted／error
+CREATE TABLE IF NOT EXISTS job_log (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL,
+    label TEXT NOT NULL,
+    options TEXT,
+    state TEXT NOT NULL,
+    message TEXT,
+    done INTEGER NOT NULL DEFAULT 0,
+    total INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT
 );
 """
 

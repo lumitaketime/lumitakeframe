@@ -1515,6 +1515,21 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             pass
         return {"path": str(out)}
 
+    # ---- 掃描進度：進行中的工作與存在資料庫裡的紀錄 ----
+    @app.get("/api/activity")
+    def activity():
+        snap = jobs().snapshot()
+        return {"active": [j for j in [snap.get("current"), *[a for a in snap.get("active", []) if a.get("id") != (snap.get("current") or {}).get("id")]] if j],
+                "queued": snap.get("queued", []), "history": jobs().history()}
+
+    @app.post("/api/activity/resume")
+    def activity_resume(body: dict = Body(...)):
+        try:
+            jobs().resume(int(body.get("id") or 0))
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        return {"ok": True}
+
     @app.get("/api/usage")
     def usage_api(root: int, path: str = ""):
         """佔比圖（方塊圖、環狀圖）：目前層與下一層的大小。只讀資料庫。"""

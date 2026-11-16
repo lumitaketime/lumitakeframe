@@ -118,7 +118,7 @@
 
   const bottom = $derived([
     {
-      value: "scan", label: job ? job.label : t("nav.scanProgress"), icon: "clock", href: "/settings/ai",
+      value: "scan", label: t("nav.scanProgress"), icon: "clock", href: "/activity",
       progress: job ? (job.total ? job.done / job.total : true) : null,
       trailing: job?.total ? `${Math.round((job.done / job.total) * 100)}%` : "",
     },
@@ -132,6 +132,7 @@
     if (page === "settings") return "settings";
     if (page === "duplicates") return "duplicates";
     if (page === "pending") return "pending";
+    if (page === "activity") return "scan";
     if (page === "kind") return `kind:${route.path.split("/")[2]}`;
     if (page === "label") return `label:${route.path.split("/")[2]}`;
     if (page === "folders" && rootId) {

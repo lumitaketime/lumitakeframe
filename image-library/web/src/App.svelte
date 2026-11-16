@@ -17,6 +17,7 @@
   import Similar from "./pages/Duplicates.svelte";
   import Dupes from "./pages/Dupes.svelte";
   import Pending from "./pages/Pending.svelte";
+  import Activity from "./pages/Activity.svelte";
   import Tools from "./pages/Tools.svelte";
   import Keywords from "./pages/Keywords.svelte";
   import SmartAlbum from "./pages/SmartAlbum.svelte";
@@ -77,6 +78,7 @@
           : page === "kind" ? t(`kind.${seg[1]}`)
           : page === "label" ? t(`label.${seg[1]}`)
           : page === "pending" ? t("nav.pending")
+          : page === "activity" ? t("nav.scanProgress")
           : page === "drives" ? t("nav.drives")
           : page === "settings" ? t("nav.settings")
             : page === "search" ? t("nav.search") : "");
@@ -338,6 +340,8 @@
               <Tools sub={seg[1] || ""} />
             {:else if page === "duplicates"}
               <Dupes />
+            {:else if page === "activity"}
+              <Activity />
             {:else if page === "pending"}
               <Pending />
             {:else if page === "similar"}

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import itertools
+import json
 import threading
 import time
 import traceback
@@ -77,10 +78,67 @@ class JobRunner:
         self.confirm: dict | None = None
         # 工作結束時要通知的對象（例如清掉伺服器的統計暫存）
         self.on_finish: list = []
+        # 上次關掉 App 時還沒做完的工作：標成「已中斷」，使用者可以按「繼續」
+        self._log_sql("UPDATE job_log SET state = 'interrupted', message = ?, finished_at = ? WHERE state IN ('queued', 'running')",
+                      ("上次關閉 Re'memor 時還沒做完，可以繼續。", db.now_iso()))
         self.threads = [threading.Thread(target=self._worker, args=(lane,), daemon=True, name=f"lumilib-{lane}")
                         for lane in QUEUED_LANES]
         for t in self.threads:
             t.start()
+
+    # ---- 工作紀錄：寫進資料庫，關掉 App 再開仍然看得到；紀錄失敗不影響工作本身 ----
+    LOGGED = ("scan", "index", "compare", "analyze")
+    RESUMABLE = ("scan", "index", "compare")
+
+    def _log_sql(self, sql: str, args: tuple = ()) -> int | None:
+        try:
+            conn = db.connect(self.cfg.db_path)
+            try:
+                cur = conn.execute(sql, args)
+                conn.commit()
+                return cur.lastrowid
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+            return None
+
+    def _log_new(self, job: dict) -> None:
+        if job["kind"] in self.LOGGED:
+            job["_log"] = self._log_sql(
+                "INSERT INTO job_log (kind, label, options, state, message, created_at) VALUES (?, ?, ?, 'queued', ?, ?)",
+                (job["kind"], job["label"], json.dumps(job["options"], ensure_ascii=False, default=str), job["message"], db.now_iso()))
+
+    def _log_state(self, job: dict, state: str, message: str | None = None) -> None:
+        if not job.get("_log"):
+            return
+        stamp = "started_at" if state == "running" else "finished_at"
+        self._log_sql(f"UPDATE job_log SET state = ?, message = COALESCE(?, message), done = ?, total = ?, {stamp} = ? WHERE id = ?",
+                      (state, message, int(job.get("done") or 0), int(job.get("total") or 0), db.now_iso(), job["_log"]))
+
+    def history(self, limit: int = 30) -> list[dict]:
+        try:
+            conn = db.connect(self.cfg.db_path)
+            try:
+                rows = conn.execute("SELECT * FROM job_log WHERE state NOT IN ('queued', 'running') ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001
+            return []
+        return [{"id": r["id"], "kind": r["kind"], "label": r["label"], "state": r["state"], "message": r["message"],
+                 "done": r["done"], "total": r["total"], "started_at": r["started_at"], "finished_at": r["finished_at"],
+                 "resumable": r["state"] in ("interrupted", "stopped") and r["kind"] in self.RESUMABLE} for r in rows]
+
+    def resume(self, log_id: int) -> dict:
+        """把中斷或停止的掃描、比對重新排進去（它們本來就會從沒做完的地方接著做）。"""
+        conn = db.connect(self.cfg.db_path)
+        try:
+            r = conn.execute("SELECT * FROM job_log WHERE id = ?", (log_id,)).fetchone()
+        finally:
+            conn.close()
+        if r is None or r["kind"] not in self.RESUMABLE:
+            raise ValueError("這個工作不能繼續")
+        return self.submit(r["kind"], **(json.loads(r["options"] or "{}")))
 
     # ---- public ----
     def submit(self, kind: str, **options) -> dict:
@@ -109,6 +167,7 @@ class JobRunner:
             if kind == "analyze" and not options and any(
                     j["kind"] == "analyze" and not j["options"] for j in self.active.values()):
                 return self.snapshot_locked()
+            self._log_new(job)  # 先記下來再排進去，工作一開始就找得到自己的紀錄
             self.queues[lane].append(job)
             self.wake.notify_all()
             return self.snapshot_locked()
@@ -192,6 +251,7 @@ class JobRunner:
                 job["started_at"] = datetime.now().isoformat(timespec="seconds")
                 job["message"] = "準備中…"
                 self.active[job["id"]] = job
+            self._log_state(job, "running")
             self._execute(job)
 
     def _execute(self, job: dict) -> None:
@@ -212,6 +272,8 @@ class JobRunner:
             message = self._follow_up(message)
         elif job["kind"] == "pull" and not error:
             message = self._after_pull(job["options"].get("model"), message)
+        result = job.get("result") or {}
+        self._log_state(job, "error" if error else "interrupted" if result.get("interrupted") else "stopped" if stopped else "done", message)
         for fn in list(self.on_finish):
             try:
                 fn(job)
@@ -330,6 +392,9 @@ class JobRunner:
                 upd(scan=None)
                 from .scanner import describe
 
+                gone = [r.root for r in results if r.interrupted]
+                if gone:  # 掃到一半硬碟被拔掉：不是錯誤，接上後可以繼續
+                    job["result"] = {"interrupted": gone}
                 for r in results:
                     parts.append(describe(r))
                 if not results:
