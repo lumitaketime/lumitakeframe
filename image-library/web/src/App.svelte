@@ -14,7 +14,8 @@
   import Albums from "./pages/Albums.svelte";
   import Album from "./pages/Album.svelte";
   import People from "./pages/People.svelte";
-  import Duplicates from "./pages/Duplicates.svelte";
+  import Similar from "./pages/Duplicates.svelte";
+  import Dupes from "./pages/Dupes.svelte";
   import Tools from "./pages/Tools.svelte";
   import Keywords from "./pages/Keywords.svelte";
   import SmartAlbum from "./pages/SmartAlbum.svelte";
@@ -64,7 +65,7 @@
   const seg = $derived(route.path.split("/").filter(Boolean));
   const page = $derived(seg[0] || "");
   // 照片圖庫沿用的頁面：收在「照片」底下，用分頁切換
-  const PHOTO_PAGES = new Set(["", "welcome", "favorites", "videos", "albums", "explore", "people", "keywords", "tools"]);
+  const PHOTO_PAGES = new Set(["", "welcome", "favorites", "videos", "albums", "explore", "people", "keywords", "tools", "similar"]);
   const photoPage = $derived(PHOTO_PAGES.has(page));
   const pf = $derived(pageFrame());
   const crumbs = $derived(pf?.crumbs || []);
@@ -334,7 +335,9 @@
             {:else if page === "tools"}
               <Tools sub={seg[1] || ""} />
             {:else if page === "duplicates"}
-              <Duplicates />
+              <Dupes />
+            {:else if page === "similar"}
+              <Similar />
             {:else if page === "albums" && seg[1]}
               <Album id={Number(seg[1])} />
             {:else if page === "albums"}

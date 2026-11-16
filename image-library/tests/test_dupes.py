@@ -62,6 +62,12 @@ class DupesTests(CatalogTestCase):
         files = dupes.duplicate_files(self.conn)
         self.assertEqual((files["total"], files["groups"][0]["name"], files["groups"][0]["copies"]), (4, "b.raw", 2))
         self.assertEqual(dupes.duplicate_files(self.conn, pending=True)["total"], 0)
+        self.assertTrue(all(g["in_folder"] for g in files["groups"]))  # 這些檔案都在已列出的重複資料夾裡
+        (self.one / "單獨一份.raw").write_bytes(b"A" * 5000)  # 和 a.raw 內容相同，但不在重複資料夾裡
+        scan_all(self.conn, self.cfg)
+        dupes.run_compare(self.conn)
+        flags = {g["name"]: g["in_folder"] for g in dupes.duplicate_files(self.conn)["groups"]}
+        self.assertEqual((flags["a.raw"], flags["b.raw"]), (False, True))
 
     def test_same_name_and_size_but_different_content_is_not_a_duplicate(self):
         """最危險的情況：檔名、大小都一樣，內容不同。只看頭尾也分不出來的，要讀完整個檔案才知道。"""

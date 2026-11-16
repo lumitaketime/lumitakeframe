@@ -17,7 +17,7 @@
   let { width = 240 } = $props();
 
   // 照片圖庫沿用的頁面，都算在「照片」底下
-  const PHOTO_PAGES = new Set(["", "welcome", "favorites", "videos", "albums", "explore", "people", "keywords", "tools"]);
+  const PHOTO_PAGES = new Set(["", "welcome", "favorites", "videos", "albums", "explore", "people", "keywords", "tools", "similar"]);
   const page = $derived(route.path.split("/").filter(Boolean)[0] || "");
   const rootId = $derived(page === "folders" ? Number(route.path.split("/")[2]) || null : null);
   const hereKey = $derived(route.path + (route.query.path ? `?path=${encodeURIComponent(route.query.path)}` : ""));

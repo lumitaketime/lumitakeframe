@@ -78,3 +78,14 @@ export function formatDateTime(date) {
   const time = new Intl.DateTimeFormat(tag, { hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
   return `${formatDate(d)} ${day} ${time}`;
 }
+
+/** 一段時間的粗略說法：「不到 1 分鐘」「約 25 分鐘」「約 3 小時」「約 2.5 天」 */
+export function formatDuration(sec) {
+  if (sec === null || sec === undefined || !isFinite(sec) || sec < 0) return "";
+  if (sec < 50) return t("time.underMinute");
+  const min = Math.round(sec / 60);
+  if (min < 60) return t("time.minutes", { n: formatNumber(min) });
+  const hours = min / 60;
+  if (hours < 24) return t("time.hours", { n: formatNumber(hours < 10 ? Math.round(hours * 10) / 10 : Math.round(hours)) });
+  return t("time.days", { n: formatNumber(Math.round((hours / 24) * 10) / 10) });
+}

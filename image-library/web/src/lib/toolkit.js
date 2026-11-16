@@ -4,7 +4,7 @@ import { mdiCellphoneScreenshot, mdiChartBoxOutline, mdiContentDuplicate } from 
 export const TOOLS = [
   { key: "screens", href: "/tools/screens", label: "截圖與文件", icon: mdiCellphoneScreenshot },
   { key: "large", href: "/tools/large", label: "大檔案", icon: mdiChartBoxOutline },
-  { key: "duplicates", href: "/duplicates", label: "重複照片", icon: mdiContentDuplicate },
+  { key: "duplicates", href: "/similar", label: "相似照片", icon: mdiContentDuplicate },
 ];
 
 export const toolByKey = (key) => TOOLS.find((t) => t.key === key);

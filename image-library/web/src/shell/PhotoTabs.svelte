@@ -10,7 +10,7 @@
     { href: "/videos", key: "photos.videos", match: ["videos"] },
     { href: "/albums", key: "photos.albums", fixed: true, match: ["albums"] },
     { href: "/explore", key: "photos.explore", match: ["explore", "people", "keywords"] },
-    { href: "/tools", key: "photos.tools", match: ["tools"] },
+    { href: "/tools", key: "photos.tools", match: ["tools", "similar"] },
   ];
   const hidden = $derived(new Set((app.server?.ui?.nav_hidden || "").split(",").filter(Boolean)));
   const tabs = $derived(TABS.filter((x) => x.fixed || !hidden.has(x.href)));

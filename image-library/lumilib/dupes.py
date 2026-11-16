@@ -298,6 +298,17 @@ def duplicate_files(conn: sqlite3.Connection, offset: int = 0, limit: int = 100,
             "SELECT COUNT(*), COALESCE(SUM((n - 1) * size), 0) FROM (SELECT size, COUNT(*) AS n FROM files "
             "WHERE status = 'ok' AND content_hash IS NOT NULL GROUP BY content_hash, size HAVING n > 1)").fetchone()
         member_sql, key = "f.content_hash = ? AND f.size = ?", lambda g: (g["content_hash"], g["size"])
+    # 已經列為「重複資料夾」的資料夾：裡面的檔案組別加上記號，介面會標示「已包含在重複資料夾中」
+    covered: dict[int, list[str]] = {}
+    if not pending and head:
+        for fg in duplicate_folders(conn, 0, 1_000_000)["groups"]:
+            if fg["confirmed"]:
+                for it in fg["items"]:
+                    covered.setdefault(it.get("root_id"), []).append(it["path"])
+
+    def inside(root_id: int, folder: str) -> bool:
+        return any(folder == p or folder.startswith(p + "/") for p in covered.get(root_id, ()))
+
     groups = []
     for g in head:
         members = conn.execute(
@@ -307,6 +318,7 @@ def duplicate_files(conn: sqlite3.Connection, offset: int = 0, limit: int = 100,
             "key": f"{'p' if pending else 'h'}:{g['size']}:{g['name'] if pending else g['content_hash']}",
             "name": g["name"], "size": g["size"], "copies": len(members), "releasable": g["size"] * (len(members) - 1),
             "confirmed": not pending, "kind": members[0]["kind"] if members else "other",
+            "in_folder": bool(members) and bool(covered) and all(inside(m["root_id"], m["folder"]) for m in members),
             "items": [{"type": "file", "id": m["id"], "name": m["name"], "path": f"{m['folder']}/{m['name']}" if m["folder"] else m["name"],
                        "mtime": m["mtime"], "image_id": m["image_id"], **place.get(m["root_id"], {})}
                       for m in sorted(members, key=lambda m: (place.get(m["root_id"], {}).get("drive", ""), m["folder"], m["name"]))],
