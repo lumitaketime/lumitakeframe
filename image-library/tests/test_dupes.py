@@ -343,6 +343,18 @@ class PendingTests(CatalogTestCase):
         self.assertTrue(str(out).startswith(str(self.cfg.home)))  # 清單存在 Re'memor 的資料目錄，不寫進硬碟
         self.assertEqual(self.snapshot_count(), before)
 
+    def test_read_only_is_judged_by_the_folder_not_the_volume_root(self):
+        """系統磁碟的最上層一般使用者不能寫入，但裡面的資料夾可以：不能因此把它當成唯讀而拒絕清理。"""
+        from lumilib import pending
+
+        dupes.run_compare(self.conn)
+        self.conn.execute("UPDATE drives SET read_only = 1")  # 掃描時記下「最上層不能寫入」
+        self.conn.commit()
+        self.assertFalse(any(d["read_only"] for d in [dupes._place(self.conn)[1], dupes._place(self.conn)[2]]))
+        a, b = self.file("硬碟一", "a.raw"), self.file("硬碟二", "a.raw")
+        pending.mark(self.conn, "file", [a["id"]], [b["id"]])
+        self.assertEqual(len(pending.clean(self.conn, self.marks(), trash=self.trash)["trashed"]), 1)
+
     def test_api_requires_explicit_confirmation(self):
         from fastapi.testclient import TestClient
 

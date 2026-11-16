@@ -228,11 +228,17 @@ def update_folder_signatures(conn: sqlite3.Connection, root_id: int) -> None:
 # ---- 查詢 ----
 
 def _place(conn: sqlite3.Connection) -> dict[int, dict]:
-    """每個資料夾來源：名稱、所在硬碟、有沒有接上、是不是唯讀（NTFS 等）。"""
+    """每個資料夾來源：名稱、所在硬碟、有沒有接上、是不是唯讀。
+
+    唯讀的判斷：NTFS 在 Mac 上只能讀；其他格式在硬碟接著時，實際看這個資料夾能不能寫入
+    （不看硬碟最上層，一般使用者本來就不能寫入系統磁碟的最上層）；沒接上時沿用掃描時記下的狀態。
+    """
     out = {}
     for r in conn.execute("SELECT r.id, r.name, r.path, d.name AS drive, d.fs_type, d.read_only FROM roots r LEFT JOIN drives d ON d.id = r.drive_id"):
-        out[r["id"]] = {"root_id": r["id"], "root": r["name"], "drive": r["drive"] or r["name"], "online": Path(r["path"]).is_dir(),
-                        "read_only": bool(r["read_only"]) or (r["fs_type"] or "").lower() == "ntfs"}
+        online = Path(r["path"]).is_dir()
+        ntfs = (r["fs_type"] or "").lower() == "ntfs"
+        read_only = ntfs or (not os.access(r["path"], os.W_OK) if online else bool(r["read_only"]))
+        out[r["id"]] = {"root_id": r["id"], "root": r["name"], "drive": r["drive"] or r["name"], "online": online, "read_only": read_only}
     return out
 
 
