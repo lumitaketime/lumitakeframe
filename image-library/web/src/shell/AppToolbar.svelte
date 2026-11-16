@@ -61,5 +61,9 @@
   :global(.app-toolbar) { flex: none; padding-top: env(safe-area-inset-top); }
   .search { display: flex; justify-content: flex-end; width: clamp(180px, 26vw, 360px); }
   .search.narrow { width: auto; }
-  .size { width: 110px; flex: none; margin: 0 var(--space-2); }
+  /* 縮圖大小滑桿：設計系統的滑桿預設最少 200 寬，在工具列上會蓋到搜尋欄，這裡固定成 110 */
+  .size { width: 110px; flex: none; margin: 0 var(--space-3) 0 var(--space-2); }
+  .size :global(.lg-slider) { min-width: 0; width: 100%; }
+  /* 視窗不夠寬時先收起滑桿，把位置留給檢視切換與搜尋 */
+  @media (max-width: 1099px) { .size { display: none; } }
 </style>
