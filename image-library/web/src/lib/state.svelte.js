@@ -1,5 +1,7 @@
 /** 在 Mac App（Tauri）或 Android App 外殼中執行時，User-Agent 會帶上標記 */
 export const isMacApp = navigator.userAgent.includes("LumitakeApp");
+/** 這個版本以後的 Mac App 用覆蓋式標題列：紅綠燈按鈕疊在畫面左上角，工具列空白處可以拖曳視窗 */
+export const macOverlayTitleBar = /LumitakeApp\/(0\.[4-9]|[1-9])/.test(navigator.userAgent);
 export const isAndroidApp = navigator.userAgent.includes("LumitakeAndroid");
 
 import { SvelteSet } from "svelte/reactivity";

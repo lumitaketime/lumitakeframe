@@ -32,7 +32,7 @@
   import { setView } from "./views/prefs.svelte.js";
   import { t } from "./i18n/index.svelte.js";
   import { api } from "./lib/api.js";
-  import { app, selection, viewer, refresh, toast } from "./lib/state.svelte.js";
+  import { app, selection, viewer, refresh, toast, macOverlayTitleBar } from "./lib/state.svelte.js";
   import { route, navigate, link } from "./lib/router.svelte.js";
   import { undoLast } from "./lib/undo.svelte.js";
   import { DUR, slidePanel } from "./lib/motion.js";
@@ -102,6 +102,13 @@
   // 捲到底的回彈只在觸控裝置保留；Mac 上交給系統
   const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
   const touchBounce = (node) => (touch ? rubberBand(node) : undefined);
+
+  // Mac App 的覆蓋式標題列：在工具列或側邊欄頂端的空白處按下就拖曳視窗，按兩下放大（由 App 外殼處理）
+  function windowDrag(e) {
+    if (!macOverlayTitleBar || e.button !== 0) return;
+    if (e.target.closest("button, a, input, select, textarea, [role='radiogroup'], [role='combobox'], [role='listbox'], .lg-slider, .panel")) return;
+    location.href = e.detail >= 2 ? "lumitake://zoom" : "lumitake://drag";
+  }
 
   function onKey(e) {
     const typing = e.target.closest?.("input, textarea, select, [contenteditable]");
@@ -279,9 +286,10 @@
 {:else if app.needLogin}
   <Login />
 {:else}
-  <div class="frame" class:compact class:resizing={dragging}>
+  <div class="frame" class:compact class:resizing={dragging} class:mac-titlebar={macOverlayTitleBar} class:no-side={compact || !frame.sidebar}>
     {#if !compact && frame.sidebar}
-      <div class="side" transition:slidePanel={{ x: -(frame.sidebarWidth + 16) }}>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="side" transition:slidePanel={{ x: -(frame.sidebarWidth + 16) }} onmousedown={(e) => { if (e.target.closest(".lg-side-top") && !e.target.closest(".brand")) windowDrag(e); }}>
         <AppSidebar width={frame.sidebarWidth} />
         <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
         <div class="resizer" role="separator" aria-orientation="vertical" aria-label={t("nav.resizeSidebar")} tabindex="0"
@@ -291,7 +299,10 @@
     {/if}
 
     <div class="pane">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="bar" onmousedown={windowDrag}>
       <AppToolbar {title} {compact} narrowSearch={winW <= 600} place={pf?.browse || ""} {infoOpen} ontoggleinfo={onToggleInfo} />
+      </div>
       {#if photoPage}<PhotoTabs />{:else if crumbs.length}<PathBar {crumbs} />{/if}
       <div class="body">
         <main class="scroll-area" use:touchBounce>
@@ -382,6 +393,10 @@
   .resizer { position: absolute; top: var(--space-4); bottom: var(--space-4); right: 0; width: var(--space-2); cursor: col-resize; border-radius: var(--radius-capsule); touch-action: none; }
   .resizer:hover, .frame.resizing .resizer { background: var(--fill-secondary); }
 
+  /* Mac App：紅綠燈按鈕在左上角（約 70×28）。側邊欄的標誌往下讓位；側邊欄收起時，工具列往右讓位 */
+  .mac-titlebar .side :global(.lg-side-top:first-child) { padding-top: var(--space-6); }
+  .mac-titlebar.no-side .bar { padding-left: 72px; }
+  .bar { flex: none; }
   .pane { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--control-bg); }
   .frame:not(.compact) .pane { box-shadow: -1px 0 0 var(--separator); }
   .body { flex: 1; min-height: 0; display: flex; position: relative; }

@@ -22,7 +22,7 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 const PORT: u16 = 8766;
 /// App 與內建伺服器的版本一致（Cargo.toml 與 lumilib/__init__.py 一起更新）
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
-const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15 LumitakeApp/0.3";
+const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15 LumitakeApp/0.4";
 
 struct Server(Mutex<Option<Child>>);
 
@@ -276,7 +276,7 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
             let fs_handle = handle.clone();
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Re'memor")
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(380.0, 560.0)
@@ -293,11 +293,33 @@ fn main() {
                                 }
                             });
                         }
+                        // 覆蓋式標題列：畫面從本機伺服器載入，不能直接用 Tauri 的拖曳功能，
+                        // 所以工具列空白處按下時，網頁前往 lumitake://drag，由這裡開始拖曳視窗；按兩下是 lumitake://zoom
+                        if url.host_str() == Some("drag") {
+                            if let Some(w) = fs_handle.get_webview_window("main") {
+                                let _ = w.start_dragging();
+                            }
+                        }
+                        if url.host_str() == Some("zoom") {
+                            let h = fs_handle.clone();
+                            thread::spawn(move || {
+                                if let Some(w) = h.get_webview_window("main") {
+                                    if w.is_maximized().unwrap_or(false) {
+                                        let _ = w.unmaximize();
+                                    } else {
+                                        let _ = w.maximize();
+                                    }
+                                }
+                            });
+                        }
                         return false;
                     }
                     true
-                })
-                .build()?;
+                });
+            // macOS：紅綠燈按鈕疊在畫面左上角，和工具列同一列（介面手冊「Liquid Glass 使用規則」）
+            #[cfg(target_os = "macos")]
+            let window = window.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
+            window.build()?;
 
             let starter = handle.clone();
             thread::spawn(move || {
