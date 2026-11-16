@@ -57,6 +57,7 @@
       { value: "files", label: t("nav.allFiles"), icon: "files", href: "/folders" },
       { value: "photos", label: t("nav.photos"), icon: "photo", href: "/" },
       { value: "duplicates", label: t("nav.duplicates"), icon: "duplicate", href: "/duplicates" },
+      { value: "pending", label: t("nav.pending"), icon: "trash", href: "/pending", badge: catalog.pending ? formatNumber(catalog.pending) : undefined },
     ] },
     ...(catalog.drives.length ? [{ title: t("nav.kinds"), items: kindItems }] : []),
     { title: t("nav.drives"), href: "/drives", current: page === "drives", items: catalog.drives.map(driveItem), note: catalog.loaded && !catalog.drives.length ? t("drive.noDrives") : "" },
@@ -130,6 +131,7 @@
     if (fav) return `fav:${fav.href}`;
     if (page === "settings") return "settings";
     if (page === "duplicates") return "duplicates";
+    if (page === "pending") return "pending";
     if (page === "kind") return `kind:${route.path.split("/")[2]}`;
     if (page === "label") return `label:${route.path.split("/")[2]}`;
     if (page === "folders" && rootId) {

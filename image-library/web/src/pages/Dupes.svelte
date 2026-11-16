@@ -4,9 +4,10 @@
    * 「已確認」＝每一份都從頭到尾讀過、內容相同；「待確認」＝只知道檔名與大小相同，還不能標記為待刪除。
    * 這一頁只查詢與比對（只讀取），不會刪除或搬移任何東西。
    */
-  import { Button, Icon, ProgressIndicator, SegmentedControl } from "../ui/index.js";
+  import { Alert, Button, Checkbox, Icon, ProgressIndicator, SegmentedControl } from "../ui/index.js";
   import KindIcon from "../views/KindIcon.svelte";
-  import { loadDupesSummary, loadDupeFolders, loadDupeFiles, startCompare, stopCompare, estimateSeconds } from "../data/dupes.js";
+  import { loadDupesSummary, loadDupeFolders, loadDupeFiles, startCompare, stopCompare, estimateSeconds, markItems, unmarkItems } from "../data/dupes.js";
+  import { loadCatalog } from "../data/catalog.svelte.js";
   import { setFrame } from "../shell/frame.svelte.js";
   import { t, formatNumber, formatBytes, formatDuration, formatDate } from "../i18n/index.svelte.js";
   import { openItem } from "../data/browse.js";
@@ -111,6 +112,40 @@
       toast(e.message, "error");
     }
   }
+  // ---- 保留哪一份：取消勾選的會被標記為待刪除（只做標記）。每一組至少保留一份 ----
+  let drop = $state({}); // 組別 → { 項目 id: true }＝使用者取消勾選「保留」的
+  const kept = (g, it) => !it.mark && !drop[g.key]?.[it.id];
+  const keptCount = (g) => g.items.filter((it) => kept(g, it)).length;
+  const dropping = (g) => g.items.filter((it) => !it.mark && drop[g.key]?.[it.id]);
+  function setKeep(g, it, on) {
+    if (!on && keptCount(g) <= 1) return; // 最後一份不能取消
+    drop[g.key] = { ...(drop[g.key] || {}), [it.id]: !on };
+  }
+  function keepOnly(g, it) {
+    drop[g.key] = Object.fromEntries(g.items.filter((x) => !x.mark && x.id !== it.id).map((x) => [x.id, true]));
+  }
+  let confirming = $state(null); // { g, kind, remove }
+  async function doMark() {
+    const { g, kind, remove } = confirming;
+    confirming = null;
+    try {
+      await markItems(kind, g.items.filter((it) => kept(g, it)).map((it) => it.id), remove.map((it) => it.id));
+      drop[g.key] = {};
+      toast(t("dupes.marked", { count: formatNumber(remove.length) }), "info", 8000, { label: t("pending.open"), run: () => navigate("/pending") });
+      await Promise.all([load(), loadCatalog()]);
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+  async function unmark(it) {
+    try {
+      await unmarkItems([it.mark]);
+      await Promise.all([load(), loadCatalog()]);
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
   const hrefOf = (it) => {
     const folder = it.type === "folder" ? it.path : it.path.includes("/") ? it.path.slice(0, it.path.lastIndexOf("/")) : "";
     return `/folders/${it.root_id}${folder ? `?path=${encodeURIComponent(folder)}` : ""}`;
@@ -205,8 +240,13 @@
                 <ol class="copies mac-body">
                   {#each g.items as it, n (it.id)}
                     {@const parts = crumbs(it)}
-                    <li class:off={!it.online}>
-                      <span class="no mac-callout" aria-hidden="true">{n + 1}</span>
+                    <li class:off={!it.online} class:marked={!!it.mark}>
+                      {#if g.confirmed}
+                        <Checkbox checked={kept(g, it)} disabled={!!it.mark || (kept(g, it) && keptCount(g) <= 1)} label={t("dupes.keep")}
+                          onchange={(on) => setKeep(g, it, on)} />
+                      {:else}
+                        <span class="no mac-callout" aria-hidden="true">{n + 1}</span>
+                      {/if}
                       <div class="place">
                         <div class="drive">
                           <Icon name={it.online ? "external-drive-fill" : "external-drive"} size={14} weight="medium" />
@@ -221,11 +261,24 @@
                           {/each}
                         </div>
                       </div>
+                      {#if it.mark}
+                        <span class="tag mac-callout">{t("nav.pending")}</span>
+                        <button type="button" class="act mac-callout" onclick={() => unmark(it)}>{t("pending.unmark")}</button>
+                      {:else if g.confirmed && g.items.filter((x) => !x.mark).length > 1}
+                        <button type="button" class="act mac-callout" onclick={() => keepOnly(g, it)}>{t("dupes.keepOnly")}</button>
+                      {/if}
                       <a class="act mac-callout" href={hrefOf(it)} use:link>{t("dupes.show")}</a>
                       {#if app.server?.local}<button type="button" class="act mac-callout" disabled={!it.online} onclick={() => reveal(it)}>{t("menu.reveal")}</button>{/if}
                     </li>
                   {/each}
                 </ol>
+                {#if g.confirmed && dropping(g).length}
+                  {@const remove = dropping(g)}
+                  <div class="markbar mac-body">
+                    <span class="sub">{t("dupes.markHint", { keep: formatNumber(keptCount(g)), count: formatNumber(remove.length), size: formatBytes(g.size * remove.length) || "0 KB" })}</span>
+                    <Button variant="borderedProminent" onclick={() => (confirming = { g, kind: s.kind === "folders" ? "folder" : "file", remove })}>{t("dupes.markRest")}</Button>
+                  </div>
+                {/if}
               {/if}
             </li>
           {/each}
@@ -237,6 +290,16 @@
     {/each}
   {/if}
 </div>
+
+{#if confirming}
+  <div class="backdrop">
+    <Alert title={t("dupes.markTitle", { count: formatNumber(confirming.remove.length), size: formatBytes(confirming.g.size * confirming.remove.length) || "0 KB" })}
+      message={t("dupes.markMessage")} actions={[
+        { label: t("dupes.markConfirm"), role: "default", onPress: doMark },
+        { label: t("common.cancel"), role: "cancel", onPress: () => (confirming = null) },
+      ]} />
+  </div>
+{/if}
 
 <style>
   .dupes { padding: var(--space-4) var(--space-6) var(--space-8); max-width: 1100px; color: var(--label-primary); }
@@ -281,6 +344,10 @@
   .act { flex: none; padding: 2px var(--space-2); border: 0; border-radius: var(--radius-capsule); background: none; color: var(--accent); font: inherit; text-decoration: none; cursor: pointer; }
   .act:hover:not(:disabled) { background: var(--fill-tertiary); }
   .act:disabled { color: var(--label-tertiary); cursor: default; }
+  .copies li.marked { opacity: .6; }
+  .copies li.marked .act, .copies li.marked .tag { opacity: 1; }
+  .markbar { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3); padding: 0 var(--space-3) var(--space-3); }
+  .backdrop { position: fixed; inset: 0; z-index: 320; display: flex; align-items: center; justify-content: center; background: var(--media-scrim-light); }
   .more { margin: var(--space-3) 0 0; text-align: center; }
   .state { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); padding: var(--space-10) var(--space-6); text-align: center; color: var(--label-secondary); }
   .state h2 { color: var(--label-primary); }

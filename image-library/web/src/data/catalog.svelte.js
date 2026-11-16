@@ -8,6 +8,7 @@ export const catalog = $state({
   drives: [], // 每顆硬碟：名稱、容量、已編目的檔案數與大小、是否連線、是否掃描中
   kinds: [], // 每種類型的檔案數與總大小
   labels: [], // 每個顏色標籤有幾個項目
+  pending: 0, // 標記為待刪除的項目數
   loaded: false,
   error: "",
 });
@@ -20,6 +21,7 @@ export function loadCatalog() {
       catalog.drives = data.drives;
       catalog.kinds = data.kinds;
       catalog.labels = data.labels || [];
+      catalog.pending = data.pending || 0;
       catalog.error = "";
     })
     .catch((e) => {

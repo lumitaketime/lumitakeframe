@@ -16,6 +16,7 @@
   import People from "./pages/People.svelte";
   import Similar from "./pages/Duplicates.svelte";
   import Dupes from "./pages/Dupes.svelte";
+  import Pending from "./pages/Pending.svelte";
   import Tools from "./pages/Tools.svelte";
   import Keywords from "./pages/Keywords.svelte";
   import SmartAlbum from "./pages/SmartAlbum.svelte";
@@ -75,6 +76,7 @@
         : page === "duplicates" ? t("nav.duplicates")
           : page === "kind" ? t(`kind.${seg[1]}`)
           : page === "label" ? t(`label.${seg[1]}`)
+          : page === "pending" ? t("nav.pending")
           : page === "drives" ? t("nav.drives")
           : page === "settings" ? t("nav.settings")
             : page === "search" ? t("nav.search") : "");
@@ -336,6 +338,8 @@
               <Tools sub={seg[1] || ""} />
             {:else if page === "duplicates"}
               <Dupes />
+            {:else if page === "pending"}
+              <Pending />
             {:else if page === "similar"}
               <Similar />
             {:else if page === "albums" && seg[1]}
