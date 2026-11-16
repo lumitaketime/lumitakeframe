@@ -261,6 +261,7 @@ def duplicate_folders(conn: sqlite3.Connection, offset: int = 0, limit: int = 10
     # 上一層已經列為重複的，底下的子資料夾不再各列一組
     listed = {m["id"] for _, ms in sets for m in ms}
     place = _place(conn)
+    marked = {r[0]: r[1] for r in conn.execute("SELECT item_id, id FROM delete_marks WHERE kind = 'folder'")}
     groups = []
     for confirmed, ms in sets:
         if all(m["parent_id"] in listed for m in ms):
@@ -270,7 +271,8 @@ def duplicate_folders(conn: sqlite3.Connection, offset: int = 0, limit: int = 10
             "key": f"{'c' if confirmed else 's'}:{ms[0]['content_sig'] if confirmed else ms[0]['shape_sig']}",
             "name": ms[0]["name"], "size": size, "files": ms[0]["total_files"], "copies": len(ms),
             "releasable": size * (len(ms) - 1), "confirmed": confirmed,
-            "items": [{"type": "folder", "id": m["id"], "name": m["name"], "path": m["path"], "mtime": m["mtime"], **place.get(m["root_id"], {})}
+            "items": [{"type": "folder", "id": m["id"], "name": m["name"], "path": m["path"], "mtime": m["mtime"], "mark": marked.get(m["id"]),
+                       **place.get(m["root_id"], {})}
                       for m in sorted(ms, key=lambda m: (place.get(m["root_id"], {}).get("drive", ""), m["path"]))],
         })
     groups.sort(key=lambda g: (-g["releasable"], g["name"]))
@@ -309,6 +311,7 @@ def duplicate_files(conn: sqlite3.Connection, offset: int = 0, limit: int = 100,
     def inside(root_id: int, folder: str) -> bool:
         return any(folder == p or folder.startswith(p + "/") for p in covered.get(root_id, ()))
 
+    marked = {r[0]: r[1] for r in conn.execute("SELECT item_id, id FROM delete_marks WHERE kind = 'file'")}
     groups = []
     for g in head:
         members = conn.execute(
@@ -320,7 +323,7 @@ def duplicate_files(conn: sqlite3.Connection, offset: int = 0, limit: int = 100,
             "confirmed": not pending, "kind": members[0]["kind"] if members else "other",
             "in_folder": bool(members) and bool(covered) and all(inside(m["root_id"], m["folder"]) for m in members),
             "items": [{"type": "file", "id": m["id"], "name": m["name"], "path": f"{m['folder']}/{m['name']}" if m["folder"] else m["name"],
-                       "mtime": m["mtime"], "image_id": m["image_id"], **place.get(m["root_id"], {})}
+                       "mtime": m["mtime"], "image_id": m["image_id"], "mark": marked.get(m["id"]), **place.get(m["root_id"], {})}
                       for m in sorted(members, key=lambda m: (place.get(m["root_id"], {}).get("drive", ""), m["folder"], m["name"]))],
         })
     return {"total": stats[0], "confirmed": 0 if pending else stats[0], "releasable": 0 if pending else stats[1],

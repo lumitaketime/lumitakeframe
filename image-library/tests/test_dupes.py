@@ -160,5 +160,168 @@ class DupesTests(CatalogTestCase):
             self.assertEqual((g["confirmed"], len(g["items"]), g["items"][0]["online"]), (True, 2, True))
 
 
+class PendingTests(CatalogTestCase):
+    """待刪除：標記的規則，以及移到垃圾桶之前的再次驗證。每一個測試都是一種「不可以刪錯」的情況。"""
+
+    def setUp(self):
+        super().setUp()
+        self.one = tree(self.tmp / "硬碟一" / "2019 備份", PHOTOS).parent
+        self.two = tree(self.tmp / "硬碟二" / "複製", PHOTOS).parent
+        db.add_root(self.conn, self.one, "硬碟一")
+        db.add_root(self.conn, self.two, "硬碟二")
+        scan_all(self.conn, self.cfg)
+        self.trashed = []
+        self.bin = self.tmp / "垃圾桶"
+        self.bin.mkdir()
+
+    def trash(self, path):
+        self.trashed.append(Path(path).name)
+        shutil.move(str(path), str(self.bin / f"{len(self.trashed)}-{Path(path).name}"))
+
+    def file(self, root, name):
+        return self.conn.execute("SELECT f.* FROM files f JOIN roots r ON r.id = f.root_id WHERE r.name = ? AND f.name = ?", (root, name)).fetchone()
+
+    def folder(self, root, name):
+        return self.conn.execute("SELECT d.* FROM folders d JOIN roots r ON r.id = d.root_id WHERE r.name = ? AND d.name = ?", (root, name)).fetchone()
+
+    def marks(self):
+        return [r[0] for r in self.conn.execute("SELECT id FROM delete_marks ORDER BY id")]
+
+    def test_cannot_mark_before_full_comparison(self):
+        from lumilib import pending
+
+        a, b = self.file("硬碟一", "a.raw"), self.file("硬碟二", "a.raw")
+        with self.assertRaises(pending.MarkError):
+            pending.mark(self.conn, "file", [a["id"]], [b["id"]])
+        self.assertEqual(self.marks(), [])
+
+    def test_marking_rules(self):
+        from lumilib import pending
+
+        dupes.run_compare(self.conn)
+        a, b = self.file("硬碟一", "a.raw"), self.file("硬碟二", "a.raw")
+        other = self.file("硬碟一", "b.raw")
+        for keep, remove in (([], [b["id"]]), ([a["id"]], [a["id"]]), ([a["id"]], [other["id"]])):  # 沒留、留又刪、不同內容
+            with self.assertRaises(pending.MarkError):
+                pending.mark(self.conn, "file", keep, remove)
+        self.assertEqual(pending.mark(self.conn, "file", [a["id"]], [b["id"]]), 1)
+        with self.assertRaises(pending.MarkError):  # 剩下的那一份不能再被標記：至少保留一份
+            pending.mark(self.conn, "file", [b["id"]], [a["id"]])
+        self.assertEqual(self.snapshot_count(), 8)  # 標記不會動到硬碟
+        listing = pending.listing(self.conn)
+        self.assertEqual((listing["count"], listing["bytes"], listing["drives"][0]["items"][0]["stale"]), (1, 5000, False))
+        g = next(g for g in dupes.duplicate_files(self.conn)["groups"] if g["name"] == "a.raw")
+        self.assertEqual(sorted(bool(i["mark"]) for i in g["items"]), [False, True])
+        self.assertEqual(pending.unmark(self.conn, self.marks()), 1)
+        self.assertEqual(pending.listing(self.conn)["count"], 0)
+
+    def snapshot_count(self):
+        return sum(1 for p in list(self.one.rglob("*")) + list(self.two.rglob("*")) if p.is_file())
+
+    def test_clean_moves_to_trash_after_verifying_both_copies(self):
+        from lumilib import pending
+
+        dupes.run_compare(self.conn)
+        a, b = self.file("硬碟一", "a.raw"), self.file("硬碟二", "a.raw")
+        pending.mark(self.conn, "file", [a["id"]], [b["id"]])
+        res = pending.clean(self.conn, self.marks(), trash=self.trash)
+        self.assertEqual((len(res["trashed"]), res["skipped"], res["bytes"]), (1, [], 5000))
+        self.assertEqual(self.trashed, ["a.raw"])
+        self.assertTrue((self.one / "2019 備份" / "旅行" / "a.raw").exists())  # 保留的那份還在
+        self.assertFalse((self.two / "複製" / "旅行" / "a.raw").exists())
+        self.assertEqual(self.file("硬碟二", "a.raw")["status"], "missing")
+        self.assertEqual(pending.listing(self.conn)["count"], 0)
+
+    def test_skips_when_the_kept_copy_changed_or_is_gone(self):
+        from lumilib import pending
+
+        dupes.run_compare(self.conn)
+        a, b = self.file("硬碟一", "b.raw"), self.file("硬碟二", "b.raw")
+        pending.mark(self.conn, "file", [a["id"]], [b["id"]])
+        (self.one / "2019 備份" / "旅行" / "b.raw").write_bytes(b"X" * 7000)  # 保留的那份在標記之後被改了
+        res = pending.clean(self.conn, self.marks(), trash=self.trash)
+        self.assertEqual((res["trashed"], self.trashed), ([], []))
+        self.assertIn("保留的那一份", res["skipped"][0]["reason"])
+        (self.one / "2019 備份" / "旅行" / "b.raw").unlink()  # 保留的那份不見了
+        self.assertEqual(pending.clean(self.conn, self.marks(), trash=self.trash)["trashed"], [])
+        self.assertTrue((self.two / "複製" / "旅行" / "b.raw").exists())  # 唯一剩下的一份沒有被動到
+
+    def test_skips_when_the_marked_copy_changed(self):
+        from lumilib import pending
+
+        dupes.run_compare(self.conn)
+        a, b = self.file("硬碟一", "報告.docx"), self.file("硬碟二", "報告.docx")
+        pending.mark(self.conn, "file", [a["id"]], [b["id"]])
+        (self.two / "複製" / "報告.docx").write_bytes(b"NEWVER" * 500)  # 要刪的那份其實被改成新版本了
+        res = pending.clean(self.conn, self.marks(), trash=self.trash)
+        self.assertEqual((res["trashed"], self.trashed), ([], []))
+        scan_all(self.conn, self.cfg)  # 重新掃描後，這個標記顯示為需要重新比對
+        self.assertTrue(pending.listing(self.conn)["drives"][0]["items"][0]["stale"])
+        self.assertEqual(pending.clean(self.conn, self.marks(), trash=self.trash)["trashed"], [])
+
+    def test_skips_when_the_kept_copy_is_on_an_unplugged_drive(self):
+        from lumilib import pending
+
+        dupes.run_compare(self.conn)
+        a, b = self.file("硬碟一", "a.raw"), self.file("硬碟二", "a.raw")
+        pending.mark(self.conn, "file", [a["id"]], [b["id"]])
+        shutil.move(str(self.one), str(self.tmp / "拔掉了"))
+        res = pending.clean(self.conn, self.marks(), trash=self.trash)
+        self.assertEqual(self.trashed, [])
+        self.assertIn("沒有接上", res["skipped"][0]["reason"])
+
+    def test_folder_clean_refuses_when_a_new_file_was_added(self):
+        from lumilib import pending
+
+        dupes.run_compare(self.conn)
+        keep, remove = self.folder("硬碟一", "2019 備份"), self.folder("硬碟二", "複製")
+        pending.mark(self.conn, "folder", [keep["id"]], [remove["id"]])
+        (self.two / "複製" / "後來才放進來的.txt").write_text("只有這裡有")  # 掃描之後多了一個檔案
+        res = pending.clean(self.conn, self.marks(), trash=self.trash)
+        self.assertEqual(self.trashed, [])
+        self.assertIn("多了", res["skipped"][0]["reason"])
+        (self.two / "複製" / "後來才放進來的.txt").unlink()
+        res = pending.clean(self.conn, self.marks(), trash=self.trash)
+        self.assertEqual((self.trashed, len(res["trashed"])), (["複製"], 1))
+        self.assertTrue((self.one / "2019 備份" / "旅行" / "筆記" / "n.txt").exists())
+        self.assertEqual(dupes.duplicate_folders(self.conn)["total"], 0)  # 清掉之後不再列為重複
+
+    def test_read_only_drive_exports_a_list_instead(self):
+        from lumilib import pending
+
+        dupes.run_compare(self.conn)
+        a, b = self.file("硬碟一", "a.raw"), self.file("硬碟二", "a.raw")
+        pending.mark(self.conn, "file", [a["id"]], [b["id"]])
+        self.conn.execute("UPDATE drives SET fs_type = 'ntfs'")
+        self.conn.commit()
+        res = pending.clean(self.conn, self.marks(), trash=self.trash)
+        self.assertEqual(self.trashed, [])
+        self.assertIn("匯出清單", res["skipped"][0]["reason"])
+        drive = pending.listing(self.conn)["drives"][0]
+        self.assertTrue(drive["read_only"])
+        before = self.snapshot_count()
+        out = pending.export_list(self.conn, self.cfg.home, drive["drive"])
+        self.assertIn("旅行/a.raw", out.read_text(encoding="utf-8"))
+        self.assertTrue(str(out).startswith(str(self.cfg.home)))  # 清單存在 Re'memor 的資料目錄，不寫進硬碟
+        self.assertEqual(self.snapshot_count(), before)
+
+    def test_api_requires_explicit_confirmation(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib.server import create_app
+
+        dupes.run_compare(self.conn)
+        a, b = self.file("硬碟一", "a.raw"), self.file("硬碟二", "a.raw")
+        with TestClient(create_app(self.cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8766",
+                        client=("127.0.0.1", 1)) as c:
+            self.assertEqual(c.post("/api/dupes/mark", json={"kind": "file", "keep": [], "remove": [b["id"]]}).status_code, 400)
+            self.assertEqual(c.post("/api/dupes/mark", json={"kind": "file", "keep": [a["id"]], "remove": [b["id"]]}).json(), {"marked": 1})
+            ids = [i["id"] for d in c.get("/api/pending").json()["drives"] for i in d["items"]]
+            self.assertEqual(c.get("/api/drives").json()["pending"], 1)
+            self.assertEqual(c.post("/api/pending/trash", json={"ids": ids}).status_code, 400)  # 沒有確認就不做
+            self.assertTrue((self.two / "複製" / "旅行" / "a.raw").exists())
+            self.assertEqual(c.post("/api/dupes/unmark", json={"ids": ids}).json(), {"unmarked": 1})
+
+
 if __name__ == "__main__":
     unittest.main()

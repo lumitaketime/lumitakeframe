@@ -35,7 +35,7 @@ from .search import STACK_COUNT_SQL, search, summarize, tag_covers, top_tags
 
 WEB_DIR = Path(__file__).parent / "web"
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
-LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open"}
+LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
@@ -1295,7 +1295,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             snap = jobs().snapshot()
             current = snap.get("current") or {}
             out = {"drives": drives_overview(c, current.get("scan"), detail=detail), "kinds": kinds_overview(c),
-                   "labels": labels_overview(c)}
+                   "labels": labels_overview(c),
+                   "pending": c.execute("SELECT COUNT(*) FROM delete_marks").fetchone()[0]}
             if detail:
                 out["new"] = new_volumes(c) if request.state.local else []
                 out["scan_job"] = current.get("id") if current.get("kind") in ("scan", "index") else None
@@ -1450,6 +1451,69 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             return duplicate_files(c, max(0, offset), max(1, min(200, limit)), pending=pending)
         finally:
             c.close()
+
+    # ---- 待刪除：標記只寫資料庫；清理只在使用者按下確認後執行，而且只限這台 Mac ----
+    @app.post("/api/dupes/mark")
+    def dupes_mark(body: dict = Body(...)):
+        from . import pending
+
+        c = conn()
+        try:
+            return {"marked": pending.mark(c, str(body.get("kind")), body.get("keep") or [], body.get("remove") or [])}
+        except pending.MarkError as e:
+            raise HTTPException(400, str(e)) from e
+        finally:
+            c.close()
+
+    @app.post("/api/dupes/unmark")
+    def dupes_unmark(body: dict = Body(...)):
+        from . import pending
+
+        c = conn()
+        try:
+            return {"unmarked": pending.unmark(c, body.get("ids") or [])}
+        finally:
+            c.close()
+
+    @app.get("/api/pending")
+    def pending_list():
+        from . import pending
+
+        c = conn()
+        try:
+            return pending.listing(c)
+        finally:
+            c.close()
+
+    @app.post("/api/pending/trash")
+    def pending_trash(body: dict = Body(...)):
+        """把標記的項目移到垃圾桶。只有使用者在介面上確認時才會呼叫；逐項再驗證一次，不符的跳過。"""
+        from . import pending
+
+        if body.get("confirm") is not True:
+            raise HTTPException(400, "需要本人確認")
+        c = conn()
+        try:
+            return pending.clean(c, body.get("ids") or [])
+        finally:
+            c.close()
+
+    @app.post("/api/pending/export")
+    def pending_export(body: dict = Body(...)):
+        from . import pending
+
+        c = conn()
+        try:
+            out = pending.export_list(c, cfg.home, str(body.get("drive") or ""))
+        except pending.MarkError as e:
+            raise HTTPException(400, str(e)) from e
+        finally:
+            c.close()
+        try:
+            fileops.reveal(out, select=True)
+        except OSError:
+            pass
+        return {"path": str(out)}
 
     @app.get("/api/usage")
     def usage_api(root: int, path: str = ""):

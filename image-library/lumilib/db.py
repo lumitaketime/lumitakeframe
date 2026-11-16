@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 20  # v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 21  # v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -198,6 +198,21 @@ CREATE TABLE IF NOT EXISTS files (
     content_hash TEXT,
     hashed_at TEXT,
     UNIQUE (folder_id, name)
+);
+"""
+
+# v21：待刪除。使用者在「重複項目」標記的多餘副本；只是標記，清理要另外由本人確認
+PENDING_SCHEMA = """
+CREATE TABLE IF NOT EXISTS delete_marks (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL,
+    item_id INTEGER NOT NULL,
+    root_id INTEGER NOT NULL REFERENCES roots(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    sig TEXT NOT NULL,
+    marked_at TEXT NOT NULL,
+    UNIQUE (kind, item_id)
 );
 """
 
@@ -394,6 +409,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
         for r in conn.execute("SELECT id FROM roots").fetchall():
             update_folder_totals(conn, r[0])
+    conn.executescript(PENDING_SCHEMA)
     # v20：完整內容指紋（要整個檔案讀過才有）與資料夾簽章
     file_cols = {r[1] for r in conn.execute("PRAGMA table_info(files)")}
     for name in ("content_hash", "hashed_at"):
