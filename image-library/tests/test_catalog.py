@@ -538,6 +538,37 @@ class ItemsPageTests(CatalogFixture):
             self.assertEqual(c.get("/api/items", params={"root": 999}).status_code, 404)
             self.assertEqual(c.get("/api/location", params={"root": self.root["id"]}).json()["name"], "Archive")
 
+    def test_usage_map_two_levels(self):
+        from lumilib.catalog import subtree_kinds, usage_map
+
+        u = usage_map(self.conn, self.root["id"])
+        self.assertEqual(u["bytes"], self.folder("")["total_bytes"])
+        self.assertEqual(sum(b["bytes"] for b in u["children"]), u["bytes"])  # 每一層加起來等於上一層
+        blocks = {b.get("name") or b.get("kind") or b["type"]: b for b in u["children"]}
+        self.assertEqual(blocks["archive"]["bytes"], 500)  # 直接放在最上層的 備份.zip
+        big = blocks["很多檔案"]
+        self.assertEqual((big["type"], big["bytes"]), ("folder", sum(range(1, 121))))
+        self.assertEqual([(c["type"], c["kind"], c["files"]) for c in big["children"]], [("kind", "document", 120)])
+        school = blocks["2008 國中"]
+        self.assertEqual(sum(c["bytes"] for c in school["children"]), school["bytes"])
+        self.assertIn("畢業旅行", {c.get("name") for c in school["children"]})
+        self.assertNotIn("空資料夾", blocks)  # 沒有大小的不畫
+        self.assertIsNone(usage_map(self.conn, self.root["id"], "不存在"))
+        # 太小的合併成「其他」
+        (self.drive / "音樂" / "huge.bin").write_bytes(b"0" * 3_000_000)
+        scan_all(self.conn, self.cfg)
+        u = usage_map(self.conn, self.root["id"])
+        rest = [b for b in u["children"] if b["type"] == "rest"]
+        self.assertEqual(len(rest), 1)
+        self.assertGreater(rest[0]["count"], 1)
+        self.assertEqual(sum(b["bytes"] for b in u["children"]), u["bytes"])
+        # 資訊欄的類型佔比：整個來源與子資料夾
+        whole = {k["kind"]: k["files"] for k in subtree_kinds(self.conn, self.root["id"])}
+        self.assertEqual((whole["document"], whole["audio"]), (122, 1))
+        sub = {k["kind"]: k["files"] for k in subtree_kinds(self.conn, self.root["id"], "2008 國中")}
+        self.assertEqual(sub, {"photo": 1, "document": 2})
+        self.assertEqual(sum(k["bytes"] for k in subtree_kinds(self.conn, self.root["id"], "2008 國中")), self.folder("2008 國中")["total_bytes"])
+
     def test_labels_live_in_the_catalog_only(self):
         from lumilib import ratings
         from lumilib.catalog import labels_overview, set_labels

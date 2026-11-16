@@ -110,6 +110,9 @@ def measure(conn, big: int) -> None:
     print(f"  類型「照片」捲到最後：{ms(page(kind='photo', offset=total - 200, limit=200)):.1f}")
     print(f"  類型「照片」依大小排序：{ms(page(kind='photo', sort='size', desc=True, limit=200)):.1f}")
     print(f"  類型「影片」依日期排序：{ms(page(kind='video', sort='mtime', desc=True, limit=200)):.1f}")
+    print(f"  佔比圖，最上層：{ms(lambda: catalog.usage_map(conn, 1)):.1f}；某一年：{ms(lambda: catalog.usage_map(conn, 1, '2015')):.1f}；"
+          f"十萬個檔案的資料夾：{ms(lambda: catalog.usage_map(conn, 1, path)):.1f}")
+    print(f"  資訊欄類型佔比，整顆硬碟：{ms(lambda: catalog.subtree_kinds(conn, 1)):.1f}；某一年：{ms(lambda: catalog.subtree_kinds(conn, 1, '2015')):.1f}")
     print(f"  側邊欄類型統計：{ms(lambda: catalog.kinds_overview(conn)):.1f}；硬碟清單：{ms(lambda: catalog.drives_overview(conn)):.1f}")
 
 

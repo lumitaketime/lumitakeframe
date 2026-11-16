@@ -1412,6 +1412,34 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    @app.get("/api/usage")
+    def usage_api(root: int, path: str = ""):
+        """佔比圖（方塊圖、環狀圖）：目前層與下一層的大小。只讀資料庫。"""
+        from .catalog import usage_map
+
+        c = conn()
+        try:
+            data = usage_map(c, root, path)
+            if data is None:
+                raise HTTPException(404, "找不到這個資料夾")
+            return data
+        finally:
+            c.close()
+
+    @app.get("/api/location/kinds")
+    def location_kinds_api(root: int, path: str = ""):
+        """資訊欄：這個資料夾（含子資料夾）裡各類型佔多少。"""
+        from .catalog import subtree_kinds
+
+        c = conn()
+        try:
+            kinds = subtree_kinds(c, root, path)
+            if kinds is None:
+                raise HTTPException(404, "找不到這個資料夾")
+            return {"kinds": kinds}
+        finally:
+            c.close()
+
     @app.get("/api/location")
     def location_api(root: int, path: str = ""):
         from .catalog import location_info

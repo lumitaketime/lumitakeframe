@@ -307,3 +307,95 @@ def labels_overview(conn: sqlite3.Connection) -> list[dict]:
             if r["label"] in counts:
                 counts[r["label"]] += r["n"]
     return [{"label": k, "count": v} for k, v in counts.items()]
+
+
+# ---- 佔比圖（方塊圖與環狀圖共用）：一次只取兩層 ----
+
+USAGE_MIN_SHARE = 0.005  # 小於總量 0.5% 的合併成「其他」
+USAGE_MAX_BLOCKS = 500
+
+
+def _kind_group(kind: str) -> str:
+    return "photo" if kind == "raw" else "other" if kind == "package" else kind
+
+
+def _direct_kinds(conn: sqlite3.Connection, folder_ids: list[int]) -> dict[int, dict[str, list[int]]]:
+    """每個資料夾「直接放在裡面」的檔案，依類型分組的檔案數與大小。"""
+    out: dict[int, dict[str, list[int]]] = {}
+    for start in range(0, len(folder_ids), 500):
+        chunk = folder_ids[start:start + 500]
+        marks = ",".join("?" * len(chunk))
+        for r in conn.execute(f"SELECT folder_id, kind, COUNT(*) AS n, COALESCE(SUM(size), 0) AS b FROM files "
+                              f"WHERE folder_id IN ({marks}) AND status = 'ok' GROUP BY folder_id, kind", chunk):
+            g = out.setdefault(r["folder_id"], {}).setdefault(_kind_group(r["kind"]), [0, 0])
+            g[0] += r["n"]
+            g[1] += r["b"]
+    return out
+
+
+def usage_map(conn: sqlite3.Connection, root_id: int, path: str = "") -> dict | None:
+    """佔比圖的資料：目前資料夾的下一層（子資料夾，以及直接放在這裡的檔案依類型合併），
+    每個子資料夾再往下一層。大小都用「資料夾」表預先算好的值，不臨時加總整棵樹。
+
+    小於總量 0.5% 的項目合併成一塊「其他」，全部最多 500 塊。硬碟沒接上也能查。
+    """
+    path = path.strip("/")
+    here = conn.execute("SELECT * FROM folders WHERE root_id = ? AND path = ?", (root_id, path)).fetchone()
+    if here is None:
+        return None
+    total = here["total_bytes"] or 0
+    floor = total * USAGE_MIN_SHARE
+
+    def folder_block(r) -> dict:
+        return {"type": "folder", "id": r["id"], "name": r["name"], "path": r["path"], "bytes": r["total_bytes"], "files": r["total_files"]}
+
+    def kind_blocks(kinds: dict[str, list[int]], folder_path: str) -> list[dict]:
+        return [{"type": "kind", "kind": k, "bytes": v[1], "files": v[0], "path": folder_path} for k, v in kinds.items() if v[1] > 0]
+
+    def trim(blocks: list[dict], limit: int) -> list[dict]:
+        """由大到小；太小的與超過數量上限的合併成一塊「其他」。"""
+        blocks.sort(key=lambda b: -b["bytes"])
+        keep = [b for b in blocks if b["bytes"] >= floor][:limit]
+        rest = blocks[len(keep):]
+        if rest and sum(b["bytes"] for b in rest) > 0:
+            keep.append({"type": "rest", "bytes": sum(b["bytes"] for b in rest), "files": sum(b.get("files") or 0 for b in rest),
+                         "count": len(rest)})
+        return keep
+
+    level1 = [folder_block(r) for r in conn.execute(
+        "SELECT id, name, path, total_bytes, total_files FROM folders WHERE parent_id = ? AND status = 'ok' AND total_bytes > 0", (here["id"],))]
+    direct = _direct_kinds(conn, [here["id"]]).get(here["id"], {})
+    top = trim(level1 + kind_blocks(direct, path), 200)
+
+    big = [b for b in top if b["type"] == "folder"]
+    ids = [b["id"] for b in big]
+    children: dict[int, list[dict]] = {i: [] for i in ids}
+    for start in range(0, len(ids), 500):
+        chunk = ids[start:start + 500]
+        marks = ",".join("?" * len(chunk))
+        for r in conn.execute(f"SELECT id, parent_id, name, path, total_bytes, total_files FROM folders "
+                              f"WHERE parent_id IN ({marks}) AND status = 'ok' AND total_bytes > 0", chunk):
+            children[r["parent_id"]].append(folder_block(r))
+    kinds = _direct_kinds(conn, ids)
+    budget = max(0, USAGE_MAX_BLOCKS - len(top))
+    for b in big:
+        share = max(1, round(budget * b["bytes"] / total)) if total else 1
+        b["children"] = trim(children[b["id"]] + kind_blocks(kinds.get(b["id"], {}), b["path"]), share)
+    return {"name": here["name"], "path": path, "bytes": total, "files": here["total_files"], "children": top}
+
+
+def subtree_kinds(conn: sqlite3.Connection, root_id: int, path: str = "") -> list[dict] | None:
+    """一個資料夾（含所有子資料夾）裡各類型的檔案數與大小：資訊欄的類型佔比。"""
+    path = path.strip("/")
+    if conn.execute("SELECT 1 FROM folders WHERE root_id = ? AND path = ?", (root_id, path)).fetchone() is None:
+        return None
+    if not path:  # 整個資料夾來源：只讀索引就能算完
+        rows = conn.execute("SELECT kind, COUNT(*) AS n, COALESCE(SUM(size), 0) AS b FROM files INDEXED BY idx_files_root_kind "
+                            "WHERE root_id = ? AND status = 'ok' GROUP BY kind", (root_id,)).fetchall()
+    else:  # 子資料夾：路徑以「這個資料夾/」開頭的都算（用路徑的索引取一段）
+        rows = conn.execute(
+            "SELECT f.kind, COUNT(*) AS n, COALESCE(SUM(f.size), 0) AS b FROM folders d JOIN files f ON f.folder_id = d.id "
+            "WHERE d.root_id = ? AND (d.path = ? OR (d.path >= ? AND d.path < ?)) AND d.status = 'ok' AND f.status = 'ok' GROUP BY f.kind",
+            (root_id, path, path + "/", path + "0")).fetchall()  # "0" 是 "/" 的下一個字元
+    got = {r["kind"]: (r["n"], r["b"]) for r in rows}
+    return [{"kind": k, "files": got[k][0], "bytes": got[k][1]} for k in filetypes.KINDS if k in got]
