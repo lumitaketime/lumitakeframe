@@ -235,6 +235,11 @@ export default {
   "sort.asc": "遞增（A 到 Z、舊到新、小到大）",
   "sort.desc": "遞減（Z 到 A、新到舊、大到小）",
 
+  "dupes.sameDrive": "都在「{drive}」，共 {count} 份",
+  "dupes.acrossDrives": "分布在：{drives}",
+  "dupes.modified": "修改於 {date}",
+  "dupes.show": "前往",
+
   "gallery.title": "基礎元件",
   "gallery.intro": "Liquid Glass 設計系統的元件，改寫成 Svelte。這一頁只在開發時使用，用來檢查四個主題。",
   "gallery.theme": "主題",

@@ -8,7 +8,8 @@
   import KindIcon from "../views/KindIcon.svelte";
   import { loadDupesSummary, loadDupeFolders, loadDupeFiles, startCompare, stopCompare, estimateSeconds } from "../data/dupes.js";
   import { setFrame } from "../shell/frame.svelte.js";
-  import { t, formatNumber, formatBytes, formatDuration } from "../i18n/index.svelte.js";
+  import { t, formatNumber, formatBytes, formatDuration, formatDate } from "../i18n/index.svelte.js";
+  import { openItem } from "../data/browse.js";
   import { app, toast, refresh } from "../lib/state.svelte.js";
   import { route, navigate, link } from "../lib/router.svelte.js";
 
@@ -18,7 +19,7 @@
   let error = $state("");
   let lists = $state({ folders: null, files: null, pending: null }); // 每個清單：{groups, total}
   let more = $state("");
-  let open = $state({});
+  let closed = $state({}); // 預設全部展開，直接看得到每一份在哪裡；這裡記使用者收起來的
   let busy = $state(false);
 
   const job = $derived(app.server?.jobs?.current?.kind === "compare" ? app.server.jobs.current : null);
@@ -95,6 +96,21 @@
     ? [{ kind: "folders", list: lists.folders }]
     : [{ kind: "files", list: lists.files }, { kind: "pending", list: lists.pending, title: t("dupes.pendingTitle"), hint: t("dupes.pendingHint") }]);
   const empty = $derived(sections.every((s) => s.list && !s.list.groups.length));
+  // 每一份的位置拆成一段一段：（資料夾來源 ›）資料夾 › 子資料夾 › 名稱
+  const crumbs = (it) => [...(it.root && it.root !== it.drive ? [it.root] : []), ...it.path.split("/").filter(Boolean)];
+  // 這一組分布在哪些硬碟：同一顆硬碟裡的重複是真的多餘；跨硬碟的可能是你刻意留的備份
+  function spread(g) {
+    const count = new Map();
+    for (const it of g.items) count.set(it.drive, (count.get(it.drive) || 0) + 1);
+    return { drives: [...count].map(([name, n]) => ({ name, n })), same: count.size === 1 };
+  }
+  async function reveal(it) {
+    try {
+      await openItem(it, "reveal");
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
   const hrefOf = (it) => {
     const folder = it.type === "folder" ? it.path : it.path.includes("/") ? it.path.slice(0, it.path.lastIndexOf("/")) : "";
     return `/folders/${it.root_id}${folder ? `?path=${encodeURIComponent(folder)}` : ""}`;
@@ -166,12 +182,19 @@
         {#if s.title}<h2 class="mac-headline section">{s.title}</h2><p class="mac-callout sub hint">{s.hint}</p>{/if}
         <ul class="groups">
           {#each s.list.groups as g (g.key)}
-            {@const shown = !!open[g.key]}
+            {@const shown = !closed[g.key]}
+            {@const where = spread(g)}
             <li class="group" class:open={shown}>
-              <button type="button" class="head mac-body" aria-expanded={shown} onclick={() => (open[g.key] = !shown)}>
+              <button type="button" class="head mac-body" aria-expanded={shown} onclick={() => (closed[g.key] = shown)}>
                 <span class="disc" class:open={shown}><Icon name="chevron-right" size={10} weight="bold" /></span>
                 <KindIcon kind={s.kind === "folders" ? "folder" : g.kind} />
-                <span class="name" title={g.name}>{g.name}</span>
+                <span class="title">
+                  <span class="name" title={g.name}>{g.name}</span>
+                  <span class="where mac-callout">
+                    {where.same ? t("dupes.sameDrive", { drive: where.drives[0].name, count: formatNumber(g.copies) })
+                      : t("dupes.acrossDrives", { drives: where.drives.map((d) => (d.n > 1 ? `${d.name} ×${d.n}` : d.name)).join("、") })}
+                  </span>
+                </span>
                 {#if !g.confirmed}<span class="tag mac-callout">{t("dupes.pending")}</span>{/if}
                 {#if g.in_folder}<span class="tag mac-callout" title={t("dupes.inFolderHint")}>{t("dupes.inFolder")}</span>{/if}
                 <span class="num">{t("dupes.each", { size: formatBytes(g.size) || "0 KB" })}</span>
@@ -179,15 +202,30 @@
                 <span class="num free">{t("dupes.releasable", { size: formatBytes(g.releasable) || "0 KB" })}</span>
               </button>
               {#if shown}
-                <ul class="copies mac-body">
-                  {#each g.items as it (it.id)}
-                    <li>
-                      <Icon name={it.online ? "external-drive-fill" : "external-drive"} size={14} weight="medium" class={it.online ? "on" : "off"} />
-                      <span class="drive">{it.drive}{#if !it.online}<span class="sub"> · {t("drive.offline")}</span>{/if}{#if it.read_only}<span class="sub"> · {t("drive.readOnly")}</span>{/if}</span>
-                      <a class="path" href={hrefOf(it)} use:link title={it.path}>{it.root === it.drive ? "" : `${it.root}/`}{it.path}</a>
+                <ol class="copies mac-body">
+                  {#each g.items as it, n (it.id)}
+                    {@const parts = crumbs(it)}
+                    <li class:off={!it.online}>
+                      <span class="no mac-callout" aria-hidden="true">{n + 1}</span>
+                      <div class="place">
+                        <div class="drive">
+                          <Icon name={it.online ? "external-drive-fill" : "external-drive"} size={14} weight="medium" />
+                          <b>{it.drive}</b>
+                          {#if !it.online}<span class="tag mac-callout">{t("drive.offline")}</span>{/if}
+                          {#if it.read_only}<span class="tag mac-callout">{t("drive.readOnly")}</span>{/if}
+                          {#if it.mtime}<span class="sub mac-callout">{t("dupes.modified", { date: formatDate(it.mtime) })}</span>{/if}
+                        </div>
+                        <div class="path mac-callout" title={parts.join(" › ")}>
+                          {#each parts as part, k (k)}
+                            {#if k}<Icon name="chevron-right" size={8} weight="bold" class="sep" />{/if}<span class:last={k === parts.length - 1}>{part}</span>
+                          {/each}
+                        </div>
+                      </div>
+                      <a class="act mac-callout" href={hrefOf(it)} use:link>{t("dupes.show")}</a>
+                      {#if app.server?.local}<button type="button" class="act mac-callout" disabled={!it.online} onclick={() => reveal(it)}>{t("menu.reveal")}</button>{/if}
                     </li>
                   {/each}
-                </ul>
+                </ol>
               {/if}
             </li>
           {/each}
@@ -222,17 +260,27 @@
   .head:focus-visible { box-shadow: inset var(--focus-ring); }
   .disc { display: inline-flex; color: var(--label-secondary); transition: transform var(--dur-quick) var(--ease); }
   .disc.open { transform: rotate(90deg); }
-  .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .title { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: var(--space-2) 0; }
+  .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .where { color: var(--label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tag { flex: none; padding: 0 var(--space-2); border-radius: var(--radius-capsule); box-shadow: inset 0 0 0 1px var(--separator); color: var(--label-secondary); }
   .num { flex: none; min-width: 96px; text-align: right; color: var(--label-secondary); font-feature-settings: "tnum"; }
   .free { color: var(--label-primary); min-width: 130px; }
-  .copies { list-style: none; margin: 0; padding: var(--space-1) var(--space-3) var(--space-3) calc(var(--space-3) + var(--space-6)); display: flex; flex-direction: column; gap: var(--space-1); }
-  .copies li { display: flex; align-items: center; gap: var(--space-2); min-height: var(--target-mac); min-width: 0; }
-  .copies :global(.on) { color: var(--accent); flex: none; }
-  .copies :global(.off) { color: var(--label-secondary); flex: none; }
-  .drive { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--label-secondary); text-decoration: none; border-radius: var(--radius-xs); }
-  .path:hover { color: var(--accent); text-decoration: underline; }
+  /* 每一份一列：第幾份、在哪顆硬碟、完整的位置（一段一段）、可以直接前往 */
+  .copies { list-style: none; margin: 0; padding: 0 var(--space-3) var(--space-3) calc(var(--space-3) + var(--space-5)); display: flex; flex-direction: column; gap: var(--space-2); }
+  .copies li { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--fill-quaternary); min-width: 0; }
+  .no { flex: none; width: var(--space-5); height: var(--space-5); display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-capsule);
+    background: var(--fill-secondary); color: var(--label-secondary); font-feature-settings: "tnum"; }
+  .place { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .drive { display: flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--accent); }
+  .drive b { color: var(--label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .copies li.off .drive { color: var(--label-secondary); }
+  .path { display: flex; align-items: center; flex-wrap: wrap; gap: 2px var(--space-1); color: var(--label-secondary); overflow-wrap: anywhere; }
+  .path :global(.sep) { flex: none; color: var(--label-tertiary); }
+  .path .last { color: var(--label-primary); font-weight: 600; }
+  .act { flex: none; padding: 2px var(--space-2); border: 0; border-radius: var(--radius-capsule); background: none; color: var(--accent); font: inherit; text-decoration: none; cursor: pointer; }
+  .act:hover:not(:disabled) { background: var(--fill-tertiary); }
+  .act:disabled { color: var(--label-tertiary); cursor: default; }
   .more { margin: var(--space-3) 0 0; text-align: center; }
   .state { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); padding: var(--space-10) var(--space-6); text-align: center; color: var(--label-secondary); }
   .state h2 { color: var(--label-primary); }

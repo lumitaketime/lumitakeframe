@@ -243,7 +243,7 @@ def duplicate_folders(conn: sqlite3.Connection, offset: int = 0, limit: int = 10
     confirmed＝每一份都完整比對過而且內容相同；否則是「待確認」（只知道檔名與大小都一樣）。
     """
     rows = conn.execute(
-        "SELECT id, root_id, parent_id, name, path, total_bytes, total_files, shape_sig, content_sig FROM folders "
+        "SELECT id, root_id, parent_id, name, path, mtime, total_bytes, total_files, shape_sig, content_sig FROM folders "
         "WHERE status = 'ok' AND shape_sig IN (SELECT shape_sig FROM folders WHERE status = 'ok' AND shape_sig IS NOT NULL "
         "GROUP BY shape_sig HAVING COUNT(*) > 1)").fetchall()
     by_shape: dict[str, list] = {}
@@ -270,7 +270,7 @@ def duplicate_folders(conn: sqlite3.Connection, offset: int = 0, limit: int = 10
             "key": f"{'c' if confirmed else 's'}:{ms[0]['content_sig'] if confirmed else ms[0]['shape_sig']}",
             "name": ms[0]["name"], "size": size, "files": ms[0]["total_files"], "copies": len(ms),
             "releasable": size * (len(ms) - 1), "confirmed": confirmed,
-            "items": [{"type": "folder", "id": m["id"], "name": m["name"], "path": m["path"], **place.get(m["root_id"], {})}
+            "items": [{"type": "folder", "id": m["id"], "name": m["name"], "path": m["path"], "mtime": m["mtime"], **place.get(m["root_id"], {})}
                       for m in sorted(ms, key=lambda m: (place.get(m["root_id"], {}).get("drive", ""), m["path"]))],
         })
     groups.sort(key=lambda g: (-g["releasable"], g["name"]))

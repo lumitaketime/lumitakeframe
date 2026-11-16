@@ -235,6 +235,11 @@ export default {
   "sort.asc": "Ascending",
   "sort.desc": "Descending",
 
+  "dupes.sameDrive": "All {count} copies on “{drive}”",
+  "dupes.acrossDrives": "On: {drives}",
+  "dupes.modified": "Modified {date}",
+  "dupes.show": "Go",
+
   "gallery.title": "Base Components",
   "gallery.intro": "The Liquid Glass design system's components, rewritten in Svelte. This page is for development only, to check the four themes.",
   "gallery.theme": "Theme",
