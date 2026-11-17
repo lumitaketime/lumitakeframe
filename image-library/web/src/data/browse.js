@@ -39,5 +39,10 @@ export const DRAG_FOLDER = "application/x-rememor-folder";
 
 /** 佔比圖（方塊圖、環狀圖）：目前層與下一層的大小 */
 export const loadUsage = (root, path) => api("/api/usage", { params: { root, path }, quiet: true });
+/** 佔比圖、連線圖：一路拆到每個資料夾與檔案（px＝畫面大約幾個像素，小到畫不出來的合併成「其他」） */
+export const loadUsageTree = (root, path, { px = 2_000_000, depth = 64, maxNodes = 30_000 } = {}) =>
+  api("/api/usage/tree", { params: { root, path, px: Math.round(px), depth, max_nodes: maxNodes }, quiet: true });
+/** 「其他」裡面有哪些項目（由大到小） */
+export const loadUsageRest = (folder, below, offset = 0, limit = 200) => api("/api/usage/rest", { params: { folder, below, offset, limit }, quiet: true });
 /** 資訊欄：這個資料夾（含子資料夾）裡各類型佔多少 */
 export const loadKinds = (root, path) => api("/api/location/kinds", { params: { root, path }, quiet: true }).then((d) => d.kinds);

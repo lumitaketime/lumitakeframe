@@ -1672,6 +1672,32 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    @app.get("/api/usage/tree")
+    def usage_tree_api(root: int, path: str = "", px: int = 1_000_000, max_nodes: int = 30_000, depth: int = 64):
+        """佔比圖與連線圖：一路拆到每個資料夾與檔案（小到畫不出來的合併成「其他」）。只讀資料庫。"""
+        from .usage import usage_tree
+
+        c = conn()
+        try:
+            data = usage_tree(c, root, path, px=max(10_000, min(px, 20_000_000)), max_nodes=max(50, min(max_nodes, 60_000)),
+                              depth=max(1, min(depth, 64)))
+            if data is None:
+                raise HTTPException(404, "找不到這個資料夾")
+            return data
+        finally:
+            c.close()
+
+    @app.get("/api/usage/rest")
+    def usage_rest_api(folder: int, below: int, offset: int = 0, limit: int = 200):
+        """「其他」裡面有哪些項目（由大到小）。"""
+        from .usage import usage_rest
+
+        c = conn()
+        try:
+            return usage_rest(c, folder, below, max(0, offset), max(1, min(500, limit)))
+        finally:
+            c.close()
+
     @app.get("/api/location/kinds")
     def location_kinds_api(root: int, path: str = ""):
         """資訊欄：這個資料夾（含子資料夾）裡各類型佔多少。"""

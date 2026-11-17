@@ -105,7 +105,7 @@
               {#if item.label}<i class="label" style:background="var(--label-{item.label})" title={t(`label.${item.label}`)}></i>{/if}
               {#if isFolder && item.files != null}<span class="count mac-callout">{t("status.filesOnly", { files: formatNumber(item.files) })}</span>{/if}
             </span>
-            <span class="share" title={pct ? `${Math.round(pct * 100)}%` : ""}><i style:width="{pct * 100}%"></i></span>
+            <span class="share"><span class="bar" aria-hidden="true"><i style:width="{pct * 100}%"></i></span><span class="pct">{pct ? `${pct >= 0.995 ? 100 : (pct * 100).toFixed(pct < 0.1 ? 1 : 0)}%` : ""}</span></span>
             <span class="size">{item.size ? formatBytes(item.size) : "—"}</span>
           {:else}
             <span class="name"><i class="ph"></i></span>
@@ -117,7 +117,7 @@
 </div>
 
 <style>
-  .tree { display: flex; flex-direction: column; height: 100%; min-height: 0; color: var(--label-primary); --cols: minmax(220px, 1fr) 120px 90px; }
+  .tree { display: flex; flex-direction: column; height: 100%; min-height: 0; color: var(--label-primary); --cols: minmax(220px, 1fr) 160px 90px; }
   .head { flex: none; display: grid; grid-template-columns: var(--cols); align-items: center; padding: 0 var(--space-5); min-height: var(--control-small);
     border-bottom: 1px solid var(--separator); color: var(--label-secondary); }
   .hsize { text-align: right; }
@@ -138,10 +138,14 @@
     border-radius: var(--radius-xs); transition: transform var(--dur-quick) var(--ease); }
   .disc.open { transform: rotate(90deg); }
   .row.on .disc { color: inherit; }
-  .share { display: block; height: 4px; margin: 0 var(--space-2); border-radius: var(--radius-capsule); background: var(--fill-tertiary); overflow: hidden; }
-  .share i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
-  .row.on .share { background: color-mix(in srgb, var(--on-accent) 30%, transparent); }
-  .row.on .share i { background: var(--on-accent); }
+  /* 佔上一層的比例：細條＋百分比（數字讓比例不只靠長度判斷） */
+  .share { display: flex; align-items: center; gap: var(--space-2); margin: 0 var(--space-2); min-width: 0; }
+  .bar { flex: 1; display: block; height: 4px; border-radius: var(--radius-capsule); background: var(--fill-tertiary); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+  .pct { flex: none; width: 3.2em; text-align: right; color: var(--label-secondary); font-feature-settings: "tnum"; }
+  .row.on .bar { background: color-mix(in srgb, var(--on-accent) 30%, transparent); }
+  .row.on .bar i { background: var(--on-accent); }
+  .row.on .pct { color: inherit; }
   .size { text-align: right; color: var(--label-secondary); font-feature-settings: "tnum"; }
   .label { flex: none; width: var(--space-2); height: var(--space-2); border-radius: var(--radius-capsule); }
   .ph { display: block; width: 180px; height: var(--space-2); border-radius: var(--radius-capsule); background: var(--fill-tertiary); }

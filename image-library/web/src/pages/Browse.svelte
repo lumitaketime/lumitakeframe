@@ -13,7 +13,7 @@
   import { createGraph } from "../data/graph.svelte.js";
   import ItemColumns from "../views/ItemColumns.svelte";
   import ItemUsage from "../views/ItemUsage.svelte";
-  import { buildUnits } from "../views/usage.js";
+  import { buildTree } from "../views/usage.js";
   import { createTreeSource } from "../data/tree.svelte.js";
   import ContextMenu from "../views/ContextMenu.svelte";
   import QuickLook from "../views/QuickLook.svelte";
@@ -22,7 +22,7 @@
   import { createItemSource, createStaticSource, loadGroups } from "../data/items.svelte.js";
   import { buildSections } from "../views/sections.js";
   import { catalog, driveOfRoot } from "../data/catalog.svelte.js";
-  import { loadLocation, openItem, saveOpenAction, setLabel, pinFolder, DRAG_FOLDER, loadUsage, loadKinds } from "../data/browse.js";
+  import { loadLocation, openItem, saveOpenAction, setLabel, pinFolder, DRAG_FOLDER, loadUsageTree, loadKinds } from "../data/browse.js";
   import { loadCatalog } from "../data/catalog.svelte.js";
   import { setFrame, frame, toggleInfo } from "../shell/frame.svelte.js";
   import { t, formatNumber, formatBytes, formatDate } from "../i18n/index.svelte.js";
@@ -73,11 +73,13 @@
     if (scope.type !== "folder" || view !== "treemap") return;
     const { root, path } = scope;
     app.refreshKey;
-    loadUsage(root, path).then((d) => {
+    // 依畫面大小決定拆多細：小到不到幾個像素的才合併成「其他」
+    const px = Math.max(400_000, (window.innerWidth || 1400) * (window.innerHeight || 900) * 0.8);
+    loadUsageTree(root, path, { px }).then((d) => {
       if (scope.type === "folder" && scope.root === root && scope.path === path) usage = d;
     }).catch((e) => (usageError = e.message));
   });
-  const chart = $derived(usage ? buildUnits(usage, scope.root, t, formatNumber) : { units: [], tops: [] });
+  const chart = $derived(usage ? buildTree(usage, scope.root, t, formatNumber) : { units: [], kids: [], top: [] });
   const usageSource = $derived(createStaticSource(chart.units));
   /** 目前這個檢視在用的來源：選取、開啟、右鍵選單、快速預覽都透過它 */
   const active = $derived(graph ? graph : view === "tree" && treeSource ? treeSource : view === "treemap" && scope.type === "folder" ? usageSource : source);
@@ -205,6 +207,14 @@
     if (action === "open" || action === "reveal") run(item, action);
     else asking = item;
   }
+  // 「其他」清單裡的一項：資料夾就進去，檔案就照「按兩下」的設定開啟
+  function openAny(it) {
+    if (it.type === "folder") return navigate(hrefOf(it.root_id, it.path));
+    if (!app.server?.local) return toast(t("open.localOnly"));
+    const action = app.server?.ui?.open_action;
+    if (action === "open" || action === "reveal") run(it, action);
+    else asking = it;
+  }
   async function choose(action) {
     const item = asking;
     asking = null;
@@ -328,7 +338,7 @@
       {/if}
     </div>
   {:else if view === "treemap" && scope.type === "folder"}
-    <ItemUsage {usage} units={chart.units} tops={chart.tops} {sel} onopen={open} onpreview={preview} oncontext={itemMenu} />
+    <ItemUsage {usage} tree={chart} {sel} onopen={open} onpreview={preview} oncontext={itemMenu} onopenitem={openAny} />
   {:else if view === "tree" && scope.type === "folder"}
     <div class="treebar mac-callout">
       <span class="sub">{prefs.treeStyle === "graph" ? t("tree.graphHint") : ""}</span>

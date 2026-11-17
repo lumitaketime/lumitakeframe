@@ -56,6 +56,7 @@
   async function pick(i, e) {
     sel.click(i, e);
     const n = graph.nodes[i];
+    if (n.rest && n.more) return graph.more(i); // 「其他」：再多顯示 40 個
     if (n.type === "folder" && !n.open && !e?.metaKey && !e?.shiftKey) {
       await graph.expand(i);
       reveal(i, true);

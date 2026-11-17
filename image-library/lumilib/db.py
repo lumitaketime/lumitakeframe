@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 25  # v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 26  # v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -214,6 +214,9 @@ CREATE TABLE IF NOT EXISTS delete_marks (
     marked_at TEXT NOT NULL,
     UNIQUE (kind, item_id)
 );
+
+-- v26：佔比圖：每個資料夾裡「大於某個大小」的檔案、以及小檔案的總和，只讀索引就能算
+CREATE INDEX IF NOT EXISTS idx_files_folder_size ON files(folder_id, size) WHERE status = 'ok';
 
 -- v25：依副檔名找檔案（要讀文字的文件、要辨識的圖片），一百萬個檔案也不用全部掃過
 CREATE INDEX IF NOT EXISTS idx_files_ext ON files(lower(ext)) WHERE status = 'ok';

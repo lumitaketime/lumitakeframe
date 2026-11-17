@@ -1,32 +1,49 @@
 /**
- * 佔比圖（方塊圖與環狀圖共用）的資料整理：把引擎回傳的兩層資料攤平成「可以選取的單位」，
- * 每個單位長得像一般的項目（有 type、name、size…），所以選取、右鍵選單、快速預覽都能共用。
+ * 佔比圖（方塊圖與環狀圖共用）的資料整理：引擎回傳一棵扁平的樹（每個欄位一個陣列，第 0 個是目前的資料夾），
+ * 這裡把它變成「可以選取的單位」：每個子資料夾、每個檔案、每塊「其他」都是一個單位，
+ * 長得像一般的項目（有 type、name、size…），所以選取、右鍵選單、快速預覽都能共用。
  */
 
 /** 上色用的類型：資料夾用它裡面佔最多空間的類型（引擎在掃描完時算好），沒有資料時才用資料夾的黃色 */
 export const colorKey = (unit) => (unit.type === "folder" ? unit.mainKind || "folder" : unit.rest ? "rest" : unit.kind);
 
-export function buildUnits(usage, rootId, t, formatNumber) {
+/**
+ * 回傳 { units, kids, top, least }：
+ * units[i]＝第 i 個單位（引擎第 i+1 個節點）；kids[i]＝它的子單位；top＝目前資料夾底下第一層的單位。
+ */
+export function buildTree(data, rootId, t, formatNumber) {
   const units = [];
-  const tops = [];
-  const toUnit = (b, parent) => {
-    if (b.type === "folder") return { type: "folder", id: b.id, name: b.name, path: b.path, root_id: rootId, size: b.bytes, files: b.files, kind: "folder", mainKind: b.kind };
-    if (b.type === "kind") {
-      return { type: "group", kind: b.kind, name: t(`kind.${b.kind}`), kindLabel: t("usage.filesHere"), path: b.path, root_id: rootId, size: b.bytes, files: b.files,
-        note: parent ? parent.name : "" };
+  const kids = [];
+  const top = [];
+  if (!data) return { units, kids, top, least: 0 };
+  const n = data.nodes;
+  const count = n.parent.length;
+  const paths = new Array(count);
+  paths[0] = data.path;
+  for (let k = 1; k < count; k++) {
+    const parent = n.parent[k];
+    const ppath = paths[parent] || "";
+    const type = n.type[k];
+    let unit;
+    if (type === 0) {
+      paths[k] = n.path[k];
+      unit = { type: "folder", id: n.id[k], name: n.name[k], path: n.path[k], root_id: rootId, size: n.bytes[k], files: n.files[k], kind: "folder",
+        mainKind: n.kind[k], folder: ppath };
+    } else if (type === 1) {
+      paths[k] = ppath ? `${ppath}/${n.name[k]}` : n.name[k];
+      unit = { type: "file", id: n.id[k], name: n.name[k], path: paths[k], folder: ppath, root_id: rootId, size: n.bytes[k], kind: n.kind[k] };
+    } else {
+      paths[k] = ppath;
+      unit = { type: "group", rest: true, kind: "other", folderId: n.id[k], below: data.least, count: Number(n.name[k]) || 0,
+        name: t("usage.rest", { count: formatNumber(Number(n.name[k]) || 0) }), kindLabel: t("usage.restKind"), path: ppath, root_id: rootId,
+        size: n.bytes[k], files: n.files[k] };
     }
-    return { type: "group", rest: true, kind: "other", name: t("usage.rest", { count: formatNumber(b.count) }), kindLabel: t("usage.restKind"),
-      path: parent ? parent.path : usage.path, root_id: rootId, size: b.bytes, files: b.files };
-  };
-  for (const b of usage?.children || []) {
-    const unit = toUnit(b, null);
-    const top = { unit, index: units.length, children: [] };
+    unit.parentUnit = parent - 1; // -1＝目前的資料夾
+    unit.depth = n.depth[k];
     units.push(unit);
-    for (const c of b.children || []) {
-      top.children.push({ unit: toUnit(c, b), index: units.length });
-      units.push(top.children[top.children.length - 1].unit);
-    }
-    tops.push(top);
+    kids.push([]);
+    if (parent === 0) top.push(k - 1);
+    else kids[parent - 1].push(k - 1);
   }
-  return { units, tops };
+  return { units, kids, top, least: data.least };
 }
