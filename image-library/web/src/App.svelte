@@ -162,6 +162,17 @@
   // 第一次在這台 Mac 上開啟時顯示設定引導（手機、平板不顯示）
   const welcome = $derived(page === "welcome" || (app.server?.local && app.server?.ui?.onboarded === 0 && page !== "settings"));
 
+  // 開啟 App 時先顯示的頁面（設定 → 一般）：只在一打開、網址是首頁時跳一次；之後按側邊欄的「照片」照常進入照片
+  const START = { folders: "/folders", drives: "/drives", find: "/find" };
+  let startChecked = false;
+  $effect(() => {
+    const ui = app.server?.ui;
+    if (!ui || startChecked) return;
+    startChecked = true;
+    const to = START[ui.start_page || "folders"];
+    if (to && location.pathname === "/" && !location.search && (history.state?.idx ?? 0) === 0) navigate(to, { replace: true });
+  });
+
   // 換頁時清除選取與情境
   $effect(() => {
     route.path;

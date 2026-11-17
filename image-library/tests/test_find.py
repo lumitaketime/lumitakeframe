@@ -91,6 +91,13 @@ class FindTests(CatalogTestCase):
             self.assertEqual(c.get("/api/smart-folders").json()[0]["id"], sid)
             self.assertEqual(c.post("/api/smart-folders", json={"name": "空", "query": {}}).status_code, 400)
             self.assertEqual(c.delete(f"/api/smart-folders/{sid}").json(), {"ok": True})
+            # 設定頁：啟動頁、清除文件文字（一定要確認，清掉後搜不到內容，重新讀取後又找得到）
+            self.assertEqual(c.post("/api/settings", json={"start_page": "find"}).json()["start_page"], "find")
+            self.assertEqual(c.get("/api/server").json()["ui"]["start_page"], "find")
+            self.assertEqual(c.post("/api/text/reset", json={}).status_code, 400)
+            self.assertGreater(c.post("/api/text/reset", json={"confirm": True}).json()["cleared"], 0)
+            self.assertEqual(c.get("/api/find", params={"q": "寄居蟹"}).json()["total"], 0)
+            self.assertGreater(c.get("/api/text/status").json()["extract"]["todo"]["files"], 0)
 
 
 if __name__ == "__main__":

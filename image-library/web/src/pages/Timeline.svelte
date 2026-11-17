@@ -198,7 +198,7 @@
         {:else}
           <h2>歡迎使用 Re'memor</h2>
           <p>加入電腦或外接硬碟上的資料夾，就會自動掃描：所有檔案記進目錄，照片依時間排列。<br />檔案留在原位，不會被複製或修改。</p>
-          <p><a class="btn" href="/settings/library" use:link>加入照片資料夾</a></p>
+          <p><a class="btn" href="/drives" use:link>加入照片資料夾</a></p>
         {/if}
       </div>
     {/if}

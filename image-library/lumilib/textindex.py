@@ -187,6 +187,32 @@ def _store(conn: sqlite3.Connection, file_id: int, size: int, mtime: float, sour
         conn.execute("INSERT INTO file_fts(rowid, tokens) VALUES (?, ?)", (file_id, db.fts_tokens(text)))
 
 
+def index_bytes(conn: sqlite3.Connection) -> int:
+    """文件文字（壓縮後）加上全文索引大約佔多少空間。"""
+    body = conn.execute("SELECT COALESCE(SUM(length(body)), 0) FROM file_text").fetchone()[0]
+    fts = conn.execute("SELECT COALESCE(SUM(length(block)), 0) FROM file_fts_data").fetchone()[0]
+    return int(body + fts)
+
+
+def reset(conn: sqlite3.Connection, ocr_only: bool = False) -> int:
+    """清除讀過的文字與索引，之後重新讀取（只動 Re'memor 自己的資料庫，不碰硬碟上的檔案）。
+    ocr_only＝只清文字辨識的結果。回傳清掉幾個檔案。"""
+    if not ocr_only:
+        n = conn.execute("SELECT COUNT(*) FROM file_text").fetchone()[0]
+        conn.execute("DELETE FROM file_text")
+        conn.execute("INSERT INTO file_fts(file_fts) VALUES ('delete-all')")
+        conn.commit()
+        return n
+    rows = conn.execute("SELECT file_id, body FROM file_text WHERE source = 'ocr'").fetchall()
+    for r in rows:
+        if r["body"]:
+            conn.execute("INSERT INTO file_fts(file_fts, rowid, tokens) VALUES ('delete', ?, ?)",
+                         (r["file_id"], db.fts_tokens(zlib.decompress(r["body"]).decode("utf-8"))))
+    conn.execute("DELETE FROM file_text WHERE source = 'ocr'")
+    conn.commit()
+    return len(rows)
+
+
 def _exts_sql() -> str:
     return ",".join(f"'{e.lstrip('.')}'" for e in sorted(SUPPORTED))  # 目錄裡存的副檔名不含點
 

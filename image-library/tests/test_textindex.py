@@ -86,7 +86,7 @@ class TextIndexTests(CatalogTestCase):
     def test_search_finds_chinese_and_english_inside_documents(self):
         textindex.run_extract(self.conn)
         self.assertEqual(self.found("自然科報告"), ["report.doc", "report.docx", "report.pdf"] if sys.platform == "darwin" else ["report.docx", "report.pdf"])
-        self.assertEqual(self.found("寄居蟹"), self.found("寄居蟹"))
+        self.assertIn("report.pdf", self.found("寄居蟹"))
         self.assertIn("發表.pptx", self.found("潮間帶"))
         self.assertIn("budget.xlsx", self.found("budget"))
         self.assertIn("report.pdf", self.found("Hermit"))  # 不分大小寫
@@ -104,6 +104,18 @@ class TextIndexTests(CatalogTestCase):
         self.assertEqual(textindex.extract_plan(self.conn)["todo"]["files"], 1)
         textindex.run_extract(self.conn)
         self.assertEqual((self.found("游泳池"), self.found("圖書館")), (["筆記.txt"], []))
+
+    def test_reset_clears_only_the_catalog_and_can_be_read_again(self):
+        textindex.run_extract(self.conn)
+        before = {p: p.stat().st_mtime for p in self.drive.rglob("*")}
+        self.assertGreater(textindex.index_bytes(self.conn), 0)
+        self.assertGreater(textindex.reset(self.conn), 0)
+        self.assertEqual(self.found("圖書館"), [])
+        self.assertLess(textindex.index_bytes(self.conn), 100)  # 全文索引清空後只剩幾個位元組的結構
+        self.assertEqual({p: p.stat().st_mtime for p in self.drive.rglob("*")}, before)  # 硬碟上的檔案沒有被動到
+        self.assertGreater(textindex.extract_plan(self.conn)["todo"]["files"], 0)
+        textindex.run_extract(self.conn)
+        self.assertIn("筆記.txt", self.found("圖書館"))
 
     def test_stop_and_resume(self):
         stop = threading.Event()

@@ -41,7 +41,7 @@ SETTING_KEYS = {
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -277,7 +277,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "ai": cached_ai_status(),
                 "ui": {"viewer_rating_bar": cfg.viewer_rating_bar, "nav_hidden": cfg.nav_hidden, "pinned_tools": cfg.pinned_tools,
                        "grid_style": cfg.grid_style, "onboarded": cfg.onboarded,
-                       "album_sort": cfg.album_sort, "folder_sort": cfg.folder_sort, "open_action": cfg.open_action},
+                       "album_sort": cfg.album_sort, "folder_sort": cfg.folder_sort, "open_action": cfg.open_action,
+                       "start_page": cfg.start_page},
                 "favorites": favorites(c),
                 "local": request.state.local,
                 "platform": sys.platform,
@@ -1551,7 +1552,25 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
         c = conn()
         try:
-            return {"extract": extract_plan(c), "ocr": ocr_plan(c, cfg.ocr_scope)}
+            from .textindex import index_bytes
+
+            return {"extract": extract_plan(c), "ocr": ocr_plan(c, cfg.ocr_scope), "bytes": index_bytes(c),
+                    "languages": cfg.ocr_languages}
+        finally:
+            c.close()
+
+    @app.post("/api/text/reset")
+    def text_reset(body: dict = Body(default={})):
+        """清除 Re'memor 自己存的文件文字與索引（不碰硬碟上的檔案），之後按「讀取文件文字」重新讀。"""
+        from .textindex import reset
+
+        if not body.get("confirm"):
+            raise HTTPException(400, "需要確認")
+        if jobs().snapshot()["active"] and any(j["kind"] in ("extract", "ocr") for j in jobs().snapshot()["active"]):
+            raise HTTPException(409, "正在讀取文件文字，請先停止再重新讀取")
+        c = conn()
+        try:
+            return {"cleared": reset(c, ocr_only=bool(body.get("ocr_only")))}
         finally:
             c.close()
 
