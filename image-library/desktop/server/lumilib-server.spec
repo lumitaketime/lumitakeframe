@@ -19,11 +19,11 @@ for sub in ("web", "web/assets", "web/icons", "data"):
     if os.path.isdir(src):
         datas += [(os.path.join(src, f), os.path.join("lumilib", sub)) for f in os.listdir(src)
                   if os.path.isfile(os.path.join(src, f))]
-# 建置代號：打包後拿不到 .py 原始碼，先算好存成 lumilib/BUILD（和 App 的 REMEMOR_BUILD 一樣）
+# 建置代號：打包後拿不到 .py 原始碼，先算好存成 lumilib/BUILD_ID（和 App 的 REMEMOR_BUILD 一樣）
 sys.path.insert(0, os.path.abspath(os.path.join(SPECPATH, "..", "..")))
 from lumilib.server import build_id  # noqa: E402
 
-_build_file = os.path.join(SPECPATH, "BUILD")
+_build_file = os.path.join(SPECPATH, "BUILD_ID")
 with open(_build_file, "w") as fh:
     fh.write(build_id())
 datas += [(_build_file, "lumilib")]

@@ -47,7 +47,7 @@ def build_id() -> str:
         import hashlib
 
         here = Path(__file__).parent
-        packed = here / "BUILD"  # Mac App 內打包的版本：打包時算好的
+        packed = here / "BUILD_ID"  # Mac App 內打包的版本：打包時算好的
         if packed.is_file():
             _BUILD = packed.read_text().strip()
             return _BUILD
