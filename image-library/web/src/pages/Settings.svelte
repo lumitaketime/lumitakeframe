@@ -76,7 +76,7 @@
   });
   async function start(kind) {
     try {
-      await (kind === "ocr" ? startOcr() : startExtract());
+      await (kind === "ocr" ? startOcr() : startExtract(kind === "retry"));
       toast(kind === "ocr" ? t("find.ocrStarted") : t("find.extractStarted"));
       refresh();
     } catch (e) {
@@ -225,7 +225,12 @@
           <ListRow title={t("set.text.todo")} subtitle={text.extract.offline.files ? t("find.offline", { count: formatNumber(text.extract.offline.files) }) : ""} detail={formatNumber(text.extract.todo.files)}>
             {#snippet trailing()}{#if !textJob && text.extract.todo.files}<Button size="small" variant="borderedProminent" onclick={() => start("extract")}>{t("find.extract")}</Button>{/if}{/snippet}
           </ListRow>
-          {#if text.extract.failed}<ListRow title={t("set.text.failed")} subtitle={t("set.text.failedHint")} detail={formatNumber(text.extract.failed)} />{/if}
+          {#if text.extract.failed}
+            <ListRow title={t("set.text.failed")} subtitle={t("set.text.failedHint")} detail={formatNumber(text.extract.failed)}>
+              {#snippet trailing()}{#if !textJob && text.extract.errors}<Button size="small" variant="bordered" onclick={() => start("retry")}>{t("set.text.retry")}</Button>{/if}{/snippet}
+            </ListRow>
+          {/if}
+          {#if text.extract.cloud}<ListRow title={t("set.text.cloud")} subtitle={t("set.text.cloudHint")} detail={formatNumber(text.extract.cloud)} />{/if}
           <ListRow title={t("set.text.indexSize")} detail={formatBytes(text.bytes) || "0 KB"} />
         {/if}
       </List>

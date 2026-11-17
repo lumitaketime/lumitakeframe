@@ -95,7 +95,7 @@ export function createFindSource(params) {
 /** 還有多少文件要讀取文字、多少掃描檔與截圖要辨識 */
 export const loadTextStatus = () => api("/api/text/status", { quiet: true });
 /** 開始讀取文件文字（只讀取檔案，結果寫在目錄資料庫） */
-export const startExtract = () => api("/api/jobs", { body: { kind: "extract" } });
+export const startExtract = (retryFailed = false) => api("/api/jobs", { body: { kind: "extract", retry_failed: retryFailed || undefined } });
 /** 開始文字辨識（只在 Mac 上可以用） */
 export const startOcr = () => api("/api/jobs", { body: { kind: "ocr" } });
 export const stopJob = (id) => api("/api/jobs/stop", { body: { id } });

@@ -217,11 +217,13 @@ def _exts_sql() -> str:
     return ",".join(f"'{e.lstrip('.')}'" for e in sorted(SUPPORTED))  # 目錄裡存的副檔名不含點
 
 
-def _candidates_sql(extra: str = "") -> str:
-    """要讀文字的檔案：支援的類型、大小在上限內、還沒讀過或讀過之後被改過。"""
+def _candidates_sql(extra: str = "", retry: bool = False, cloud: bool = False) -> str:
+    """要讀文字的檔案：支援的類型、大小在上限內、還沒讀過或讀過之後被改過；
+    在雲端還沒下載的每次都再看一次；retry＝連之前讀不了的也再試一次。"""
+    retry_sql = ("OR t.status = 'error' " if retry else "") + ("OR t.status = 'cloud'" if cloud else "")
     return (f"FROM files f JOIN folders d ON d.id = f.folder_id LEFT JOIN file_text t ON t.file_id = f.id "
             f"WHERE f.status = 'ok' AND lower(f.ext) IN ({_exts_sql()}) AND f.size <= {MAX_FILE} "
-            f"AND (t.file_id IS NULL OR t.size != f.size OR t.mtime != f.mtime) {extra}")
+            f"AND (t.file_id IS NULL OR t.size != f.size OR t.mtime != f.mtime {retry_sql}) {extra}")
 
 
 def extract_plan(conn: sqlite3.Connection) -> dict:
@@ -238,7 +240,7 @@ def extract_plan(conn: sqlite3.Connection) -> dict:
         "AND t.size = f.size AND t.mtime = f.mtime GROUP BY t.status")}
     return {"todo": {"files": plan["todo"][0], "bytes": plan["todo"][1]}, "offline": {"files": plan["offline"][0], "bytes": plan["offline"][1]},
             "done": stats.get("ok", 0) + stats.get("empty", 0), "failed": stats.get("error", 0) + stats.get("unsupported", 0),
-            "needs_ocr": stats.get("needs_ocr", 0)}
+            "needs_ocr": stats.get("needs_ocr", 0), "cloud": stats.get("cloud", 0), "errors": stats.get("error", 0)}
 
 
 @dataclass
@@ -250,16 +252,20 @@ class ExtractResult:
     failed: int = 0
     changed: int = 0
     offline: int = 0
+    cloud: int = 0
     interrupted: list[str] = field(default_factory=list)
     stopped: bool = False
 
 
-def run_extract(conn: sqlite3.Connection, progress=None, stop=None) -> ExtractResult:
+SF_DATALESS = 0x40000000  # macOS：檔案只是雲端的佔位，內容還沒下載到這台電腦
+
+
+def run_extract(conn: sqlite3.Connection, progress=None, stop=None, retry: bool = False) -> ExtractResult:
     """讀出還沒讀的文件文字。progress(done, total, 正在讀的檔案)。可以隨時停止，下次接著做。"""
     result = ExtractResult()
     roots = {r["id"]: r for r in conn.execute("SELECT * FROM roots")}
     online = {rid: Path(r["path"]).is_dir() for rid, r in roots.items()}
-    rows = conn.execute(f"SELECT f.id, f.root_id, f.name, f.size, f.mtime, d.path AS folder {_candidates_sql()} "
+    rows = conn.execute(f"SELECT f.id, f.root_id, f.name, f.size, f.mtime, d.path AS folder {_candidates_sql(retry=retry, cloud=True)} "
                         "ORDER BY f.root_id, d.path, f.name").fetchall()
     todo = [r for r in rows if online.get(r["root_id"])]
     result.offline = len(rows) - len(todo)
@@ -289,6 +295,12 @@ def run_extract(conn: sqlite3.Connection, progress=None, stop=None) -> ExtractRe
                 if st.st_size != r["size"] or st.st_mtime != r["mtime"]:
                     result.changed += 1  # 掃描之後被改過：重新掃描後再讀
                     continue
+                if getattr(st, "st_flags", 0) & SF_DATALESS:
+                    # iCloud、Google 雲端硬碟、OneDrive 只在雲端的檔案：讀它會從網路下載，不讀（資料不出家門）；
+                    # 等你自己把它下載到這台電腦，下次就會讀到
+                    _store(conn, r["id"], r["size"], r["mtime"], "text", "", "cloud", "在雲端，還沒下載到這台電腦")
+                    result.cloud += 1
+                    continue
                 text, scanned = extract(path, stop)
                 text = clean(text)
                 if scanned and len(text) < 200:
@@ -312,7 +324,7 @@ def run_extract(conn: sqlite3.Connection, progress=None, stop=None) -> ExtractRe
                 _store(conn, r["id"], r["size"], r["mtime"], "text", "", "error", "無法讀取這個檔案")
                 result.failed += 1
             except Exception as exc:  # noqa: BLE001  壞掉的檔案不能讓整個工作停下來
-                _store(conn, r["id"], r["size"], r["mtime"], "text", "", "error", f"檔案格式有問題：{type(exc).__name__}")
+                _store(conn, r["id"], r["size"], r["mtime"], "text", "", "error", f"檔案格式有問題：{type(exc).__name__}: {exc}"[:300])
                 result.failed += 1
             pending += 1
             if pending >= COMMIT_ROWS or time.monotonic() - last_commit >= COMMIT_SECONDS:
@@ -333,6 +345,8 @@ def describe(r: ExtractResult) -> str:
         parts.append(f"{r.empty:,} 份沒有文字")
     if r.failed:
         parts.append(f"{r.failed:,} 份無法讀取")
+    if r.cloud:
+        parts.append(f"{r.cloud:,} 份只在雲端、還沒下載到這台電腦（不會替你下載）")
     if r.changed:
         parts.append(f"{r.changed:,} 份在掃描後有變動（重新掃描後再讀）")
     if r.interrupted:

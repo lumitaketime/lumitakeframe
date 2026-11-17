@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import sys
 import threading
@@ -372,9 +373,41 @@ def cmd_check_search(conn, cfg, args):
             f"GROUP BY e ORDER BY n DESC LIMIT 12").fetchall()
         for r in rows:
             print(f"   .{r['e']}：{r['n']} 個；有文字 {r['ok'] or 0}、空白 {r['empty'] or 0}、讀不了 {r['bad'] or 0}、還沒讀 {r['unread'] or 0}")
-        for r in conn.execute("SELECT f.name, t.error FROM file_text t JOIN files f ON f.id = t.file_id "
-                              "WHERE t.status IN ('error', 'unsupported') LIMIT 3"):
-            print(f"   讀不了的例子：{r['name']}（{(r['error'] or '')[:80]}）")
+        # 讀不了的檔案集中在哪裡（來源與前兩層資料夾）
+        where = conn.execute(
+            "SELECT r.name AS root, r.path AS rpath, d.path AS folder, COUNT(*) AS n FROM file_text t JOIN files f ON f.id = t.file_id "
+            "JOIN folders d ON d.id = f.folder_id JOIN roots r ON r.id = f.root_id WHERE t.status = 'error' GROUP BY f.root_id, d.path").fetchall()
+        groups: dict[str, int] = {}
+        for r in where:
+            top = "/".join((r["folder"] or "").split("/")[:2]) or "（最上層）"
+            groups[f"{r['root']}：{top}"] = groups.get(f"{r['root']}：{top}", 0) + r["n"]
+        print("   讀不了的檔案集中在：")
+        for k, n in sorted(groups.items(), key=lambda x: -x[1])[:10]:
+            print(f"     {n:>6}  {k}")
+        # 現場再讀幾個：檔案大小、雲端佔位旗標、開頭的位元組、錯誤訊息
+        from .textindex import extract
+        samples = conn.execute(
+            "SELECT f.name, f.size, d.path AS folder, r.path AS rpath FROM file_text t JOIN files f ON f.id = t.file_id "
+            "JOIN folders d ON d.id = f.folder_id JOIN roots r ON r.id = f.root_id WHERE t.status = 'error' "
+            "AND lower(f.ext) IN ('pdf', 'docx', 'xlsx') AND f.name NOT LIKE '~$%' ORDER BY random() LIMIT 5").fetchall()
+        for r in samples:
+            path = Path(r["rpath"]).joinpath(*[x for x in (r["folder"] or "").split("/") if x], r["name"])
+            info = f"   例子：{path}\n     目錄記的大小 {r['size']:,}"
+            try:
+                st = os.stat(path)
+                flags = getattr(st, "st_flags", 0)
+                info += f"，現在 {st.st_size:,}，旗標 0x{flags:x}{'（雲端佔位，還沒下載到這台電腦）' if flags & 0x40000000 else ''}"
+                with open(path, "rb") as fh:
+                    head = fh.read(8)
+                info += f"，開頭 {head.hex(' ')}"
+                try:
+                    text, _ = extract(path)
+                    info += f"\n     現在重讀：成功，{len(text)} 個字"
+                except Exception as e:  # noqa: BLE001
+                    info += f"\n     現在重讀：{type(e).__name__}: {str(e)[:120]}"
+            except OSError as e:
+                info += f"，打不開：{e}"
+            print(info)
         others = conn.execute("SELECT lower(ext) AS e, COUNT(*) AS n FROM files WHERE status = 'ok' AND kind = 'document' "
                               f"AND lower(ext) NOT IN ({_exts_sql()}) GROUP BY e ORDER BY n DESC LIMIT 8").fetchall()
         if others:

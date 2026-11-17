@@ -432,7 +432,8 @@ class JobRunner:
                 from .textindex import describe as describe_extract
                 from .textindex import run_extract
 
-                res = run_extract(conn, stop=stop, progress=lambda done, total, name: upd(done=done, total=total, message=name))
+                res = run_extract(conn, stop=stop, retry=bool(opts.get("retry_failed")),
+                                  progress=lambda done, total, name: upd(done=done, total=total, message=name))
                 job["result"] = {"read": res.read, "interrupted": res.interrupted, "stopped": res.stopped}
                 parts.append(describe_extract(res))
             if kind == "ocr":

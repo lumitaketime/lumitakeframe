@@ -117,6 +117,36 @@ class TextIndexTests(CatalogTestCase):
         textindex.run_extract(self.conn)
         self.assertIn("筆記.txt", self.found("圖書館"))
 
+    def test_failed_files_can_be_retried_and_cloud_files_are_not_downloaded(self):
+        from unittest import mock
+
+        broken = self.drive / "壞掉.docx"
+        broken.write_bytes(b"PK\x03\x04garbage")
+        scan_all(self.conn, self.cfg)
+        textindex.run_extract(self.conn)
+        row = self.conn.execute("SELECT t.status, t.error FROM file_text t JOIN files f ON f.id = t.file_id WHERE f.name = '壞掉.docx'").fetchone()
+        self.assertEqual(row["status"], "error")
+        self.assertIn("BadZipFile", row["error"])  # 錯誤訊息完整記下來，方便找原因
+        self.assertEqual(textindex.run_extract(self.conn).failed, 0)  # 一般重跑不會一直重試
+        self.assertEqual(textindex.run_extract(self.conn, retry=True).failed, 1)  # 「再試一次」才重試
+        # 只在雲端的檔案（macOS 的佔位檔）：不讀（讀了會從網路下載），標成「在雲端」
+        real_stat = Path.stat
+
+        def fake_stat(p, *a, **kw):
+            st = real_stat(p, *a, **kw)
+            if p.name == "筆記.txt":
+                return mock.Mock(st_size=st.st_size, st_mtime=st.st_mtime, st_flags=textindex.SF_DATALESS)
+            return st
+
+        self.conn.execute("DELETE FROM file_text WHERE file_id IN (SELECT id FROM files WHERE name = '筆記.txt')")
+        with mock.patch.object(Path, "stat", fake_stat):
+            res = textindex.run_extract(self.conn)
+        self.assertEqual(res.cloud, 1)
+        self.assertEqual(self.conn.execute("SELECT t.status FROM file_text t JOIN files f ON f.id = t.file_id WHERE f.name = '筆記.txt'").fetchone()[0], "cloud")
+        self.assertEqual(textindex.extract_plan(self.conn)["cloud"], 1)
+        textindex.run_extract(self.conn)  # 下載回來之後就讀得到
+        self.assertIn("筆記.txt", self.found("圖書館"))
+
     def test_stop_and_resume(self):
         stop = threading.Event()
         real = (textindex.COMMIT_ROWS, textindex.REPORT_SECONDS)
