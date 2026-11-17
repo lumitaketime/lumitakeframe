@@ -66,6 +66,8 @@ DEFAULTS = {
     "large_files_limit": 200,  # 大檔案列出幾個
     "album_sort": "updated",  # 相簿排序：updated／name／created／count／custom（拖曳排的順序）
     "folder_sort": "name",  # 資料夾排序：name／updated／count／custom
+    "ocr_scope": "scans",  # 文字辨識範圍：scans＝掃描檔與截圖／all＝再加上所有照片／off
+    "ocr_languages": "zh-Hant,zh-Hans,en-US",  # 文字辨識的語言（Apple Vision 的語言代碼）
     "open_action": "",  # 按兩下照片以外的檔案：open＝用預設的 App 打開／reveal＝在 Finder 中顯示／空白＝第一次先問
     "stack_enabled": 1,
     "burst_seconds": 2,
@@ -128,6 +130,8 @@ class Config:
     album_sort: str = DEFAULTS["album_sort"]
     folder_sort: str = DEFAULTS["folder_sort"]
     open_action: str = DEFAULTS["open_action"]
+    ocr_scope: str = DEFAULTS["ocr_scope"]
+    ocr_languages: str = DEFAULTS["ocr_languages"]
     stack_enabled: int = DEFAULTS["stack_enabled"]
     burst_seconds: int = DEFAULTS["burst_seconds"]
     face_enabled: int = DEFAULTS["face_enabled"]
