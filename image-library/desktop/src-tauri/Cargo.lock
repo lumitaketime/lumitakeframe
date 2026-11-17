@@ -2007,6 +2007,7 @@ name = "lumitake-library"
 version = "0.19.2"
 dependencies = [
  "libc",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",

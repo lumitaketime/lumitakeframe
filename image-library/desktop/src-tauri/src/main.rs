@@ -75,18 +75,23 @@ fn running_is_ours() -> bool {
     }
 }
 
-/// 請正在執行的 Re'memor 自己結束（新版才有這個請求；舊版會回 404，改用找程序的方式）
-fn ask_server_to_quit() -> bool {
+/// 送一個 POST 給本機的 Re'memor（body 是 JSON），回傳整個回應（含標頭）
+fn http_post(path: &str, json: &str) -> Option<String> {
     let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
-    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(400)) else { return false };
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(400)).ok()?;
     let _ = stream.set_read_timeout(Some(Duration::from_millis(3000)));
     let request = format!(
-        "POST /api/shutdown HTTP/1.1\r\nHost: 127.0.0.1:{PORT}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}");
-    if stream.write_all(request.as_bytes()).is_err() {
-        return false;
-    }
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{PORT}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{json}",
+        json.len());
+    stream.write_all(request.as_bytes()).ok()?;
     let mut body = String::new();
     let _ = stream.read_to_string(&mut body);
+    Some(body)
+}
+
+/// 請正在執行的 Re'memor 自己結束（新版才有這個請求；舊版會回 404，改用找程序的方式）
+fn ask_server_to_quit() -> bool {
+    let Some(body) = http_post("/api/shutdown", "{}") else { return false };
     if !body.starts_with("HTTP/1.1 200") {
         return false;
     }
@@ -254,7 +259,39 @@ fn open_when_ready(app: AppHandle) {
     });
 }
 
+/// 背景工作的摘要（選單列用）：（第一個工作的說明, 百分比, 進行中與排隊的工作數）
+fn job_summary() -> Option<(String, Option<u32>, usize)> {
+    let raw = http_get("/api/jobs")?;
+    let body = raw.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or(&raw);
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    let active = v["active"].as_array().cloned().unwrap_or_default();
+    let queued = v["queued"].as_array().map(|q| q.len()).unwrap_or(0);
+    let Some(job) = active.first() else { return Some((String::new(), None, queued)) };
+    let label = job["label"].as_str().unwrap_or("工作");
+    let message: String = job["message"].as_str().unwrap_or("").chars().take(36).collect();
+    let (done, total) = (job["done"].as_f64().unwrap_or(0.0), job["total"].as_f64().unwrap_or(0.0));
+    let percent = if total > 0.0 { Some(((done / total) * 100.0).clamp(0.0, 100.0) as u32) } else { None };
+    let mut text = match percent { Some(p) => format!("{label} {p}%"), None => label.to_string() };
+    if !message.is_empty() {
+        text.push_str(&format!("：{message}"));
+    }
+    Some((text, percent, active.len() + queued))
+}
+
+/// 在主視窗裡換到某一頁（網頁裡的路由會跟著 popstate 換頁）
+fn open_page(app: &AppHandle, path: &str) {
+    show_main(app);
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.eval(&format!(
+            "history.pushState({{idx:(history.state&&history.state.idx||0)+1}},'','{path}');dispatchEvent(new PopStateEvent('popstate'))"));
+    }
+}
+
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    // 有工作時：選單列圖示旁顯示百分比，選單最上面是目前的工作與「停止」；沒有工作時只有圖示
+    let status = MenuItem::with_id(app, "status", "目前沒有進行中的工作", false, None::<&str>)?;
+    let activity = MenuItem::with_id(app, "activity", "查看掃描進度…", true, None::<&str>)?;
+    let stop = MenuItem::with_id(app, "stop", "停止所有工作", false, None::<&str>)?;
     let open = MenuItem::with_id(app, "open", "打開 Re'memor", true, None::<&str>)?;
     let browser = MenuItem::with_id(app, "browser", "在瀏覽器中開啟", true, None::<&str>)?;
     let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
@@ -264,6 +301,10 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(
         app,
         &[
+            &status,
+            &activity,
+            &stop,
+            &PredefinedMenuItem::separator(app)?,
             &open,
             &browser,
             &PredefinedMenuItem::separator(app)?,
@@ -275,7 +316,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     )?;
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
     let autostart_item = autostart.clone();
-    TrayIconBuilder::with_id("main")
+    let tray = TrayIconBuilder::with_id("main")
         .icon(icon)
         .icon_as_template(true)
         .tooltip("Re'memor")
@@ -283,14 +324,11 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "open" => show_main(app),
-            "about" => {
-                show_main(app);
-                if let Some(window) = app.get_webview_window("main") {
-                    // 網頁裡的路由會跟著 popstate 換頁
-                    let _ = window.eval(
-                        "history.pushState({idx:(history.state&&history.state.idx||0)+1},'','/settings/about');dispatchEvent(new PopStateEvent('popstate'))",
-                    );
-                }
+            "about" => open_page(app, "/settings/about"),
+            "activity" => open_page(app, "/activity"),
+            "stop" => {
+                // 停止後下次可以從中斷的地方繼續（掃描、讀取文字、比對內容都會記錄進度）
+                let _ = http_post("/api/jobs/stop", "{}");
             }
             "browser" => {
                 let _ = Command::new("open").arg(library_url()).spawn();
@@ -308,6 +346,34 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .build(app)?;
+
+    // 每兩秒看一次背景工作，有變化才更新選單列
+    thread::spawn(move || {
+        let mut last: Option<(String, Option<u32>, usize)> = None;
+        loop {
+            thread::sleep(Duration::from_secs(2));
+            let now = job_summary().unwrap_or((String::new(), None, 0));
+            if last.as_ref() == Some(&now) {
+                continue;
+            }
+            let (text, percent, count) = &now;
+            if *count == 0 {
+                let _ = tray.set_title(None::<&str>);
+                let _ = tray.set_tooltip(Some("Re'memor"));
+                let _ = status.set_text("目前沒有進行中的工作");
+                let _ = stop.set_enabled(false);
+            } else {
+                let title = percent.map(|p| format!("{p}%")).unwrap_or_else(|| "…".to_string());
+                let more = if *count > 1 { format!("（還有 {} 個工作）", count - 1) } else { String::new() };
+                let line = if text.is_empty() { format!("{count} 個工作排隊中") } else { format!("{text}{more}") };
+                let _ = tray.set_title(Some(title.as_str()));
+                let _ = tray.set_tooltip(Some(format!("Re'memor：{line}").as_str()));
+                let _ = status.set_text(line.as_str());
+                let _ = stop.set_enabled(true);
+            }
+            last = Some(now);
+        }
+    });
     Ok(())
 }
 
