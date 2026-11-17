@@ -1,13 +1,16 @@
 <script>
+  import { untrack } from "svelte";
   /**
    * 瀏覽頁：「所有檔案」、每顆硬碟的資料夾、跨硬碟的類型，共用同一頁，用工具列切換檢視。
    * scope：{type: "roots"}｜{type: "folder", root, path}｜{type: "kind", kind}
    * 這一頁只組合檢視元件與資料；資料都從資料層來，硬碟沒接上也能看。
    */
-  import { Alert, Button, ProgressIndicator } from "../ui/index.js";
+  import { Alert, Button, ProgressIndicator, SegmentedControl } from "../ui/index.js";
   import ItemList from "../views/ItemList.svelte";
   import ItemGrid from "../views/ItemGrid.svelte";
   import ItemTree from "../views/ItemTree.svelte";
+  import ItemGraph from "../views/ItemGraph.svelte";
+  import { createGraph } from "../data/graph.svelte.js";
   import ItemColumns from "../views/ItemColumns.svelte";
   import ItemUsage from "../views/ItemUsage.svelte";
   import { buildUnits } from "../views/usage.js";
@@ -15,7 +18,7 @@
   import ContextMenu from "../views/ContextMenu.svelte";
   import QuickLook from "../views/QuickLook.svelte";
   import { createSelection } from "../views/selection.svelte.js";
-  import { prefs, viewFor, toggleColumn, COLUMNS } from "../views/prefs.svelte.js";
+  import { prefs, viewFor, toggleColumn, COLUMNS, setTreeStyle } from "../views/prefs.svelte.js";
   import { createItemSource, createStaticSource, loadGroups } from "../data/items.svelte.js";
   import { buildSections } from "../views/sections.js";
   import { catalog, driveOfRoot } from "../data/catalog.svelte.js";
@@ -60,7 +63,8 @@
   });
   const sections = $derived(grouping && groupData ? buildSections(groupData, grouping, t) : null);
   // 樹狀檢視：把展開的資料夾攤平成一條清單；佔比檢視：兩層的大小統計。兩者的介面和一般來源相同
-  const treeSource = $derived(scope.type === "folder" && view === "tree" ? createTreeSource(scope.root, scope.path, prefs.sort, prefs.desc) : null);
+  const treeSource = $derived(scope.type === "folder" && view === "tree" && prefs.treeStyle === "list" ? createTreeSource(scope.root, scope.path, prefs.sort, prefs.desc) : null);
+  const graph = $derived(scope.type === "folder" && view === "tree" && prefs.treeStyle === "graph" ? createGraph(scope.root, scope.path, t, formatNumber) : null);
   let usage = $state(null);
   let usageError = $state("");
   $effect(() => {
@@ -76,11 +80,14 @@
   const chart = $derived(usage ? buildUnits(usage, scope.root, t, formatNumber) : { units: [], tops: [] });
   const usageSource = $derived(createStaticSource(chart.units));
   /** 目前這個檢視在用的來源：選取、開啟、右鍵選單、快速預覽都透過它 */
-  const active = $derived(view === "tree" && treeSource ? treeSource : view === "treemap" && scope.type === "folder" ? usageSource : source);
+  const active = $derived(graph ? graph : view === "tree" && treeSource ? treeSource : view === "treemap" && scope.type === "folder" ? usageSource : source);
   $effect(() => {
-    active;
-    source.start();
-    sel.clear();
+    const now = active;
+    untrack(() => {
+      source.start();
+      if (now !== source) now.start(); // 連線圖、清單式樹狀圖各自從第一層開始讀
+      sel.clear();
+    });
   });
   const total = $derived(view === "treemap" && scope.type === "folder" && !usage ? null : active.state.total);
 
@@ -322,8 +329,17 @@
     </div>
   {:else if view === "treemap" && scope.type === "folder"}
     <ItemUsage {usage} units={chart.units} tops={chart.tops} {sel} onopen={open} onpreview={preview} oncontext={itemMenu} />
-  {:else if view === "tree" && treeSource}
+  {:else if view === "tree" && scope.type === "folder"}
+    <div class="treebar mac-callout">
+      <span class="sub">{prefs.treeStyle === "graph" ? t("tree.graphHint") : ""}</span>
+      <SegmentedControl size="small" value={prefs.treeStyle} onchange={setTreeStyle} ariaLabel={t("tree.style")}
+        segments={[{ value: "graph", label: t("tree.graph") }, { value: "list", label: t("tree.list") }]} />
+    </div>
+    {#if graph}
+      <ItemGraph {graph} {sel} onopen={open} onpreview={preview} oncontext={itemMenu} />
+    {:else if treeSource}
     <ItemTree source={treeSource} {sel} totalBytes={loc?.bytes || 0} onopen={open} onpreview={preview} oncontext={itemMenu} ondragitem={dragItem} />
+    {/if}
   {:else if view === "columns" && scope.type === "folder"}
     <ItemColumns root={scope.root} path={scope.path} {source} {sel} onnavigate={(p) => navigate(hrefOf(scope.root, p))}
       onopen={open} onpreview={preview} oncontext={itemMenu} ondragitem={dragItem} />
@@ -352,6 +368,8 @@
 
 <style>
   .browse { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+  .treebar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--separator); color: var(--label-secondary); }
   .state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-8);
     text-align: center; color: var(--label-secondary); }
   .state h2 { margin: 0; color: var(--label-primary); }

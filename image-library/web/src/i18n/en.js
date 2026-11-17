@@ -310,6 +310,11 @@ export default {
   "group.size.small": "100 KB to 1 MB",
   "group.size.tiny": "Under 100 KB",
 
+  "tree.style": "Tree style",
+  "tree.graph": "Map",
+  "tree.list": "List",
+  "tree.graphHint": "Click a folder to expand it to the right. Thicker lines take more of the parent’s space. Double-click to open.",
+
   "gallery.title": "Base Components",
   "gallery.intro": "The Liquid Glass design system's components, rewritten in Svelte. This page is for development only, to check the four themes.",
   "gallery.theme": "Theme",

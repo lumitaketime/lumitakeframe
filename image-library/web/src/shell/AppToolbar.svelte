@@ -80,7 +80,8 @@
       {:else}
         <SegmentedControl segments={views} value={view} onchange={(v) => setView(place, v)} ariaLabel={t("toolbar.view")} />
       {/if}
-      {#if view !== "treemap" && place !== "roots"}
+      <!-- 佔比圖與連線圖固定依大小排列，排序對它們沒有作用 -->
+      {#if view !== "treemap" && !(view === "tree" && prefs.treeStyle === "graph") && place !== "roots"}
         <PullDownButton label={grouped ? t("group.button", { by: t(`group.${prefs.group}`) }) : t("sort.button", { by: t(`sort.${prefs.sort}`) })} icon="sort" iconOnly={tier !== "full"} variant="glass" items={sortItems} menuWidth={260} />
       {/if}
       {#if view === "icons" && tier === "full"}

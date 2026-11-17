@@ -32,7 +32,8 @@ export const prefs = $state({
   last: read("view.last", "list"),
   iconSize: Math.min(ICON_MAX, Math.max(ICON_MIN, read("view.iconSize", 112))),
   sort: read("view.sort", "name"),
-  group: read("view.group", "none"), // 分組方式（只用在圖像與列表）
+  group: read("view.group", "none"),
+  treeStyle: read("view.treeStyle", "graph") === "list" ? "list" : "graph", // 樹狀檢視：節點連線圖或縮排清單 // 分組方式（只用在圖像與列表）
   desc: read("view.desc", false),
   hidden: read("view.hiddenColumns", []), // 不顯示的欄位
   widths: { ...WIDTHS, ...read("view.widths", {}) },
@@ -105,4 +106,8 @@ export function setColumnWidth(px) {
 export function setChart(kind) {
   prefs.chart = kind === "sunburst" ? "sunburst" : "treemap";
   save("view.chart", prefs.chart);
+}
+export function setTreeStyle(style) {
+  prefs.treeStyle = style === "list" ? "list" : "graph";
+  save("view.treeStyle", prefs.treeStyle);
 }

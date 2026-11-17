@@ -310,6 +310,11 @@ export default {
   "group.size.small": "100 KB 到 1 MB",
   "group.size.tiny": "小於 100 KB",
 
+  "tree.style": "樹狀圖的樣式",
+  "tree.graph": "連線圖",
+  "tree.list": "清單",
+  "tree.graphHint": "按一下資料夾往右展開；連線越粗，佔上一層的空間越多；按兩下進入資料夾。",
+
   "gallery.title": "基礎元件",
   "gallery.intro": "Liquid Glass 設計系統的元件，改寫成 Svelte。這一頁只在開發時使用，用來檢查四個主題。",
   "gallery.theme": "主題",
