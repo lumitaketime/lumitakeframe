@@ -16,7 +16,8 @@
   import QuickLook from "../views/QuickLook.svelte";
   import { createSelection } from "../views/selection.svelte.js";
   import { prefs, viewFor, toggleColumn, COLUMNS } from "../views/prefs.svelte.js";
-  import { createItemSource, createStaticSource } from "../data/items.svelte.js";
+  import { createItemSource, createStaticSource, loadGroups } from "../data/items.svelte.js";
+  import { buildSections } from "../views/sections.js";
   import { catalog, driveOfRoot } from "../data/catalog.svelte.js";
   import { loadLocation, openItem, saveOpenAction, setLabel, pinFolder, DRAG_FOLDER, loadUsage, loadKinds } from "../data/browse.js";
   import { loadCatalog } from "../data/catalog.svelte.js";
@@ -38,11 +39,26 @@
     root_id: r.id, path: "", kindLabel: t("info.kind.drive"), note: r.online ? "" : t("drive.offline"),
   }))));
   let rev = $state(0); // 在標籤頁改了標籤：重新讀取，讓不再屬於這個標籤的項目消失
+  // 引擎看的範圍；分組只用在圖像與列表，其他檢視不分組
+  const engineScope = $derived(scope.type === "kind" ? { kind: scope.kind } : scope.type === "label" ? (rev, { label: scope.label })
+    : scope.type === "folder" ? { root: scope.root, path: scope.path } : null);
+  const grouping = $derived(engineScope && prefs.group !== "none" && (view === "icons" || view === "list") ? prefs.group : "");
   const source = $derived(
     scope.type === "roots" ? createStaticSource(rootItems)
-      : scope.type === "kind" ? createItemSource({ kind: scope.kind }, prefs.sort, prefs.desc)
-      : scope.type === "label" ? (rev, createItemSource({ label: scope.label }, prefs.sort, prefs.desc))
-        : createItemSource({ root: scope.root, path: scope.path }, prefs.sort, prefs.desc));
+      : createItemSource(engineScope, prefs.sort, prefs.desc, grouping));
+  // 分組只用在圖像與列表；載入每組的數量，畫出每一段的標題
+  let groupData = $state(null);
+  $effect(() => {
+    groupData = null;
+    if (!grouping) return;
+    const want = { scope: engineScope, group: grouping };
+    app.refreshKey;
+    rev;
+    loadGroups(want.scope, want.group).then((d) => {
+      if (grouping === want.group && engineScope === want.scope) groupData = d;
+    }).catch(() => {});
+  });
+  const sections = $derived(grouping && groupData ? buildSections(groupData, grouping, t) : null);
   // 樹狀檢視：把展開的資料夾攤平成一條清單；佔比檢視：兩層的大小統計。兩者的介面和一般來源相同
   const treeSource = $derived(scope.type === "folder" && view === "tree" ? createTreeSource(scope.root, scope.path, prefs.sort, prefs.desc) : null);
   let usage = $state(null);
@@ -312,9 +328,9 @@
     <ItemColumns root={scope.root} path={scope.path} {source} {sel} onnavigate={(p) => navigate(hrefOf(scope.root, p))}
       onopen={open} onpreview={preview} oncontext={itemMenu} ondragitem={dragItem} />
   {:else if view === "icons"}
-    <ItemGrid {source} {sel} onopen={open} onpreview={preview} oncontext={itemMenu} ondragitem={dragItem} />
+    <ItemGrid {source} {sel} sections={grouping ? sections : null} onopen={open} onpreview={preview} oncontext={itemMenu} ondragitem={dragItem} />
   {:else}
-    <ItemList {source} {sel} totalBytes={scope.type === "folder" ? loc?.bytes || 0 : 0} showDrive={scope.type === "kind" || scope.type === "label"} ondragitem={dragItem} {driveName} onopen={open} onpreview={preview} oncontext={itemMenu} onheadercontext={headerMenu} />
+    <ItemList {source} {sel} sections={grouping ? sections : null} totalBytes={scope.type === "folder" ? loc?.bytes || 0 : 0} showDrive={scope.type === "kind" || scope.type === "label"} ondragitem={dragItem} {driveName} onopen={open} onpreview={preview} oncontext={itemMenu} onheadercontext={headerMenu} />
   {/if}
 </div>
 

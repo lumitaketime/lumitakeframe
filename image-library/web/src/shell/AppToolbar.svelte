@@ -4,7 +4,7 @@
    * 按鈕群組是膠囊形玻璃；工具列本身不墊色塊。
    */
   import { Toolbar, SegmentedControl, Slider, PullDownButton } from "../ui/index.js";
-  import { prefs, viewFor, viewsFor, setView, setIconSize, chooseSort, setDesc, SORTS, ALL_VIEWS, ICON_MIN, ICON_MAX } from "../views/prefs.svelte.js";
+  import { prefs, viewFor, viewsFor, setView, setIconSize, chooseSort, setDesc, setGroup, SORTS, GROUPS, ALL_VIEWS, ICON_MIN, ICON_MAX } from "../views/prefs.svelte.js";
   import SearchBox from "../components/SearchBox.svelte";
   import FilterButton from "../components/FilterButton.svelte";
   import { filterUI } from "../lib/filter.svelte.js";
@@ -45,7 +45,13 @@
       onSelect: () => setView(place, v.value) })),
   ]);
   // 排序方式：所有檢視共用（佔比圖固定依大小，所以不顯示）
+  // 分組只在圖像與列表；其他檢視顯示但不能選
+  const canGroup = $derived(view === "icons" || view === "list");
+  const grouped = $derived(canGroup && prefs.group !== "none");
   const sortItems = $derived([
+    { header: t("group.by") },
+    ...GROUPS.map((key) => ({ label: t(`group.${key}`), checked: prefs.group === key, disabled: !canGroup, onSelect: () => setGroup(key) })),
+    { separator: true },
     { header: t("sort.by") },
     ...SORTS.map((key) => ({ label: t(`sort.${key}`), checked: prefs.sort === key, onSelect: () => chooseSort(key) })),
     { separator: true },
@@ -75,7 +81,7 @@
         <SegmentedControl segments={views} value={view} onchange={(v) => setView(place, v)} ariaLabel={t("toolbar.view")} />
       {/if}
       {#if view !== "treemap" && place !== "roots"}
-        <PullDownButton label={t("sort.button", { by: t(`sort.${prefs.sort}`) })} icon="sort" iconOnly={tier !== "full"} variant="glass" items={sortItems} menuWidth={260} />
+        <PullDownButton label={grouped ? t("group.button", { by: t(`group.${prefs.group}`) }) : t("sort.button", { by: t(`sort.${prefs.sort}`) })} icon="sort" iconOnly={tier !== "full"} variant="glass" items={sortItems} menuWidth={260} />
       {/if}
       {#if view === "icons" && tier === "full"}
         <div class="size"><Slider value={prefs.iconSize} min={ICON_MIN} max={ICON_MAX} step={8} onchange={setIconSize} ariaLabel={t("view.iconSize")} /></div>

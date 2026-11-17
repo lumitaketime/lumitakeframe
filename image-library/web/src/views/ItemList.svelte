@@ -6,10 +6,11 @@
   import { Icon } from "../ui/index.js";
   import KindIcon from "./KindIcon.svelte";
   import { handleViewKey } from "./keys.js";
+  import { listLayout } from "./sections.js";
   import { prefs, COLUMNS, setSort, setWidth } from "./prefs.svelte.js";
-  import { t, formatBytes, formatDate } from "../i18n/index.svelte.js";
+  import { t, formatBytes, formatDate, formatNumber } from "../i18n/index.svelte.js";
 
-  let { source, sel, totalBytes = 0, showDrive = false, driveName = () => "", onopen, onpreview, oncontext, ondragitem, onheadercontext } = $props();
+  let { source, sel, sections = null, totalBytes = 0, showDrive = false, driveName = () => "", onopen, onpreview, oncontext, ondragitem, onheadercontext } = $props();
 
   const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
   const ROW = touch ? 44 : 28;
@@ -19,13 +20,18 @@
   let scrollTop = $state(0);
   let height = $state(600);
   const total = $derived(source.state.total ?? 0);
+  // 分組時每一段前面多一列標題（見 sections.js）
+  const layout = $derived(listLayout(sections, total));
   const first = $derived(Math.max(0, Math.floor(scrollTop / ROW) - OVERSCAN));
-  const last = $derived(Math.min(total, Math.ceil((scrollTop + height) / ROW) + OVERSCAN));
+  const last = $derived(Math.min(layout.rows, Math.ceil((scrollTop + height) / ROW) + OVERSCAN));
   // 畫面上的列重複利用：捲動時同一個 DOM 節點換內容與位置，不必每次刪掉再建（key 用「第幾個除以格數的餘數」）
   const slots = $derived(Math.ceil(height / ROW) + OVERSCAN * 2 + 2);
   const rows = $derived.by(() => {
     const out = [];
-    for (let i = first; i < last; i++) out.push({ i, item: source.get(i) });
+    for (let r = first; r < last; r++) {
+      const at = layout.at(r);
+      out.push(at.section ? { r, section: at.section } : { r, i: at.i, item: source.get(at.i) });
+    }
     return out;
   });
   const columns = $derived(COLUMNS.filter((c) => c === "name" || (!prefs.hidden.includes(c) && (c !== "drive" || showDrive))));
@@ -44,7 +50,7 @@
   $effect(() => {
     const f = sel.focus;
     if (f < 0 || !body) return;
-    const top = f * ROW;
+    const top = layout.rowOf(f) * ROW;
     if (top < body.scrollTop) body.scrollTop = top;
     else if (top + ROW > body.scrollTop + body.clientHeight) body.scrollTop = top + ROW - body.clientHeight;
   });
@@ -91,11 +97,16 @@
   <div class="body" bind:this={body} bind:clientHeight={height} {onscroll} {onkeydown} tabindex="0"
     role="listbox" aria-multiselectable="true" aria-label={t("view.items")}
     aria-activedescendant={sel.focus >= 0 ? `item-${sel.focus}` : undefined}>
-    <div class="space" style:height="{total * ROW}px">
-      {#each rows as { i, item } (i % slots)}
+    <div class="space" style:height="{layout.rows * ROW}px">
+      {#each rows as { r, i, item, section } (r % slots)}
+        {#if section}
+          <div class="ghead mac-callout" role="presentation" style:transform="translateY({r * ROW}px)">
+            <b>{section.label}</b><span>{t("group.count", { count: formatNumber(section.count) })}</span>
+          </div>
+        {:else}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <div class="row" class:on={sel.has(i)} class:alt={i % 2 === 1} id="item-{i}" role="option" aria-selected={sel.has(i)}
-          aria-setsize={total} aria-posinset={i + 1} tabindex="-1" style:transform="translateY({i * ROW}px)"
+          aria-setsize={total} aria-posinset={i + 1} tabindex="-1" style:transform="translateY({r * ROW}px)"
           onclick={(e) => sel.click(i, e)} ondblclick={() => onopen?.(i)}
           draggable={item?.type === "folder" ? "true" : undefined} ondragstart={(e) => ondragitem?.(e, item)}
           oncontextmenu={(e) => { e.preventDefault(); sel.context(i); oncontext?.(e, i); }}>
@@ -125,6 +136,7 @@
             <span class="cell"><i class="ph"></i></span>
           {/if}
         </div>
+      {/if}
       {/each}
     </div>
   </div>
@@ -151,6 +163,10 @@
   .row { position: absolute; left: var(--space-2); right: var(--space-2); top: 0; height: var(--row); display: grid; grid-template-columns: var(--cols);
     align-items: center; padding: 0 var(--space-1); border-radius: var(--radius-sm); cursor: default; user-select: none; -webkit-user-select: none; }
   .row.alt { background: var(--row-alt); }
+  /* 分組的標題列 */
+  .ghead { position: absolute; left: var(--space-2); right: var(--space-2); top: 0; height: var(--row); display: flex; align-items: flex-end; gap: var(--space-2);
+    padding: 0 var(--space-3) var(--space-1); border-bottom: 1px solid var(--separator); color: var(--label-secondary); }
+  .ghead b { color: var(--label-primary); font-weight: 600; }
   .row.on { background: var(--selection); color: var(--on-accent); }
   .row.on .cell, .row.on .note { color: inherit; }
   .cell { min-width: 0; padding: 0 var(--space-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--label-secondary); }

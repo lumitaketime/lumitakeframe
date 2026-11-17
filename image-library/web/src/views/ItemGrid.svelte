@@ -5,11 +5,12 @@
    */
   import KindIcon from "./KindIcon.svelte";
   import { handleViewKey } from "./keys.js";
+  import { sectionOf } from "./sections.js";
   import { prefs } from "./prefs.svelte.js";
   import { thumbUrl } from "../lib/api.js";
-  import { t } from "../i18n/index.svelte.js";
+  import { t, formatNumber } from "../i18n/index.svelte.js";
 
-  let { source, sel, onopen, onpreview, oncontext, ondragitem } = $props();
+  let { source, sel, sections = null, onopen, onpreview, oncontext, ondragitem } = $props();
 
   const GAP = 12;
   const PAD = 16;
@@ -24,15 +25,42 @@
   const total = $derived(source.state.total ?? 0);
   const perRow = $derived(Math.max(1, Math.floor((width - PAD * 2 + GAP) / (size + GAP))));
   const rowH = $derived(size + LABEL + GAP);
-  const rowCount = $derived(Math.ceil(total / perRow));
-  const firstRow = $derived(Math.max(0, Math.floor(scrollTop / rowH) - OVERSCAN));
-  const lastRow = $derived(Math.min(rowCount, Math.ceil((scrollTop + height) / rowH) + OVERSCAN));
+  // 每一段（沒有分組時整個清單就是一段）：從哪一個項目開始、有幾個、在畫面上的高度位置。分組時段前面有一列標題
+  const HEAD = 34;
+  const blocks = $derived.by(() => {
+    const list = sections?.length ? sections : [{ start: 0, count: total, label: "" }];
+    let y = PAD;
+    return list.map((s) => {
+      const head = sections?.length ? HEAD : 0;
+      const b = { ...s, y, head, rows: Math.ceil(s.count / perRow) };
+      y += head + b.rows * rowH;
+      return b;
+    });
+  });
+  const contentH = $derived(blocks.length ? blocks[blocks.length - 1].y + blocks[blocks.length - 1].head + blocks[blocks.length - 1].rows * rowH : PAD);
+  /** 第 i 個項目在畫面上的位置 */
+  function place(i) {
+    const b = blocks[sections?.length ? sectionOf(blocks, i) : 0];
+    const local = i - b.start;
+    return { x: PAD + (local % perRow) * (size + GAP), y: b.y + b.head + Math.floor(local / perRow) * rowH };
+  }
   // 畫面上的格子重複利用（同列表檢視）
   const slots = $derived((Math.ceil(height / rowH) + OVERSCAN * 2 + 2) * perRow);
-  const cells = $derived.by(() => {
-    const out = [];
-    for (let i = firstRow * perRow; i < Math.min(total, lastRow * perRow); i++) out.push({ i, item: source.get(i) });
-    return out;
+  const view = $derived.by(() => {
+    const top = scrollTop - OVERSCAN * rowH, bottom = scrollTop + height + OVERSCAN * rowH;
+    const cells = [], heads = [];
+    for (const b of blocks) {
+      const end = b.y + b.head + b.rows * rowH;
+      if (end < top || b.y > bottom) continue;
+      if (b.head && b.y + b.head >= top) heads.push(b);
+      const r0 = Math.max(0, Math.floor((top - b.y - b.head) / rowH));
+      const r1 = Math.min(b.rows, Math.ceil((bottom - b.y - b.head) / rowH));
+      for (let i = b.start + r0 * perRow; i < Math.min(b.start + b.count, b.start + r1 * perRow); i++) {
+        const p = place(i);
+        cells.push({ i, item: source.get(i), x: p.x, y: p.y });
+      }
+    }
+    return { cells, heads };
   });
 
   let raf = 0;
@@ -46,7 +74,7 @@
   $effect(() => {
     const f = sel.focus;
     if (f < 0 || !body) return;
-    const top = Math.floor(f / perRow) * rowH;
+    const top = place(f).y - PAD;
     if (top < body.scrollTop) body.scrollTop = top;
     else if (top + rowH > body.scrollTop + body.clientHeight) body.scrollTop = top + rowH - body.clientHeight + PAD;
   });
@@ -59,11 +87,16 @@
 <div class="grid mac-callout" bind:this={body} bind:clientHeight={height} bind:clientWidth={width} {onscroll} {onkeydown} tabindex="0"
   role="listbox" aria-multiselectable="true" aria-label={t("view.items")} aria-activedescendant={sel.focus >= 0 ? `item-${sel.focus}` : undefined}
   style:--size="{size}px">
-  <div class="space" style:height="{rowCount * rowH + PAD}px">
-    {#each cells as { i, item } (i % slots)}
+  <div class="space" style:height="{contentH + PAD}px">
+    {#each view.heads as h (h.start)}
+      <div class="ghead mac-callout" role="presentation" style:transform="translateY({h.y}px)">
+        <b>{h.label}</b><span>{t("group.count", { count: formatNumber(h.count) })}</span>
+      </div>
+    {/each}
+    {#each view.cells as { i, item, x, y } (i % slots)}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <div class="cell" class:on={sel.has(i)} id="item-{i}" role="option" aria-selected={sel.has(i)} aria-setsize={total} aria-posinset={i + 1} tabindex="-1"
-        style:transform="translate({PAD + (i % perRow) * (size + GAP)}px, {PAD + Math.floor(i / perRow) * rowH}px)"
+        style:transform="translate({x}px, {y}px)"
         onclick={(e) => sel.click(i, e)} ondblclick={() => onopen?.(i)}
           draggable={item?.type === "folder" ? "true" : undefined} ondragstart={(e) => ondragitem?.(e, item)}
         oncontextmenu={(e) => { e.preventDefault(); sel.context(i); oncontext?.(e, i); }} title={item?.name}>
@@ -87,6 +120,9 @@
   .grid { height: 100%; overflow-y: auto; overflow-x: hidden; position: relative; outline: none; overscroll-behavior: contain; color: var(--label-primary); }
   .grid:focus-visible { box-shadow: inset var(--focus-ring); }
   .space { position: relative; }
+  .ghead { position: absolute; left: var(--space-4); right: var(--space-4); top: 0; height: 26px; display: flex; align-items: flex-end; gap: var(--space-2);
+    padding-bottom: var(--space-1); border-bottom: 1px solid var(--separator); color: var(--label-secondary); }
+  .ghead b { color: var(--label-primary); font-weight: 600; }
   .cell { position: absolute; left: 0; top: 0; width: var(--size); display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
     cursor: default; user-select: none; -webkit-user-select: none; }
   .pic { position: relative; width: var(--size); height: var(--size); display: flex; align-items: center; justify-content: center;

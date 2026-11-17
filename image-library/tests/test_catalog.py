@@ -509,6 +509,32 @@ class ItemsPageTests(CatalogFixture):
         self.assertEqual(self.page(kind="document", sort="label", limit=2)["items"][0]["name"], "file010.txt")  # 跨硬碟的類型頁也能用
         self.assertEqual(self.page(root_id=self.root["id"], sort="不存在")["items"][0]["type"], "folder")  # 不認得的排序當成名稱
 
+    def test_group_by_kind_size_date_and_label(self):
+        from lumilib.catalog import item_groups, set_labels
+
+        g = item_groups(self.conn, "kind", root_id=self.root["id"])  # 最上層：4 個資料夾，檔案是 zip 與照片圖庫套件
+        self.assertEqual((g["folders"], [x["key"] for x in g["groups"]]), (4, ["5:archive", "6:other"]))
+        page = self.page(root_id=self.root["id"], group="kind")
+        self.assertEqual([i["name"] for i in page["items"][4:]], ["備份.zip", "Photos Library.photoslibrary"])
+        sizes = item_groups(self.conn, "size", root_id=self.root["id"], path="很多檔案")
+        self.assertEqual(sizes["groups"], [{"key": "4:tiny", "count": 120}])
+        # 組別的順序和清單的順序一致：把每組數量加起來，剛好對到清單裡每一段的開頭
+        set_labels(self.conn, [i["id"] for i in self.page(root_id=self.root["id"], path="很多檔案", limit=7)["items"]], [], "blue")
+        labels = item_groups(self.conn, "label", root_id=self.root["id"], path="很多檔案")
+        self.assertEqual([(x["key"], x["count"]) for x in labels["groups"]], [("3:blue", 7), ("9:none", 113)])
+        items = self.page(root_id=self.root["id"], path="很多檔案", group="label", sort="size", desc=True, limit=10)["items"]
+        self.assertEqual([i["label"] for i in items[:8]], ["blue"] * 7 + [None])
+        self.assertEqual([i["size"] for i in items[:7]], [7, 6, 5, 4, 3, 2, 1])  # 組內照使用者選的排序
+        self.conn.execute("UPDATE files SET mtime = 1262304000")  # 2010 年
+        self.conn.execute("UPDATE files SET mtime = strftime('%s', 'now') WHERE name = 'file000.txt'")
+        dates = item_groups(self.conn, "mtime", root_id=self.root["id"], path="很多檔案")
+        self.assertEqual(dates["groups"][0], {"key": "0:today", "count": 1})
+        self.assertEqual(dates["groups"][1]["key"].rsplit(":", 1)[1], "2010")
+        self.assertEqual(self.page(root_id=self.root["id"], path="很多檔案", group="mtime", limit=1)["items"][0]["name"], "file000.txt")
+        docs = item_groups(self.conn, "name", kind="document")
+        self.assertEqual(sum(x["count"] for x in docs["groups"]), self.page(kind="document")["total"])
+        self.assertIsNone(item_groups(self.conn, "不存在", root_id=self.root["id"]))
+
     def test_kind_filter_across_drives(self):
         docs = self.page(kind="document", limit=500)
         self.assertEqual(docs["total"], 122)  # 120 個 txt＋原本的 docx、txt

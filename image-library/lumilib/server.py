@@ -1307,7 +1307,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     @app.get("/api/items")
     def items_api(root: int | None = None, path: str = "", kind: str | None = None, label: str | None = None,
-                  offset: int = 0, limit: int = 200, sort: str = "name", desc: bool = False):
+                  offset: int = 0, limit: int = 200, sort: str = "name", desc: bool = False, group: str | None = None):
         """列表與圖像檢視：只回傳要求的那一段與總數。只讀資料庫，硬碟沒接上也能看。"""
         from .catalog import items_page
 
@@ -1315,7 +1315,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             raise HTTPException(400, "請指定要看的資料夾、類型或標籤")
         c = conn()
         try:
-            page = items_page(c, root_id=root, path=path, kind=kind, label=label, offset=offset, limit=limit, sort=sort, desc=desc)
+            page = items_page(c, root_id=root, path=path, kind=kind, label=label, offset=offset, limit=limit, sort=sort, desc=desc, group=group)
             if page is None:
                 raise HTTPException(404, "找不到這個位置")
             return page
@@ -1555,6 +1555,20 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             if kinds is None:
                 raise HTTPException(404, "找不到這個資料夾")
             return {"kinds": kinds}
+        finally:
+            c.close()
+
+    @app.get("/api/items/groups")
+    def items_groups_api(group: str, root: int | None = None, path: str = "", kind: str | None = None, label: str | None = None):
+        """分組的標題與每組的數量（列表與圖像檢視用來畫出每一段的標題）。"""
+        from .catalog import item_groups
+
+        c = conn()
+        try:
+            data = item_groups(c, group, root_id=root, path=path, kind=kind, label=label)
+            if data is None:
+                raise HTTPException(404, "找不到這個位置或分組方式")
+            return data
         finally:
             c.close()
 

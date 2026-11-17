@@ -219,6 +219,44 @@ _FOLDER_ORDER = {
 _ALL_INDEX = {"name": "idx_files_all_name", "size": "idx_files_all_size", "mtime": "idx_files_all_mtime"}
 
 
+# ---- 分組（像 Finder 的「分組方式」）：每個檔案算出一個「組別鍵」，依鍵排序後同組的會連在一起 ----
+# 鍵的格式是「排序用的前綴:名稱」，介面取冒號後面的部分顯示；資料夾一律自成第一組（介面處理）。
+GROUPS = ("kind", "mtime", "created", "added", "size", "name", "label")
+
+
+def _date_group(col: str) -> str:
+    """日期分組：今天、前 7 天、前 30 天，更早的依年份（新的在前）。col 是 Unix 秒數的 SQL 運算式。"""
+    import time as _time
+
+    now = _time.localtime()
+    today = int(_time.mktime((now.tm_year, now.tm_mon, now.tm_mday, 0, 0, 0, 0, 0, -1)))
+    week, month = today - 6 * 86400, today - 29 * 86400
+    # 每一年的起始秒數先算好，用比大小決定年份（比逐筆做日期換算快十倍以上）；1980 年以前才換算
+    years = "".join(f"WHEN {col} >= {int(_time.mktime((y, 1, 1, 0, 0, 0, 0, 0, -1)))} THEN '3:{9999 - y}:{y}' "
+                    for y in range(now.tm_year, 1979, -1))
+    old = f"CAST(strftime('%Y', {col}, 'unixepoch', 'localtime') AS INTEGER)"
+    return (f"CASE WHEN {col} IS NULL THEN '9:unknown' WHEN {col} >= {today} THEN '0:today' WHEN {col} >= {week} THEN '1:week' "
+            f"WHEN {col} >= {month} THEN '2:month' {years}ELSE '3:' || (9999 - {old}) || ':' || {old} END")
+
+
+def _group_expr(group: str | None, a: str = "f") -> str | None:
+    if group not in GROUPS:
+        return None
+    if group == "kind":
+        return (f"CASE {a}.kind WHEN 'video' THEN '1:video' WHEN 'photo' THEN '2:photo' WHEN 'raw' THEN '2:photo' "
+                f"WHEN 'document' THEN '3:document' WHEN 'audio' THEN '4:audio' WHEN 'archive' THEN '5:archive' ELSE '6:other' END")
+    if group == "size":
+        return (f"CASE WHEN {a}.size >= 1000000000 THEN '0:huge' WHEN {a}.size >= 100000000 THEN '1:large' "
+                f"WHEN {a}.size >= 1000000 THEN '2:medium' WHEN {a}.size >= 100000 THEN '3:small' ELSE '4:tiny' END")
+    if group == "name":
+        return f"'0:' || upper(substr({a}.name, 1, 1))"
+    if group == "label":
+        return (f"CASE {a}.label WHEN 'red' THEN '0:red' WHEN 'yellow' THEN '1:yellow' WHEN 'green' THEN '2:green' "
+                f"WHEN 'blue' THEN '3:blue' WHEN 'purple' THEN '4:purple' ELSE '9:none' END")
+    col = {"mtime": f"{a}.mtime", "created": f"{a}.ctime", "added": f"CAST(strftime('%s', {a}.first_seen) AS INTEGER)"}[group]
+    return _date_group(col)
+
+
 def _file_item(r: sqlite3.Row) -> dict:
     folder = r["folder_path"]
     return {"type": "file", "id": r["id"], "name": r["name"], "kind": r["kind"], "size": r["size"], "mtime": r["mtime"],
@@ -233,7 +271,8 @@ def _folder_item(r: sqlite3.Row) -> dict:
 
 
 def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: str = "", kind: str | None = None,
-               label: str | None = None, offset: int = 0, limit: int = 200, sort: str = "name", desc: bool = False) -> dict | None:
+               label: str | None = None, offset: int = 0, limit: int = 200, sort: str = "name", desc: bool = False,
+               group: str | None = None) -> dict | None:
     """一段項目（offset 起 limit 筆）與總數。排序、篩選都交給 SQLite，不把整個資料夾讀進來。
 
     三種範圍：root_id＋path＝一個資料夾的內容（資料夾排前面）；kind＝所有硬碟上這個類型的檔案；
@@ -243,6 +282,9 @@ def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: st
     offset, limit = max(0, int(offset)), max(1, min(PAGE_MAX, int(limit)))
     way = "DESC" if desc else "ASC"
     file_order, folder_order = _FILE_ORDER[sort].format(w=way), _FOLDER_ORDER[sort].format(w=way)
+    grp = _group_expr(group)
+    if grp:  # 先依組別，組內再依使用者選的排序
+        file_order = f"{grp}, {file_order}"
     file_cols = "f.id, f.name, f.kind, f.size, f.mtime, f.root_id, f.image_id, f.label, d.path AS folder_path"
 
     if kind is not None:
@@ -252,10 +294,10 @@ def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: st
         marks = ",".join("?" * len(kinds))
         total = conn.execute(f"SELECT COUNT(*) FROM files WHERE status = 'ok' AND kind IN ({marks})", kinds).fetchone()[0]
         # 沿著「狀態＋排序欄位＋類型」的索引走，邊走邊挑類型：不必先把幾十萬筆排好再取一段
-        index = f"INDEXED BY {_ALL_INDEX[sort]}" if sort in _ALL_INDEX else ""
+        index = f"INDEXED BY {_ALL_INDEX[sort]}" if sort in _ALL_INDEX and not grp else ""
         rows = conn.execute(
-            f"SELECT {file_cols} FROM (SELECT id FROM files {index} WHERE status = 'ok' AND kind IN ({marks}) "
-            f"ORDER BY {file_order.replace('f.', '')} LIMIT ? OFFSET ?) p "
+            f"SELECT {file_cols} FROM (SELECT f.id FROM files AS f {index} WHERE f.status = 'ok' AND f.kind IN ({marks}) "
+            f"ORDER BY {file_order} LIMIT ? OFFSET ?) p "
             "JOIN files f ON f.id = p.id JOIN folders d ON d.id = f.folder_id", (*kinds, limit, offset)).fetchall()
         return {"total": total, "folders": 0, "offset": offset, "items": [_file_item(r) for r in rows]}
 
@@ -431,3 +473,29 @@ def subtree_kinds(conn: sqlite3.Connection, root_id: int, path: str = "") -> lis
             (root_id, path, path + "/", path + "0")).fetchall()  # "0" 是 "/" 的下一個字元
     got = {r["kind"]: (r["n"], r["b"]) for r in rows}
     return [{"kind": k, "files": got[k][0], "bytes": got[k][1]} for k in filetypes.KINDS if k in got]
+
+
+def item_groups(conn: sqlite3.Connection, group: str, *, root_id: int | None = None, path: str = "", kind: str | None = None,
+                label: str | None = None) -> dict | None:
+    """分組的標題與每組幾個檔案（依組別順序）。資料夾自成一組排在最前面，數量另外回傳。"""
+    grp = _group_expr(group)
+    if grp is None:
+        return None
+    if kind is not None:
+        kinds = KIND_GROUPS.get(kind)
+        if not kinds:
+            return None
+        where, args, folders = f"f.status = 'ok' AND f.kind IN ({','.join('?' * len(kinds))})", list(kinds), 0
+    elif label is not None:
+        if label not in LABELS:
+            return None
+        where, args = "f.status = 'ok' AND f.label = ?", [label]
+        folders = conn.execute("SELECT COUNT(*) FROM folders WHERE label = ? AND status = 'ok'", (label,)).fetchone()[0]
+    else:
+        here = conn.execute("SELECT id FROM folders WHERE root_id = ? AND path = ?", (root_id, path.strip("/"))).fetchone()
+        if here is None:
+            return None
+        where, args = "f.folder_id = ? AND f.status = 'ok'", [here["id"]]
+        folders = conn.execute("SELECT COUNT(*) FROM folders WHERE parent_id = ? AND status = 'ok'", (here["id"],)).fetchone()[0]
+    rows = conn.execute(f"SELECT {grp} AS g, COUNT(*) AS n FROM files f WHERE {where} GROUP BY g ORDER BY g", args).fetchall()
+    return {"folders": folders, "groups": [{"key": r["g"], "count": r["n"]} for r in rows]}

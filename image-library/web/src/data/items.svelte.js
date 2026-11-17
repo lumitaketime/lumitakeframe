@@ -10,7 +10,7 @@ const PAGE = 200;
 const KEEP_PAGES = 40;
 
 /** scope：{root, path}＝資料夾內容；{kind}＝跨硬碟的類型；{label}＝有這個顏色標籤的項目 */
-export function createItemSource(scope, sort = "name", desc = false) {
+export function createItemSource(scope, sort = "name", desc = false, group = "") {
   const state = $state({ total: null, folders: 0, tick: 0, error: "" });
   const pages = new Map();
   const pending = new Set();
@@ -19,7 +19,7 @@ export function createItemSource(scope, sort = "name", desc = false) {
     if (pages.has(p) || pending.has(p)) return;
     pending.add(p);
     try {
-      const data = await api("/api/items", { params: { ...scope, offset: p * PAGE, limit: PAGE, sort, desc: desc ? "true" : undefined }, quiet: true });
+      const data = await api("/api/items", { params: { ...scope, offset: p * PAGE, limit: PAGE, sort, desc: desc ? "true" : undefined, group: group || undefined }, quiet: true });
       pages.set(p, data.items);
       state.total = data.total;
       state.folders = data.folders;
@@ -69,3 +69,6 @@ export function createStaticSource(items) {
   const state = $state({ total: items.length, folders: items.length, tick: 0, error: "" });
   return { state, get: (i) => (state.tick, items[i]), peek: (i) => items[i], start() {}, retry() {}, touch: () => state.tick++ };
 }
+
+/** 分組：每組幾個（順序和分組後的清單一致） */
+export const loadGroups = (scope, group) => api("/api/items/groups", { params: { ...scope, group }, quiet: true });

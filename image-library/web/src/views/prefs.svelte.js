@@ -32,6 +32,7 @@ export const prefs = $state({
   last: read("view.last", "list"),
   iconSize: Math.min(ICON_MAX, Math.max(ICON_MIN, read("view.iconSize", 112))),
   sort: read("view.sort", "name"),
+  group: read("view.group", "none"), // 分組方式（只用在圖像與列表）
   desc: read("view.desc", false),
   hidden: read("view.hiddenColumns", []), // 不顯示的欄位
   widths: { ...WIDTHS, ...read("view.widths", {}) },
@@ -60,6 +61,13 @@ export function setIconSize(px) {
 }
 /** 工具列「排序方式」選單裡的選項（列表的欄位標題只有其中四種） */
 export const SORTS = ["name", "kind", "mtime", "created", "added", "size", "label"];
+/** 分組方式（像 Finder）：none 是不分組 */
+export const GROUPS = ["none", "kind", "mtime", "created", "added", "size", "name", "label"];
+export function setGroup(key) {
+  if (!GROUPS.includes(key)) return;
+  prefs.group = key;
+  save("view.group", key);
+}
 /** 從選單選排序方式：選同一個不變，換一個時大小與日期預設由大到小、由新到舊 */
 export function chooseSort(key) {
   if (!SORTS.includes(key) || prefs.sort === key) return;
