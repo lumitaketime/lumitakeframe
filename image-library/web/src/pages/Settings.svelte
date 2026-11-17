@@ -197,6 +197,9 @@
           <ListRow title={t("set.scan.onStart")} subtitle={t("set.scan.onStartHint")}>
             {#snippet trailing()}<Toggle checked={!!settings.scan_on_start} aria-label={t("set.scan.onStart")} onchange={(v) => set("scan_on_start", v ? 1 : 0)} />{/snippet}
           </ListRow>
+          <ListRow title={t("set.scan.autoText")} subtitle={t("set.scan.autoTextHint")}>
+            {#snippet trailing()}<Toggle checked={!!settings.auto_extract} aria-label={t("set.scan.autoText")} onchange={(v) => set("auto_extract", v ? 1 : 0)} />{/snippet}
+          </ListRow>
           {#if isMac}
             <ListRow title={t("set.scan.awake")} subtitle={t("set.scan.awakeHint")}>
               {#snippet trailing()}<Toggle checked={!!settings.keep_awake} aria-label={t("set.scan.awake")} onchange={(v) => set("keep_awake", v ? 1 : 0)} />{/snippet}
@@ -206,7 +209,6 @@
       {/if}
       <List header={t("set.scan.manual")} footer={t("set.scan.manualHint")}>
         <ListRow title={t("nav.duplicates")} subtitle={t("set.scan.compare")} icon="duplicate" accessory="disclosure" onclick={() => navigate("/duplicates")} />
-        <ListRow title={t("set.text.read")} subtitle={t("set.scan.readText")} icon="document" accessory="disclosure" onclick={() => go("text")} />
         <ListRow title={t("nav.scanProgress")} subtitle={t("set.scan.log")} icon="clock" accessory="disclosure" onclick={() => navigate("/activity")} />
       </List>
 

@@ -529,6 +529,8 @@ export default {
   "set.text.retry": "再試一次",
   "set.text.cloud": "只在雲端",
   "set.text.cloudHint": "iCloud、Google 雲端硬碟等還沒下載到這台電腦的檔案。Re'memor 不會替你從網路下載；你自己下載後，下次就會讀到。",
+  "set.scan.autoText": "掃描完自動讀取文件文字",
+  "set.scan.autoTextHint": "在背景讀出文件內容（含掃描檔的文字辨識），搜尋才找得到文件裡的字。只讀取，可以隨時停止或拔掉，下次接著讀。",
   "gallery.title": "基礎元件",
   "gallery.intro": "Liquid Glass 設計系統的元件，改寫成 Svelte。這一頁只在開發時使用，用來檢查四個主題。",
   "gallery.theme": "主題",

@@ -191,6 +191,24 @@ class TextIndexTests(CatalogTestCase):
             self.assertEqual((top["kind"], top["state"]), ("extract", "done"))
         self.assertIn("report.docx", self.found("自然科"))
 
+    def test_scan_reads_document_text_automatically(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib.server import create_app
+
+        (self.drive / "新文件.txt").write_text("掃描完就讀得到的海龜", encoding="utf-8")
+        with TestClient(create_app(self.cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8766",
+                        client=("127.0.0.1", 1)) as c:
+            self.assertEqual(c.post("/api/jobs", json={"kind": "scan"}).status_code, 200)
+            for _ in range(400):
+                jobs = c.get("/api/jobs").json()
+                if not jobs["running"] and not jobs["queued"]:
+                    break
+                threading.Event().wait(0.05)
+            kinds = [h["kind"] for h in c.get("/api/activity").json()["history"]]
+        self.assertIn("extract", kinds)  # 掃描完自動接著讀取文字
+        self.assertIn("新文件.txt", self.found("海龜"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -322,6 +322,23 @@ class JobRunner:
                 st = db.stats(conn)
             finally:
                 conn.close()
+            if self.cfg.auto_extract:
+                # 讀取文件文字、文字辨識：掃描完自動接著做（只讀取；排在掃描之後，可以停止，下次接著做）
+                from .ocr import available as ocr_available
+                from .ocr import ocr_plan
+                from .textindex import extract_plan
+
+                conn = db.connect(self.cfg.db_path)
+                try:
+                    todo = extract_plan(conn)["todo"]["files"]
+                    ocr_todo = ocr_plan(conn, self.cfg.ocr_scope)["todo"] if ocr_available() else 0
+                finally:
+                    conn.close()
+                if todo:
+                    self.submit("extract")
+                    message += f"；接著讀取 {todo:,} 份文件的文字"
+                if (todo or ocr_todo) and ocr_available() and self.cfg.ocr_scope != "off":
+                    self.submit("ocr")
             if st["faces_pending"] and self._faces_ready("auto"):
                 self.submit("faces")
             if st["images"] > st["clip_done"] and self._clip_ready("auto"):

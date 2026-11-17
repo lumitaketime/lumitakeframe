@@ -529,6 +529,8 @@ export default {
   "set.text.retry": "Try Again",
   "set.text.cloud": "Cloud only",
   "set.text.cloudHint": "Files in iCloud, Google Drive and similar that aren't downloaded to this Mac. Re'memor won't download them for you; once you do, they'll be read next time.",
+  "set.scan.autoText": "Read document text after scanning",
+  "set.scan.autoTextHint": "Reads document contents in the background (including text recognition for scans) so search finds words inside them. Read-only; stop or unplug anytime and it continues later.",
   "gallery.title": "Base Components",
   "gallery.intro": "The Liquid Glass design system's components, rewritten in Svelte. This page is for development only, to check the four themes.",
   "gallery.theme": "Theme",
