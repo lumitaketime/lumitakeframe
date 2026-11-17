@@ -184,7 +184,7 @@
 <style>
   .drives { padding: var(--space-4) var(--space-6) var(--space-8); max-width: 1200px; color: var(--label-primary); }
   .top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
-  h1, h2, h3, p { margin: 0; }
+  h2, h3, p { margin: 0; }
   .section { margin: var(--space-5) 0 var(--space-3); color: var(--label-secondary); }
   .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--space-4); }
   .card { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-lg); background: var(--fill-quaternary);
