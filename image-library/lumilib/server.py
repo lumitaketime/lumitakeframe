@@ -36,15 +36,30 @@ from .search import STACK_COUNT_SQL, search, summarize, tag_covers, top_tags
 WEB_DIR = Path(__file__).parent / "web"
 
 
-def build_id() -> str:
-    """這一份程式的建置代號：介面每次重新建置都不一樣（版本號碼不一定會變）。
-    用來分辨「正在執行的 Re'memor」是不是剛更新的這一份。"""
-    import hashlib
+_BUILD: str | None = None
 
-    try:
-        return hashlib.sha1((WEB_DIR / "index.html").read_bytes()).hexdigest()[:12]
-    except OSError:
-        return ""
+
+def build_id() -> str:
+    """這一份程式的建置代號：介面或引擎任何一個檔案改了就不一樣（版本號碼不一定會變）。
+    用來分辨「正在執行的 Re'memor」是不是剛更新的這一份。"""
+    global _BUILD
+    if _BUILD is None:
+        import hashlib
+
+        here = Path(__file__).parent
+        packed = here / "BUILD"  # Mac App 內打包的版本：打包時算好的
+        if packed.is_file():
+            _BUILD = packed.read_text().strip()
+            return _BUILD
+        h = hashlib.sha1()
+        for path in [WEB_DIR / "index.html", *sorted(here.glob("*.py"))]:
+            try:
+                h.update(path.name.encode())
+                h.update(path.read_bytes())
+            except OSError:
+                pass
+        _BUILD = h.hexdigest()[:12]
+    return _BUILD
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
 LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export"}
 SETTING_KEYS = {

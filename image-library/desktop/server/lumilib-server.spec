@@ -1,3 +1,4 @@
+import sys
 # PyInstaller 設定：把 lumilib 與所有相依套件打包成一個資料夾（啟動比單一檔案快）
 # 用法：pyinstaller --noconfirm lumilib-server.spec
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
@@ -18,6 +19,14 @@ for sub in ("web", "web/assets", "web/icons", "data"):
     if os.path.isdir(src):
         datas += [(os.path.join(src, f), os.path.join("lumilib", sub)) for f in os.listdir(src)
                   if os.path.isfile(os.path.join(src, f))]
+# 建置代號：打包後拿不到 .py 原始碼，先算好存成 lumilib/BUILD（和 App 的 REMEMOR_BUILD 一樣）
+sys.path.insert(0, os.path.abspath(os.path.join(SPECPATH, "..", "..")))
+from lumilib.server import build_id  # noqa: E402
+
+_build_file = os.path.join(SPECPATH, "BUILD")
+with open(_build_file, "w") as fh:
+    fh.write(build_id())
+datas += [(_build_file, "lumilib")]
 hiddenimports += collect_submodules("uvicorn") + collect_submodules("lumilib")
 hiddenimports += ["send2trash", "qrcode.image.svg", "numpy"]
 
