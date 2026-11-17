@@ -358,6 +358,29 @@ def cmd_check_search(conn, cfg, args):
         job = (running or {}).get("jobs", {}).get("current")
         if job:
             print(f"7. 背景工作：{job.get('label') or job.get('kind')} 進行中 {job.get('done')}/{job.get('total')}")
+    # 文件文字：讀過多少、還沒讀多少、讀不了多少（依副檔名）
+    try:
+        from .textindex import _exts_sql, extract_plan
+
+        plan = extract_plan(conn)
+        print(f"8. 文件文字：已讀 {plan['done']}、還沒讀 {plan['todo']['files']}（硬碟沒接上 {plan['offline']['files']}）、"
+              f"讀不了 {plan['failed']}、像掃描檔 {plan['needs_ocr']}")
+        rows = conn.execute(
+            f"SELECT lower(f.ext) AS e, COUNT(*) AS n, SUM(t.status = 'ok') AS ok, SUM(t.status = 'empty') AS empty, "
+            f"SUM(t.status IN ('error', 'unsupported')) AS bad, SUM(t.file_id IS NULL) AS unread "
+            f"FROM files f LEFT JOIN file_text t ON t.file_id = f.id WHERE f.status = 'ok' AND lower(f.ext) IN ({_exts_sql()}) "
+            f"GROUP BY e ORDER BY n DESC LIMIT 12").fetchall()
+        for r in rows:
+            print(f"   .{r['e']}：{r['n']} 個；有文字 {r['ok'] or 0}、空白 {r['empty'] or 0}、讀不了 {r['bad'] or 0}、還沒讀 {r['unread'] or 0}")
+        for r in conn.execute("SELECT f.name, t.error FROM file_text t JOIN files f ON f.id = t.file_id "
+                              "WHERE t.status IN ('error', 'unsupported') LIMIT 3"):
+            print(f"   讀不了的例子：{r['name']}（{(r['error'] or '')[:80]}）")
+        others = conn.execute("SELECT lower(ext) AS e, COUNT(*) AS n FROM files WHERE status = 'ok' AND kind = 'document' "
+                              f"AND lower(ext) NOT IN ({_exts_sql()}) GROUP BY e ORDER BY n DESC LIMIT 8").fetchall()
+        if others:
+            print("   還不支援的文件格式：" + "、".join(f".{r['e']} {r['n']} 個" for r in others))
+    except Exception as e:  # noqa: BLE001
+        print(f"8. 文件文字：檢查時出錯 {type(e).__name__}: {e}")
     print("== 檢查完成（只讀取，沒有修改任何東西）")
     return 0
 
