@@ -6,6 +6,7 @@
   import Toasts from "./components/Toasts.svelte";
   import Dialogs from "./components/Dialogs.svelte";
   import Onboarding from "./components/Onboarding.svelte";
+  import AiSetup from "./components/AiSetup.svelte";
   import Timeline from "./pages/Timeline.svelte";
   import Explore from "./pages/Explore.svelte";
   import Search from "./pages/Search.svelte";
@@ -389,7 +390,10 @@
     {/if}
   </div>
 
-  {#if welcome}<Onboarding startStep={route.query.step || ""} />{/if}
+  <!-- 首次使用（三個畫面）；照片的 AI 安裝引導（/welcome?step=ollama）沿用舊的步驟 -->
+  {#if welcome}
+    {#if route.query.step === "ollama" || route.query.step === "model"}<AiSetup startStep={route.query.step} />{:else}<Onboarding />{/if}
+  {/if}
   {#if selection.size}<SelectionBar />{/if}
   {#if viewer.open}<Viewer />{/if}
   <Dialogs />
