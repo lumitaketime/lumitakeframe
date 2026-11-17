@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 22  # v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 23  # v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -214,6 +214,20 @@ CREATE TABLE IF NOT EXISTS delete_marks (
     marked_at TEXT NOT NULL,
     UNIQUE (kind, item_id)
 );
+
+-- v23：文件文字（壓縮存放，用來顯示命中的段落）與全文索引（只存斷好的詞，不另存原文）
+CREATE TABLE IF NOT EXISTS file_text (
+    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL,
+    body BLOB,
+    chars INTEGER NOT NULL DEFAULT 0,
+    size INTEGER NOT NULL,
+    mtime REAL NOT NULL,
+    extracted_at TEXT NOT NULL,
+    error TEXT
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS file_fts USING fts5(tokens, content = '', tokenize = 'unicode61 remove_diacritics 2');
 
 -- v22：背景工作的紀錄。state：queued／running／done／stopped／interrupted／error
 CREATE TABLE IF NOT EXISTS job_log (

@@ -22,7 +22,7 @@ from .media import MediaError
 from .scanner import scan_all
 
 LABELS = {
-    "scan": "掃描", "compare": "比對內容", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
+    "scan": "掃描", "compare": "比對內容", "extract": "讀取文件文字", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
     "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
@@ -87,8 +87,8 @@ class JobRunner:
             t.start()
 
     # ---- 工作紀錄：寫進資料庫，關掉 App 再開仍然看得到；紀錄失敗不影響工作本身 ----
-    LOGGED = ("scan", "index", "compare", "analyze")
-    RESUMABLE = ("scan", "index", "compare")
+    LOGGED = ("scan", "index", "compare", "extract", "analyze")
+    RESUMABLE = ("scan", "index", "compare", "extract")
 
     def _log_sql(self, sql: str, args: tuple = ()) -> int | None:
         try:
@@ -414,6 +414,13 @@ class JobRunner:
                                   progress=lambda done, total, name: upd(done=done, total=total, message=name, unit="bytes"))
                 job["result"] = {"hashed": res.hashed, "interrupted": res.interrupted, "stopped": res.stopped}
                 parts.append(describe_compare(res))
+            if kind == "extract":
+                from .textindex import describe as describe_extract
+                from .textindex import run_extract
+
+                res = run_extract(conn, stop=stop, progress=lambda done, total, name: upd(done=done, total=total, message=name))
+                job["result"] = {"read": res.read, "interrupted": res.interrupted, "stopped": res.stopped}
+                parts.append(describe_extract(res))
             if kind == "cluster":
                 from .faces import recluster
 
