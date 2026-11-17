@@ -110,8 +110,13 @@ _BASE = ("FROM files f JOIN folders d ON d.id = f.folder_id JOIN roots r ON r.id
          "LEFT JOIN drives v ON v.id = r.drive_id")
 # 找檔名時固定「一個資料夾一個資料夾掃」（CROSS JOIN 讓 SQLite 照這個順序），讀硬碟上的資料庫最連續；
 # 讓 SQLite 自己挑的話，有時會改成依修改日期逐筆跳著讀資料夾，一百萬個檔案要多花好幾倍時間
-_SCAN = ("FROM folders d CROSS JOIN files f ON f.folder_id = d.id JOIN roots r ON r.id = f.root_id "
-         "LEFT JOIN drives v ON v.id = r.drive_id")
+# INDEXED BY：資料庫對自己大小的估計過時的時候，SQLite 曾經改成「每個資料夾都把整個來源的檔案掃一遍」，
+# 一次搜尋要幾十分鐘。這裡固定用「資料夾→裡面的檔案」的索引，不管估計準不準都一樣快。
+_SCAN = ("FROM folders d CROSS JOIN files f INDEXED BY idx_files_folder_name ON f.folder_id = d.id "
+         "JOIN roots r ON r.id = f.root_id LEFT JOIN drives v ON v.id = r.drive_id")
+# 已經知道是哪些檔案（全文索引、照片索引找到的）：直接依編號取檔案，不用其他索引
+_BY_ID = ("CROSS JOIN files f NOT INDEXED ON f.id = m.rowid JOIN folders d ON d.id = f.folder_id "
+          "JOIN roots r ON r.id = f.root_id LEFT JOIN drives v ON v.id = r.drive_id")
 _COLS = "f.id, f.name, f.kind, f.size, f.mtime, f.root_id, f.image_id, f.label, d.path AS folder_path"
 
 
@@ -160,8 +165,8 @@ def _hits(conn: sqlite3.Connection, query: Query, root, path, kind, year, size, 
         match = _text_query(terms)
         if match:
             rows = conn.execute(
-                f"SELECT f.id, t.source {_BASE} JOIN file_text t ON t.file_id = f.id JOIN "
-                f"(SELECT rowid, rank FROM file_fts WHERE file_fts MATCH ? ORDER BY rank LIMIT {MAX_HITS * 3}) m ON m.rowid = f.id "
+                f"SELECT f.id, t.source FROM (SELECT rowid, rank FROM file_fts WHERE file_fts MATCH ? ORDER BY rank LIMIT {MAX_HITS * 3}) m "
+                f"{_BY_ID} JOIN file_text t ON t.file_id = f.id "
                 f"WHERE {where} AND t.size = f.size AND t.mtime = f.mtime ORDER BY m.rank LIMIT {MAX_HITS}", [match] + args).fetchall()
             for r in rows:
                 add([r[0]], "ocr" if r[1] == "ocr" else "text")
@@ -172,10 +177,14 @@ def _hits(conn: sqlite3.Connection, query: Query, root, path, kind, year, size, 
             for chunk in range(0, len(images), 500):
                 part = images[chunk:chunk + 500]
                 add([r[0] for r in conn.execute(
-                    f"SELECT f.id {_BASE} WHERE f.image_id IN ({','.join('?' * len(part))}) AND {where} LIMIT {MAX_HITS}", part + args)], "photo")
+                    f"SELECT f.id FROM files f INDEXED BY idx_files_image JOIN folders d ON d.id = f.folder_id JOIN roots r ON r.id = f.root_id "
+                    f"LEFT JOIN drives v ON v.id = r.drive_id WHERE f.image_id IN ({','.join('?' * len(part))}) AND {where} LIMIT {MAX_HITS}",
+                    part + args)], "photo")
     else:
         # 只有篩選條件、沒有關鍵字：列出符合篩選的檔案（最近修改的在前）
-        add([r[0] for r in conn.execute(f"SELECT f.id {_BASE} WHERE {where} ORDER BY f.mtime DESC LIMIT {MAX_HITS}", args)], "filter")
+        add([r[0] for r in conn.execute(
+            f"SELECT f.id FROM files f INDEXED BY idx_files_all_mtime JOIN folders d ON d.id = f.folder_id JOIN roots r ON r.id = f.root_id "
+            f"LEFT JOIN drives v ON v.id = r.drive_id WHERE {where} ORDER BY f.mtime DESC LIMIT {MAX_HITS}", args)], "filter")
     return order
 
 
@@ -196,7 +205,9 @@ def find(conn: sqlite3.Connection, q: str, *, root: int | None = None, path: str
 
     page = order[offset:offset + limit]
     rows = {r["id"]: r for r in conn.execute(
-        f"SELECT {_COLS}, r.name AS root_name, COALESCE(v.name, r.name) AS drive_name {_BASE} WHERE f.id IN ({','.join('?' * len(page))})",
+        f"SELECT {_COLS}, r.name AS root_name, COALESCE(v.name, r.name) AS drive_name FROM files f NOT INDEXED "
+        f"JOIN folders d ON d.id = f.folder_id JOIN roots r ON r.id = f.root_id LEFT JOIN drives v ON v.id = r.drive_id "
+        f"WHERE f.id IN ({','.join('?' * len(page))})",
         [i for i, _ in page])} if page else {}
     items = []
     for fid, why in page:

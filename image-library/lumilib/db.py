@@ -542,6 +542,14 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     return conn
 
 
+def refresh_stats(conn: sqlite3.Connection) -> None:
+    """更新資料庫對自己大小的估計（SQLite 用它決定查詢要走哪條路）。
+    估計過時的時候，SQLite 可能挑到很慢的路（例如搜尋要幾十分鐘）。只取樣，一百萬個檔案約一秒。"""
+    conn.execute("PRAGMA analysis_limit = 400")
+    conn.execute("ANALYZE")
+    conn.commit()
+
+
 def json_list(value) -> list[str]:
     if not value:
         return []

@@ -114,6 +114,26 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         conn.close()
         state["jobs"] = JobRunner(cfg, client_factory)
         state["jobs"].on_finish.append(lambda _job: app.state.clear_memo())
+
+        # 開機時與掃描、讀取文字之後，在背景更新資料庫的估計，查詢才不會走到很慢的路
+        def refresh_stats(job=None):
+            if job is not None and job.get("kind") not in ("scan", "index", "extract", "ocr", "compare"):
+                return
+
+            def run():
+                try:
+                    c = db.connect(cfg.db_path)
+                    try:
+                        db.refresh_stats(c)
+                    finally:
+                        c.close()
+                except sqlite3.Error:
+                    pass  # 資料庫正忙：下次再更新
+
+            threading.Thread(target=run, daemon=True).start()
+
+        state["jobs"].on_finish.append(refresh_stats)
+        refresh_stats()
         if start_jobs_on_boot and cfg.scan_on_start and has_roots:
             state["jobs"].submit("scan")
         app.state.schedule_warm(4.0)  # 開機後在背景先把探索、整理工具等統計算好

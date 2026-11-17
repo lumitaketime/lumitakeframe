@@ -77,6 +77,23 @@ class FindTests(CatalogTestCase):
         find.delete_smart_folder(self.conn, fid)
         self.assertEqual(find.smart_folders(self.conn), [])
 
+    def test_stale_statistics_cannot_make_search_slow(self):
+        # 估計過時（好像目錄還很小時算的）：SQLite 曾經改走「每個資料夾都掃整個來源」的路，一次搜尋幾十分鐘
+        self.conn.execute("ANALYZE")
+        self.conn.execute("DELETE FROM sqlite_stat1 WHERE tbl IN ('files', 'folders')")
+        self.conn.executemany("INSERT INTO sqlite_stat1 VALUES (?, ?, ?)", [
+            ("files", "idx_files_folder_name", "50 50 50 1"), ("files", "idx_files_root_kind", "50 2 2 2 1"), ("folders", None, "5")])
+        self.conn.commit()
+        self.conn.execute("ANALYZE sqlite_schema")  # 讓 SQLite 重新讀入上面的估計
+        where, args = find._filters(find.parse("寄居蟹"), self.ra["id"], "", None, None, None, None)
+        plan = " | ".join(r[3] for r in self.conn.execute(
+            f"EXPLAIN QUERY PLAN SELECT f.id {find._SCAN} WHERE {where} AND f.name LIKE '%a%'", args))
+        self.assertIn("idx_files_folder_name", plan)
+        self.assertNotIn("idx_files_root_kind", plan)
+        self.assertIn("期末.pdf", self.names("寄居蟹", root=self.ra["id"]))
+        db.refresh_stats(self.conn)  # 背景更新後估計恢復正常
+        self.assertNotEqual(self.conn.execute("SELECT stat FROM sqlite_stat1 WHERE idx = 'idx_files_root_kind'").fetchone()[0], "50 2 2 2 1")
+
     def test_api(self):
         from fastapi.testclient import TestClient
 
