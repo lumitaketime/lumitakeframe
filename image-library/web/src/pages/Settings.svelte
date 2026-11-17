@@ -6,7 +6,8 @@
    */
   import { Alert, Button, Checkbox, Icon, List, ListRow, PopUpButton, ProgressIndicator, RadioGroup, SegmentedControl, Toggle } from "../ui/index.js";
   import PhotoSettings from "./PhotoSettings.svelte";
-  import { loadSettings, saveSetting, loadStorage, revealCatalog, resetText } from "../data/settings.js";
+  import CatalogLocation from "../views/CatalogLocation.svelte";
+  import { loadSettings, saveSetting, loadStorage, resetText } from "../data/settings.js";
   import { loadTextStatus, startExtract, startOcr, stopJob } from "../data/find.svelte.js";
   import { setFrame } from "../shell/frame.svelte.js";
   import { t, i18n, LOCALES, setLocale, formatNumber, formatBytes, formatDuration } from "../i18n/index.svelte.js";
@@ -164,11 +165,7 @@
       {/if}
 
     {:else if shown === "catalog"}
-      <List header={t("set.catalog.where")} footer={t("set.catalog.whereHint")}>
-        <ListRow title={t("set.catalog.folder")} subtitle={storage?.home || app.server?.home || ""}>
-          {#snippet trailing()}{#if local}<Button size="small" variant="bordered" onclick={() => revealCatalog().catch((e) => toast(e.message, "error"))}>{t("menu.reveal")}</Button>{/if}{/snippet}
-        </ListRow>
-      </List>
+      <CatalogLocation showSize={false} />
       <List header={t("set.catalog.size")} footer={t("set.catalog.sizeHint")}>
         {#if storage}
           <ListRow title={t("set.catalog.db")} subtitle={t("set.catalog.dbHint")} detail={formatBytes(storage.database.bytes)} />

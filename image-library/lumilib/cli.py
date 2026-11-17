@@ -474,7 +474,20 @@ def main(argv: list[str] | None = None) -> int:
     overrides = {"vision_model": args.vision_model, "ollama_url": args.ollama_url}
     if args.command == "config":
         overrides = {}  # 寫入設定時不要把一次性參數存進去
-    cfg = load_config(args.home, **overrides)
+    from .location import CatalogUnavailable
+
+    try:
+        cfg = load_config(args.home, **overrides)
+    except CatalogUnavailable as err:
+        # 目錄放在沒接上的磁碟：開啟介面時顯示說明頁，其他指令直接說明後結束（不另開空的目錄）
+        if args.command == "serve":
+            from .config import DEFAULTS
+            from .server import serve_unavailable
+
+            serve_unavailable(err, args.port or DEFAULTS["port"], args.open)
+            return 0
+        print(str(err))
+        return 1
     conn = db.connect(cfg.db_path)
     try:
         return args.func(conn, cfg, args)

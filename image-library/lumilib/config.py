@@ -189,10 +189,11 @@ class Config:
 
 
 def default_home() -> Path:
-    env = os.environ.get(ENV_PREFIX + "HOME")
-    if env:
-        return Path(env).expanduser()
-    return Path.home() / ".rememor"
+    """目錄現在的位置：起點（REMEMOR_HOME 或 ~/.rememor），搬到其他磁碟後是 location.json 記的位置。
+    那顆磁碟沒接上時丟出 location.CatalogUnavailable。"""
+    from .location import current_home
+
+    return current_home()
 
 
 def _coerce(name: str, value):

@@ -108,12 +108,16 @@ def reveal(path: Path, select: bool = True) -> None:
         subprocess.Popen(["xdg-open", str(path.parent if select else path)])
 
 
-def pick_folder() -> str | None:
-    """在 Mac 上跳出「選擇資料夾」視窗（只在本機使用）。"""
+PICK_PROMPTS = {"add": "選擇要加入的資料夾", "catalog": "選擇要放目錄的位置（建議選常接的磁碟）"}
+
+
+def pick_folder(purpose: str = "add") -> str | None:
+    """在 Mac 上跳出「選擇資料夾」視窗（只在本機使用）。purpose 決定視窗上的說明文字。"""
     if sys.platform != "darwin":
         return None
+    prompt = PICK_PROMPTS.get(purpose, PICK_PROMPTS["add"])
     proc = subprocess.run(
-        ["osascript", "-e", 'POSIX path of (choose folder with prompt "選擇要加入圖庫的資料夾")'],
+        ["osascript", "-e", f'POSIX path of (choose folder with prompt "{prompt}")'],
         capture_output=True, text=True, timeout=600,
     )
     path = proc.stdout.strip()

@@ -26,6 +26,7 @@ LABELS = {
     "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
+    "move_catalog": "搬移目錄",
 }
 LANES = {"analyze": "ai", "embed": "ai", "pull": "download", "face_model": "download", "clip_model": "download"}
 QUEUED_LANES = ("main", "ai")
@@ -414,6 +415,19 @@ class JobRunner:
                                   progress=lambda done, total, name: upd(done=done, total=total, message=name, unit="bytes"))
                 job["result"] = {"hashed": res.hashed, "interrupted": res.interrupted, "stopped": res.stopped}
                 parts.append(describe_compare(res))
+            if kind == "move_catalog":
+                from pathlib import Path as _Path
+
+                from .location import anchor, describe as describe_move, move_catalog, use_home
+
+                target = _Path(opts["dest"])
+                res = move_catalog(self.cfg.db_path, self.cfg.home, target, stop=stop,
+                                   progress=lambda done, total, name: upd(done=done, total=total, message=name, unit="bytes"))
+                moved = not res.stopped and not res.errors
+                if moved:
+                    use_home(anchor(), target)
+                job["result"] = {"moved": moved, "stopped": res.stopped, "home": str(target)}
+                parts.append(describe_move(res, target, self.cfg.home))
             if kind == "extract":
                 from .textindex import describe as describe_extract
                 from .textindex import run_extract

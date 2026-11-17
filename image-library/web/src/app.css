@@ -298,3 +298,6 @@ body.reordering, body.reordering * { cursor: grabbing !important; user-select: n
 .fav-btn.on { opacity: 1; color: var(--system-yellow); }
 .cover-card:hover .fav-btn, .fav-btn:focus-visible { opacity: 1; }
 @media (hover: none) { .fav-btn { opacity: 1; } }
+
+/* 警示視窗的說明可以分段（\n），很長的路徑可以在任何地方換行 */
+.lg-alert-msg { white-space: pre-line; overflow-wrap: anywhere; }

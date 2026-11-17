@@ -11,6 +11,7 @@ import ipaddress
 import json
 import mimetypes
 import os
+import shutil
 import socket
 import sqlite3
 import sys
@@ -61,7 +62,7 @@ def build_id() -> str:
         _BUILD = h.hexdigest()[:12]
     return _BUILD
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
-LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export"}
+LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/catalog/move", "/api/catalog/location/check", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
@@ -148,6 +149,9 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             threading.Thread(target=run, daemon=True).start()
 
         state["jobs"].on_finish.append(refresh_stats)
+        # 目錄搬好了：重新啟動，改用新位置
+        state["jobs"].on_finish.append(
+            lambda job: job.get("kind") == "move_catalog" and (job.get("result") or {}).get("moved") and app.state.restart_later(2.0))
         refresh_stats()
         if start_jobs_on_boot and cfg.scan_on_start and has_roots:
             state["jobs"].submit("scan")
@@ -2139,7 +2143,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     @app.post("/api/pick-folder")
     def pick(body: dict = Body(default={})):
-        path = fileops.pick_folder()
+        path = fileops.pick_folder(str(body.get("purpose") or "add"))
         return {"path": path}
 
     # ---- 工作 ----
@@ -2265,12 +2269,11 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         threading.Thread(target=later, daemon=True).start()
         return {"ok": True}
 
-    @app.post("/api/restart")
-    def restart(body: dict = Body(default={})):
+    def restart_later(delay: float = 0.6):
         def later():
             import time
 
-            time.sleep(0.6)
+            time.sleep(delay)
             jobs().close()
             exiftool().close()
             if getattr(sys, "frozen", False):  # Mac App 內打包的執行檔
@@ -2278,7 +2281,52 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             os.execv(sys.executable, [sys.executable, "-m", "lumilib", *sys.argv[1:]])
 
         threading.Thread(target=later, daemon=True).start()
+
+    app.state.restart_later = restart_later
+
+    @app.post("/api/restart")
+    def restart(body: dict = Body(default={})):
+        restart_later()
         return {"ok": True}
+
+    # ---- 目錄放在哪裡 ----
+    @app.get("/api/catalog/location")
+    def catalog_location():
+        from .location import anchor, folder_size, pointed
+
+        size, files = folder_size(cfg.home)
+        base = anchor()
+        old = base if pointed(base) is not None and (base / "library.db").exists() else None
+        if old is None and base.is_dir():  # 搬回來時收起來的那份
+            stashed = sorted(p for p in base.iterdir() if p.is_dir() and p.name.startswith("舊的目錄 "))
+            old = stashed[-1] if stashed else None
+        return {"home": str(cfg.home), "default": str(base), "moved": pointed(base) is not None, "bytes": size, "files": files,
+                "free": shutil.disk_usage(cfg.home).free, "old_copy": str(old) if old else None}
+
+    def _move_target(path: str):
+        from .location import check_target
+
+        c = conn()
+        try:
+            roots = [r["path"] for r in db.list_roots(c)]
+        finally:
+            c.close()
+        return check_target(path, cfg.home, roots)
+
+    @app.post("/api/catalog/location/check")
+    def catalog_check(body: dict = Body(...)):
+        target, error = _move_target(str(body.get("path") or ""))
+        return {"target": str(target) if target else None, "error": error}
+
+    @app.post("/api/catalog/move")
+    def catalog_move(body: dict = Body(...)):
+        """把目錄搬到另一個位置（複製、確認完整後才改用；原本那份不刪除）。搬好後自動重新啟動。"""
+        if jobs().snapshot()["active"]:
+            raise HTTPException(409, "有工作正在進行。請等它完成或停止後再搬移目錄。")
+        target, error = _move_target(str(body.get("path") or ""))
+        if error:
+            raise HTTPException(400, error)
+        return jobs().submit("move_catalog", dest=str(target))
 
     # ---- 前端（PWA） ----
     @app.get("/{full_path:path}")
@@ -2405,3 +2453,106 @@ def _take_port(port: int, url: str, open_browser: bool) -> bool:
               "或關閉另一個正在執行 Re'memor 的終端機視窗，再執行一次這個指令。")
         return False
     return True
+
+
+_UNAVAILABLE_PAGE = """<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Re'memor</title><style>
+:root { color-scheme: light dark; --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --sub: #6e6e73; --accent: #0071e3; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --card: #2c2c2e; --text: #f5f5f7; --sub: #a1a1a6; --accent: #0a84ff; } }
+body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang TC", sans-serif; }
+main { max-width: 460px; margin: 24px; padding: 28px; border-radius: 16px; background: var(--card); text-align: center; }
+h1 { font-size: 20px; margin: 12px 0 8px; } p { color: var(--sub); margin: 0 0 12px; } code { word-break: break-all; color: var(--text); }
+button { font: inherit; border: 0; border-radius: 999px; padding: 8px 18px; margin: 6px; cursor: pointer; }
+.main { background: var(--accent); color: #fff; } .alt { background: transparent; color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+#msg { min-height: 1.5em; }
+</style></head><body><main>
+<img src="/icon.png" width="56" height="56" alt="">
+<h1>請接上放目錄的磁碟</h1>
+<p>Re'memor 的目錄放在 <code>__TARGET__</code>，那顆磁碟現在沒有接上。接上後按「再試一次」。</p>
+<p>The catalog is on a disk that isn't connected. Connect it and click Try Again.</p>
+<button class="main" onclick="go('retry')">再試一次</button>
+__LOCAL__
+<p id="msg"></p></main>
+<script>
+async function go(what) {
+  document.getElementById('msg').textContent = '…';
+  const r = await fetch('/api/catalog/' + what, { method: 'POST' }).then((x) => x.json()).catch(() => ({ error: '沒有回應' }));
+  if (r.error) { document.getElementById('msg').textContent = r.error; return; }
+  document.getElementById('msg').textContent = '正在重新開啟…';
+  setTimeout(() => location.replace('/'), 2500);
+}
+</script></body></html>"""
+
+
+def serve_unavailable(err, port: int, open_browser: bool) -> None:
+    """目錄所在的磁碟沒接上：只開一個說明頁，不在空的位置另開新目錄（也不碰任何硬碟）。"""
+    import html
+
+    import uvicorn
+
+    from .location import use_home
+
+    url = f"http://127.0.0.1:{port}/"
+    print(str(err))
+    if not _take_port(port, url, open_browser):
+        return
+    has_local = (err.anchor / "library.db").exists()
+    local_btn = (f'<button class="alt" onclick="go(\'use-local\')">改用這台 Mac 上的舊目錄</button>'
+                 f'<p>（{html.escape(str(err.anchor))} 裡還有搬走前的那份，可能比較舊）</p>') if has_local else ""
+    page = _UNAVAILABLE_PAGE.replace("__TARGET__", html.escape(str(err.target))).replace("__LOCAL__", local_btn)
+    app = FastAPI()
+
+    def restart():
+        def later():
+            time.sleep(0.5)
+            if getattr(sys, "frozen", False):
+                os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
+            os.execv(sys.executable, [sys.executable, "-m", "lumilib", *sys.argv[1:]])
+
+        threading.Thread(target=later, daemon=True).start()
+
+    @app.get("/api/server")
+    def info():
+        return {"version": __version__, "build": build_id(), "unavailable": str(err.target)}
+
+    @app.get("/api/auth/status")
+    def auth_status():
+        return {"authenticated": True, "local": True}
+
+    @app.post("/api/catalog/retry")
+    def retry():
+        if not (err.target / "library.db").exists():
+            return {"error": "還是找不到。請確認磁碟接上了，Finder 裡看得到它。"}
+        restart()
+        return {"ok": True}
+
+    @app.post("/api/catalog/use-local")
+    def use_local():
+        if not has_local:
+            return {"error": "這台 Mac 上沒有舊的目錄。"}
+        use_home(err.anchor, err.anchor)
+        restart()
+        return {"ok": True}
+
+    @app.post("/api/shutdown")
+    def shutdown():
+        import signal
+
+        threading.Thread(target=lambda: (time.sleep(0.3), os.kill(os.getpid(), signal.SIGTERM)), daemon=True).start()
+        return {"ok": True}
+
+    @app.get("/icon.png")
+    def icon():
+        return FileResponse(WEB_DIR / "icon.png")
+
+    @app.get("/{full_path:path}")
+    def page_(full_path: str):
+        return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+
+    if open_browser:
+        import webbrowser
+
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+
