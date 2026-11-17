@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 23  # v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 24  # v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -213,6 +213,15 @@ CREATE TABLE IF NOT EXISTS delete_marks (
     sig TEXT NOT NULL,
     marked_at TEXT NOT NULL,
     UNIQUE (kind, item_id)
+);
+
+-- v24：智慧資料夾：儲存起來的搜尋條件（JSON）
+CREATE TABLE IF NOT EXISTS smart_folders (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    query TEXT NOT NULL,
+    position INTEGER,
+    created_at TEXT NOT NULL
 );
 
 -- v23：文件文字（壓縮存放，用來顯示命中的段落）與全文索引（只存斷好的詞，不另存原文）

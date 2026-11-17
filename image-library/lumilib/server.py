@@ -1530,6 +1530,64 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             raise HTTPException(400, str(e)) from e
         return {"ok": True}
 
+    # ---- 搜尋所有硬碟上的檔案（檔名、內容、文字辨識、照片描述）與智慧資料夾 ----
+    @app.get("/api/find")
+    def find_api(q: str = "", root: int | None = None, path: str = "", kind: str | None = None, year: int | None = None,
+                 size: str | None = None, drive: int | None = None, offset: int = 0, limit: int = 50):
+        from .find import find
+
+        c = conn()
+        try:
+            return find(c, q, root=root, path=path, kind=kind or None, year=year, size=size or None, drive=drive,
+                        offset=max(0, offset), limit=max(1, min(200, limit)))
+        finally:
+            c.close()
+
+    @app.get("/api/text/status")
+    def text_status():
+        """還有多少文件要讀、多少要辨識（搜尋頁與設定頁顯示）。"""
+        from .ocr import ocr_plan
+        from .textindex import extract_plan
+
+        c = conn()
+        try:
+            return {"extract": extract_plan(c), "ocr": ocr_plan(c, cfg.ocr_scope)}
+        finally:
+            c.close()
+
+    @app.get("/api/smart-folders")
+    def smart_list():
+        from .find import smart_folders
+
+        c = conn()
+        try:
+            return smart_folders(c)
+        finally:
+            c.close()
+
+    @app.post("/api/smart-folders")
+    def smart_save(body: dict = Body(...)):
+        from .find import save_smart_folder
+
+        c = conn()
+        try:
+            return {"id": save_smart_folder(c, str(body.get("name") or ""), body.get("query") or {})}
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        finally:
+            c.close()
+
+    @app.delete("/api/smart-folders/{folder_id:int}")
+    def smart_delete(folder_id: int):
+        from .find import delete_smart_folder
+
+        c = conn()
+        try:
+            delete_smart_folder(c, folder_id)
+            return {"ok": True}
+        finally:
+            c.close()
+
     @app.get("/api/usage")
     def usage_api(root: int, path: str = ""):
         """佔比圖（方塊圖、環狀圖）：目前層與下一層的大小。只讀資料庫。"""
