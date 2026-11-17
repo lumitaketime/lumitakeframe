@@ -34,8 +34,19 @@ from .models import annotated, machine_info, recommend, same_model
 from .search import STACK_COUNT_SQL, search, summarize, tag_covers, top_tags
 
 WEB_DIR = Path(__file__).parent / "web"
+
+
+def build_id() -> str:
+    """這一份程式的建置代號：介面每次重新建置都不一樣（版本號碼不一定會變）。
+    用來分辨「正在執行的 Re'memor」是不是剛更新的這一份。"""
+    import hashlib
+
+    try:
+        return hashlib.sha1((WEB_DIR / "index.html").read_bytes()).hexdigest()[:12]
+    except OSError:
+        return ""
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
-LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export"}
+LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
@@ -268,6 +279,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             roots = [_root_dict(c, r) for r in db.list_roots(c)]
             return {
                 "version": __version__,
+                "build": build_id(),
                 "stats": db.stats(c),
                 "roots": roots,
                 "jobs": jobs().snapshot(),
@@ -2205,6 +2217,19 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         webbrowser.open(url)
         return {"ok": True}
 
+    @app.post("/api/shutdown")
+    def shutdown(body: dict = Body(default={})):
+        """結束這個 Re'memor（只接受這台電腦自己的請求）：更新後啟動新版時，請舊版讓出連接埠。
+        背景工作會先停下並記錄，下次可以接著做。"""
+        import signal
+
+        def later():
+            time.sleep(0.3)
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        threading.Thread(target=later, daemon=True).start()
+        return {"ok": True}
+
     @app.post("/api/restart")
     def restart(body: dict = Body(default={})):
         def later():
@@ -2248,8 +2273,10 @@ def serve(cfg: Config, host: str | None = None, port: int | None = None, open_br
     if host != "127.0.0.1" and not Auth(cfg.auth_file).has_password:
         print("尚未設定手機連線密碼，改為只允許本機。請在設定頁設定密碼。")
         host = "127.0.0.1"
-    app = create_app(cfg, bound_host=host)
     url = f"http://127.0.0.1:{port}/"
+    if not _take_port(port, url, open_browser):
+        return
+    app = create_app(cfg, bound_host=host)
     print(f"Re'memor：{url}（按 Ctrl+C 結束）")
     if host != "127.0.0.1":
         for u in lan_addresses(port):
@@ -2265,3 +2292,81 @@ def serve(cfg: Config, host: str | None = None, port: int | None = None, open_br
 
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def _running(port: int) -> dict | None:
+    """這個連接埠上正在執行的 Re'memor（回傳它的版本資訊）；沒有東西或不是 Re'memor 回傳 None。"""
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/server", timeout=2) as r:
+            data = json.loads(r.read().decode("utf-8"))
+            return data if isinstance(data, dict) and "version" in data else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _port_busy(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _stop_other(port: int) -> None:
+    """請舊的 Re'memor 結束：新版有「結束」的請求；更舊的版本在 Mac 上找出程序後請它結束。"""
+    import signal
+    import subprocess
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/shutdown", data=b"{}", method="POST",
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=2).close()
+        return
+    except Exception:  # noqa: BLE001
+        pass
+    if sys.platform != "darwin":
+        return
+    try:
+        pids = subprocess.run(["/usr/sbin/lsof", "-nP", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"],
+                              capture_output=True, text=True, timeout=5).stdout.split()
+    except (OSError, subprocess.SubprocessError):
+        return
+    for pid in pids:
+        try:
+            cmd = subprocess.run(["/bin/ps", "-p", pid, "-o", "command="], capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if "lumilib" in cmd or "rememor" in cmd.lower():
+            try:
+                os.kill(int(pid), signal.SIGTERM)
+            except (OSError, ValueError):
+                pass
+
+
+def _take_port(port: int, url: str, open_browser: bool) -> bool:
+    """啟動前先看看連接埠：已經有同一份 Re'memor 在跑就直接打開它；是舊的就請它讓位，改用這一份。
+    回傳 True＝可以啟動。"""
+    if not _port_busy(port):
+        return True
+    other = _running(port)
+    if other is None:
+        print(f"連接埠 {port} 被其他程式佔用，Re'memor 無法啟動。請關閉那個程式後再試一次。")
+        return False
+    if other.get("build") and other.get("build") == build_id():
+        print(f"Re'memor 已經在執行（同一個版本），直接打開：{url}")
+        if open_browser:
+            import webbrowser
+
+            webbrowser.open(url)
+        return False
+    print("發現另一個舊版的 Re'memor 正在執行（可能是之前開的 App 或終端機視窗），正在關閉它，改用剛更新的這一版…")
+    _stop_other(port)
+    deadline = time.monotonic() + 15
+    while _port_busy(port) and time.monotonic() < deadline:
+        time.sleep(0.3)
+    if _port_busy(port):
+        print("無法自動關閉舊版。請先結束 Re'memor App（選單列的 Re'memor 圖示 → 結束），"
+              "或關閉另一個正在執行 Re'memor 的終端機視窗，再執行一次這個指令。")
+        return False
+    return True

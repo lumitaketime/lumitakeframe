@@ -46,13 +46,55 @@ fn server_alive() -> bool {
     http_get("/api/auth/status").map(|b| b.contains("\"authenticated\"")).unwrap_or(false)
 }
 
-/// 正在執行的 Re'memor 版本（舊版沒有回報版本時視為未知）
-fn running_version() -> Option<String> {
+/// 從 /api/server 的回應取出某個欄位的字串值
+fn server_field(key: &str) -> Option<String> {
     let body = http_get("/api/server")?;
-    let key = "\"version\":\"";
-    let start = body.find(key)? + key.len();
+    let key = format!("\"{key}\":\"");
+    let start = body.find(&key)? + key.len();
     let end = body[start..].find('"')? + start;
     Some(body[start..end].to_string())
+}
+
+/// 正在執行的 Re'memor 版本（舊版沒有回報版本時視為未知）
+fn running_version() -> Option<String> {
+    server_field("version")
+}
+
+/// App 內建的這一份 Re'memor 的建置代號（建置 App 時由 REMEMOR_BUILD 帶入；沒有時只比對版本號碼）
+const APP_BUILD: Option<&str> = option_env!("REMEMOR_BUILD");
+
+/// 正在執行的 Re'memor 是不是 App 內建的這一份：版本號碼相同不夠，介面重新建置過也要換
+fn running_is_ours() -> bool {
+    let version = running_version().unwrap_or_default();
+    if version != APP_VERSION {
+        return false;
+    }
+    match APP_BUILD {
+        Some(build) if !build.is_empty() => server_field("build").as_deref() == Some(build),
+        _ => true,
+    }
+}
+
+/// 請正在執行的 Re'memor 自己結束（新版才有這個請求；舊版會回 404，改用找程序的方式）
+fn ask_server_to_quit() -> bool {
+    let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(400)) else { return false };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(3000)));
+    let request = format!(
+        "POST /api/shutdown HTTP/1.1\r\nHost: 127.0.0.1:{PORT}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}");
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+    let mut body = String::new();
+    let _ = stream.read_to_string(&mut body);
+    if !body.starts_with("HTTP/1.1 200") {
+        return false;
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while server_alive() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(200));
+    }
+    !server_alive()
 }
 
 /// 找出佔用連接埠的 Re'memor 程序（例如之前用終端機安裝的舊版）並請它結束
@@ -64,8 +106,9 @@ fn stop_other_server() -> bool {
     for pid in String::from_utf8_lossy(&out.stdout).split_whitespace() {
         let Ok(pid_num) = pid.parse::<i32>() else { continue };
         let cmd = Command::new("/bin/ps").args(["-p", pid, "-o", "command="]).output();
+        // App 內建的伺服器（lumilib-server）或用終端機啟動的（rememor serve）
         let is_library = cmd
-            .map(|o| String::from_utf8_lossy(&o.stdout).contains("lumilib"))
+            .map(|o| { let c = String::from_utf8_lossy(&o.stdout).to_lowercase(); c.contains("lumilib") || c.contains("rememor") })
             .unwrap_or(false);
         if is_library {
             unsafe {
@@ -313,12 +356,13 @@ fn main() {
                 let mut need_start = !server_alive();
                 if !need_start {
                     // 已有圖庫服務：版本不同（例如之前用終端機安裝的舊版）就換成 App 內建的新版
+                    // （版本號碼相同但建置不同，例如更新後舊的還在跑，也一樣換掉）
                     let version = running_version().unwrap_or_default();
-                    if version != APP_VERSION {
+                    if !running_is_ours() {
                         thread::sleep(Duration::from_millis(400));
                         set_message(&starter, &format!("正在關閉舊版圖庫服務（{}），改用 {}…",
                             if version.is_empty() { "版本不明" } else { &version }, APP_VERSION));
-                        if stop_other_server() {
+                        if ask_server_to_quit() || stop_other_server() {
                             need_start = true;
                         } else {
                             show_error(&starter, &format!(
