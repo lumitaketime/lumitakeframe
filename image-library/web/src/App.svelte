@@ -11,6 +11,7 @@
   import Explore from "./pages/Explore.svelte";
   import Search from "./pages/Search.svelte";
   import Find from "./pages/Find.svelte";
+  import Assistant from "./pages/Assistant.svelte";
   import Browse from "./pages/Browse.svelte";
   import Drives from "./pages/Drives.svelte";
   import Albums from "./pages/Albums.svelte";
@@ -83,7 +84,7 @@
           : page === "activity" ? t("nav.scanProgress")
           : page === "drives" ? t("nav.drives")
           : page === "settings" ? t("nav.settings")
-            : page === "search" || page === "find" ? t("nav.search") : "");
+            : page === "search" || page === "find" ? t("nav.search") : page === "assistant" ? t("nav.assistant") : "");
 
   // 側邊欄寬度：拖曳右邊緣，或聚焦後用左右方向鍵（200–320）
   let dragging = $state(false);
@@ -321,7 +322,7 @@
         <main class="scroll-area" use:touchBounce>
           <div class="load-bar" class:on={app.busy} aria-hidden="true"><span></span></div>
           {#key routeKey}
-            <div class="route" class:fill={page === "folders" || page === "kind" || page === "label" || page === "find"}>
+            <div class="route" class:fill={page === "folders" || page === "kind" || page === "label" || page === "find" || page === "assistant"}>
             {#if page === "" || page === "welcome"}
               <Timeline />
             {:else if page === "favorites"}
@@ -334,6 +335,8 @@
               <Search />
             {:else if page === "find"}
               <Find />
+            {:else if page === "assistant"}
+              <Assistant />
             {:else if page === "folders"}
               <Browse scope={seg[1] ? { type: "folder", root: Number(seg[1]), path: route.query.path || "" } : { type: "roots" }} />
             {:else if page === "label" && seg[1]}

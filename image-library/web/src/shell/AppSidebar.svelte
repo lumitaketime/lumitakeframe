@@ -56,6 +56,7 @@
   const sections = $derived([
     { title: t("nav.library"), items: [
       { value: "files", label: t("nav.allFiles"), icon: "files", href: "/folders" },
+      { value: "assistant", label: t("nav.assistant"), icon: "sparkles", href: "/assistant" },
       { value: "photos", label: t("nav.photos"), icon: "photo", href: "/" },
       { value: "duplicates", label: t("nav.duplicates"), icon: "duplicate", href: "/duplicates" },
       { value: "pending", label: t("nav.pending"), icon: "trash", href: "/pending", badge: catalog.pending ? formatNumber(catalog.pending) : undefined },
@@ -145,6 +146,7 @@
     const fav = app.server?.favorites?.find((f) => f.href === hereKey);
     if (fav) return `fav:${fav.href}`;
     if (page === "find" && route.query.smart) return `smart:${route.query.smart}`;
+    if (page === "assistant") return "assistant";
     if (page === "settings") return "settings";
     if (page === "duplicates") return "duplicates";
     if (page === "pending") return "pending";

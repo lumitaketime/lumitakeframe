@@ -68,7 +68,7 @@ SETTING_KEYS = {
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -1671,6 +1671,46 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             return data
         finally:
             c.close()
+
+    # ---- 檔案管理助理（在這台電腦上執行的語言模型；只查詢、只建議，不改任何檔案） ----
+    @app.get("/api/assistant/status")
+    def assistant_status():
+        from .assistant import status
+
+        return status(client_factory(), cfg.assistant_model)
+
+    @app.get("/api/assistant/suggestions")
+    def assistant_suggestions():
+        from .assistant import suggestions
+
+        c = conn()
+        try:
+            return suggestions(c, cfg.ocr_scope)
+        finally:
+            c.close()
+
+    @app.post("/api/assistant/ask")
+    def assistant_ask(body: dict = Body(...)):
+        """回答一個問題：一行一個 JSON 事件（查詢步驟、逐字的回答、來源）。"""
+        from fastapi.responses import StreamingResponse
+
+        from .assistant import ask
+
+        question = str(body.get("question") or "").strip()[:2000]
+        if not question:
+            raise HTTPException(400, "請輸入問題")
+        history = [m for m in (body.get("history") or []) if isinstance(m, dict)][-8:]
+
+        def events():
+            c = conn()
+            try:
+                for ev in ask(c, client_factory(), cfg.ollama_url, cfg.assistant_model, question, history,
+                              str(body.get("context") or "")[:300], str(body.get("lang") or "zh-Hant")):
+                    yield json.dumps(ev, ensure_ascii=False) + "\n"
+            finally:
+                c.close()
+
+        return StreamingResponse(events(), media_type="application/x-ndjson")
 
     @app.get("/api/usage/tree")
     def usage_tree_api(root: int, path: str = "", px: int = 1_000_000, max_nodes: int = 30_000, depth: int = 64):

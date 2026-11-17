@@ -23,6 +23,9 @@ const EXTRA = {
   "sort-down": '<path d="M7 9.5l5 5 5-5"/>',
   "sort": '<path d="M7.5 5v14M7.5 19l-3.2-3.2M7.5 19l3.2-3.2M16.5 19V5M16.5 5l-3.2 3.2M16.5 5l3.2 3.2"/>',
   "treemap": '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M12.5 4.5v15M12.5 11h8M3.5 13.5h9"/>',
+  "sparkles": '<path d="M10 3.5l1.6 4.4 4.4 1.6-4.4 1.6L10 15.5l-1.6-4.4L4 9.5l4.4-1.6z"/><path d="M17.5 13.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>',
+  "arrow-up": '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  "arrow-down": '<path d="M12 5v14M6 13l6 6 6-6"/>',
 };
 
 export const ICONS = { ...BASE, ...EXTRA };
