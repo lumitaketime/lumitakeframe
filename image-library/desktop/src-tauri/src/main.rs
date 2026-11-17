@@ -293,32 +293,19 @@ fn main() {
                                 }
                             });
                         }
-                        // 覆蓋式標題列：畫面從本機伺服器載入，不能直接用 Tauri 的拖曳功能，
-                        // 所以工具列空白處按下時，網頁前往 lumitake://drag，由這裡開始拖曳視窗；按兩下是 lumitake://zoom
-                        if url.host_str() == Some("drag") {
-                            if let Some(w) = fs_handle.get_webview_window("main") {
-                                let _ = w.start_dragging();
-                            }
-                        }
-                        if url.host_str() == Some("zoom") {
-                            let h = fs_handle.clone();
-                            thread::spawn(move || {
-                                if let Some(w) = h.get_webview_window("main") {
-                                    if w.is_maximized().unwrap_or(false) {
-                                        let _ = w.unmaximize();
-                                    } else {
-                                        let _ = w.maximize();
-                                    }
-                                }
-                            });
-                        }
                         return false;
                     }
                     true
                 });
             // macOS：紅綠燈按鈕疊在畫面左上角，和工具列同一列（介面手冊「Liquid Glass 使用規則」）
+            // 拖曳視窗：介面在工具列與側邊欄頂端標了 data-tauri-drag-region，由 Tauri 內建的腳本處理
+            // （capabilities/remote-ui.json 允許本機伺服器的頁面使用「拖曳」與「按兩下放大」）。
+            // 紅綠燈放進浮動側邊欄的左上角，垂直置中對齊 52pt 高的工具列。
             #[cfg(target_os = "macos")]
-            let window = window.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
+            let window = window
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .hidden_title(true)
+                .traffic_light_position(tauri::LogicalPosition::new(22.0, 26.0));
             window.build()?;
 
             let starter = handle.clone();

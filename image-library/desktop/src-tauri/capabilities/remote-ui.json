@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "remote-ui",
+  "description": "本機伺服器（127.0.0.1:8766）載入的 Re'memor 介面：只允許拖曳視窗與按兩下放大（覆蓋式標題列需要），沒有其他權限",
+  "windows": ["main"],
+  "remote": { "urls": ["http://127.0.0.1:8766", "http://localhost:8766"] },
+  "permissions": ["core:window:allow-start-dragging", "core:window:allow-internal-toggle-maximize"]
+}

@@ -108,13 +108,6 @@
   const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
   const touchBounce = (node) => (touch ? rubberBand(node) : undefined);
 
-  // Mac App 的覆蓋式標題列：在工具列或側邊欄頂端的空白處按下就拖曳視窗，按兩下放大（由 App 外殼處理）
-  function windowDrag(e) {
-    if (!macOverlayTitleBar || e.button !== 0) return;
-    if (e.target.closest("button, a, input, select, textarea, [role='radiogroup'], [role='combobox'], [role='listbox'], .lg-slider, .panel")) return;
-    location.href = e.detail >= 2 ? "lumitake://zoom" : "lumitake://drag";
-  }
-
   function onKey(e) {
     const typing = e.target.closest?.("input, textarea, select, [contenteditable]");
     const mod = e.metaKey || e.ctrlKey;
@@ -294,7 +287,8 @@
   <div class="frame" class:compact class:resizing={dragging} class:mac-titlebar={macOverlayTitleBar} class:no-side={compact || !frame.sidebar}>
     {#if !compact && frame.sidebar}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="side" transition:slidePanel={{ x: -(frame.sidebarWidth + 16) }} onmousedown={(e) => { if (e.target.closest(".lg-side-top") && !e.target.closest(".brand")) windowDrag(e); }}>
+      <div class="side" transition:slidePanel={{ x: -(frame.sidebarWidth + 16) }}>
+        {#if macOverlayTitleBar}<div class="titledrag" data-tauri-drag-region="deep" aria-hidden="true"></div>{/if}
         <AppSidebar width={frame.sidebarWidth} />
         <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
         <div class="resizer" role="separator" aria-orientation="vertical" aria-label={t("nav.resizeSidebar")} tabindex="0"
@@ -305,8 +299,9 @@
 
     <div class="pane">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="bar" onmousedown={windowDrag}>
-      <AppToolbar {title} {compact} narrowSearch={winW <= 600} place={pf?.browse || ""} {infoOpen} ontoggleinfo={onToggleInfo} />
+      <!-- Mac App：工具列的空白處可以拖曳視窗、按兩下放大（按鈕與輸入框不受影響） -->
+      <div class="bar" data-tauri-drag-region={macOverlayTitleBar ? "deep" : undefined}>
+      <AppToolbar {title} {compact} place={pf?.browse || ""} {infoOpen} ontoggleinfo={onToggleInfo} />
       </div>
       {#if photoPage}<PhotoTabs />{:else if crumbs.length}<PathBar {crumbs} />{/if}
       <div class="body">
@@ -374,6 +369,7 @@
     {#if compact && frame.drawer}
       <button class="scrim" onclick={() => (frame.drawer = false)} aria-label={t("nav.closeMenu")} transition:fade={{ duration: DUR.fast }}></button>
       <div class="drawer" transition:slidePanel={{ x: -320 }}>
+        {#if macOverlayTitleBar}<div class="titledrag" data-tauri-drag-region="deep" aria-hidden="true"></div>{/if}
         <AppSidebar width={Math.min(300, winW - 48)} />
       </div>
     {/if}
@@ -405,8 +401,12 @@
   .resizer:hover, .frame.resizing .resizer { background: var(--fill-secondary); }
 
   /* Mac App：紅綠燈按鈕在左上角（約 70×28）。側邊欄的標誌往下讓位；側邊欄收起時，工具列往右讓位 */
-  .mac-titlebar .side :global(.lg-side-top:first-child) { padding-top: var(--space-6); }
-  .mac-titlebar.no-side .bar { padding-left: 72px; }
+  /* Mac App：紅綠燈在側邊欄左上角（距視窗左 22、垂直置中於 52 高的工具列）。
+     側邊欄頂端留一條可拖曳視窗的空白，標誌放在紅綠燈下面；側邊欄收起時工具列往右讓出紅綠燈的位置 */
+  .titledrag { position: absolute; z-index: 2; left: 0; right: var(--space-2); top: 0; height: 44px; }
+  .mac-titlebar .side :global(.lg-side-top:first-child), .mac-titlebar .drawer :global(.lg-side-top:first-child) { padding-top: 32px; }
+  .mac-titlebar.no-side .bar { padding-left: 84px; }
+  .mac-titlebar.no-side .bar :global(.sb.expanded) { left: 84px; }
   /* 工具列的選單（排序、搜尋建議）要蓋在內容上面 */
   .bar { flex: none; position: relative; z-index: 40; }
   .pane { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--control-bg); }
