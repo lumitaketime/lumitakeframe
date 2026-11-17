@@ -327,19 +327,37 @@ def cmd_check_search(conn, cfg, args):
                         shown += 1
                     if shown >= 3:
                         break
-        try:
-            res = find(conn, word, limit=5)
-            print(f"5. 直接用這份程式搜尋：{res['total']} 筆 " + "、".join(i["name"] for i in res["items"]))
-        except Exception as e:  # noqa: BLE001
-            print(f"5. 直接用這份程式搜尋：出錯 {type(e).__name__}: {e}")
-        if running is not None:
+        import time as _time
+
+        # 和介面一樣：全部硬碟、只在某個資料夾來源、只在命中檔案所在的資料夾
+        scopes = [("所有硬碟", {})]
+        first = conn.execute("SELECT f.root_id, d.path FROM files f JOIN folders d ON d.id = f.folder_id "
+                             "WHERE f.name LIKE ? AND f.status = 'ok' LIMIT 1", (f"%{terms[0]}%",)).fetchone()
+        if first:
+            scopes.append((f"只在來源 {first['root_id']}", {"root": first["root_id"]}))
+            top = (first["path"] or "").split("/")[0]
+            if top:
+                scopes.append((f"只在來源 {first['root_id']} 的「{top}」", {"root": first["root_id"], "path": top}))
+        for label, kw in scopes:
             try:
-                q = urllib.parse.quote(word)
-                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/find?q={q}&limit=5", timeout=30) as r:
-                    res = _json.loads(r.read().decode("utf-8"))
-                print(f"6. 透過正在執行的 Re'memor 搜尋：{res.get('total')} 筆 " + "、".join(i["name"] for i in res.get("items", [])))
+                t0 = _time.perf_counter()
+                res = find(conn, word, limit=5, **kw)
+                print(f"5. 直接搜尋（{label}）：{res['total']} 筆，{_time.perf_counter() - t0:.2f} 秒 " + "、".join(i["name"] for i in res["items"][:3]))
             except Exception as e:  # noqa: BLE001
-                print(f"6. 透過正在執行的 Re'memor 搜尋：出錯 {type(e).__name__}: {e}")
+                print(f"5. 直接搜尋（{label}）：出錯 {type(e).__name__}: {e}")
+            if running is not None:
+                try:
+                    qs = urllib.parse.urlencode({"q": word, "limit": 5, **kw})
+                    t0 = _time.perf_counter()
+                    with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/find?{qs}", timeout=60) as r:
+                        res = _json.loads(r.read().decode("utf-8"))
+                    print(f"6. 透過正在執行的 Re'memor（{label}）：{res.get('total')} 筆，{_time.perf_counter() - t0:.2f} 秒 "
+                          + "、".join(i["name"] for i in res.get("items", [])[:3]))
+                except Exception as e:  # noqa: BLE001
+                    print(f"6. 透過正在執行的 Re'memor（{label}）：出錯 {type(e).__name__}: {e}")
+        job = (running or {}).get("jobs", {}).get("current")
+        if job:
+            print(f"7. 背景工作：{job.get('label') or job.get('kind')} 進行中 {job.get('done')}/{job.get('total')}")
     print("== 檢查完成（只讀取，沒有修改任何東西）")
     return 0
 
