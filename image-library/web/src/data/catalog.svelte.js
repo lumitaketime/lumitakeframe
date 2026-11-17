@@ -9,6 +9,7 @@ export const catalog = $state({
   kinds: [], // 每種類型的檔案數與總大小
   labels: [], // 每個顏色標籤有幾個項目
   pending: 0, // 標記為待刪除的項目數
+  smart: [], // 智慧資料夾（儲存起來的搜尋）
   loaded: false,
   error: "",
 });
@@ -16,8 +17,9 @@ export const catalog = $state({
 let pending = null;
 /** 重新讀取；同時間只會有一個請求 */
 export function loadCatalog() {
-  pending ??= api("/api/drives")
-    .then((data) => {
+  pending ??= Promise.all([api("/api/drives"), api("/api/smart-folders", { quiet: true }).catch(() => [])])
+    .then(([data, smart]) => {
+      catalog.smart = smart;
       catalog.drives = data.drives;
       catalog.kinds = data.kinds;
       catalog.labels = data.labels || [];

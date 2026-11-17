@@ -207,7 +207,8 @@ def extract_plan(conn: sqlite3.Connection) -> dict:
         slot[0] += r["n"]
         slot[1] += r["b"]
     stats = {r["status"]: r["n"] for r in conn.execute(
-        "SELECT t.status, COUNT(*) AS n FROM file_text t JOIN files f ON f.id = t.file_id AND f.status = 'ok' "
+        # 從文件文字這邊數（只讀狀態的索引，不碰壓縮的內文），再對回檔案
+        "SELECT t.status, COUNT(*) AS n FROM file_text t INDEXED BY idx_file_text_state CROSS JOIN files f ON f.id = t.file_id AND f.status = 'ok' "
         "AND t.size = f.size AND t.mtime = f.mtime GROUP BY t.status")}
     return {"todo": {"files": plan["todo"][0], "bytes": plan["todo"][1]}, "offline": {"files": plan["offline"][0], "bytes": plan["offline"][1]},
             "done": stats.get("ok", 0) + stats.get("empty", 0), "failed": stats.get("error", 0) + stats.get("unsupported", 0),

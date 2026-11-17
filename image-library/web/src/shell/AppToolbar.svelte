@@ -6,13 +6,14 @@
   import { Toolbar, SegmentedControl, Slider, PullDownButton } from "../ui/index.js";
   import { prefs, viewFor, viewsFor, setView, setIconSize, chooseSort, setDesc, setGroup, SORTS, GROUPS, ALL_VIEWS, ICON_MIN, ICON_MAX } from "../views/prefs.svelte.js";
   import SearchBox from "../components/SearchBox.svelte";
+  import FindField from "./FindField.svelte";
   import FilterButton from "../components/FilterButton.svelte";
   import { filterUI } from "../lib/filter.svelte.js";
   import { t } from "../i18n/index.svelte.js";
   import { route } from "../lib/router.svelte.js";
   import { frame, toggleSidebar } from "./frame.svelte.js";
 
-  let { title = "", compact = false, place = "", infoOpen = false, ontoggleinfo } = $props();
+  let { title = "", compact = false, place = "", infoOpen = false, photoSearch = false, ontoggleinfo } = $props();
   let searchOpen = $state(false);
 
   // 依工具列實際可用的寬度分段（側邊欄、資訊欄、紅綠燈都會吃掉寬度，所以量工具列本身，不看視窗）：
@@ -90,7 +91,10 @@
     {/if}
   {/snippet}
   {#snippet trailingExtra()}
-    <div class="search" class:narrow={narrowSearch}><SearchBox narrow={narrowSearch} bind:expanded={searchOpen} /></div>
+    <!-- 照片頁沿用照片的搜尋（人物、相簿、關鍵字）；其他頁搜尋所有硬碟上的檔案 -->
+    <div class="search" class:narrow={narrowSearch}>
+      {#if photoSearch}<SearchBox narrow={narrowSearch} bind:expanded={searchOpen} />{:else}<FindField narrow={narrowSearch} bind:expanded={searchOpen} />{/if}
+    </div>
     {#if filterUI.pages && !(searchOpen && narrowSearch)}<FilterButton />{/if}
   {/snippet}
 </Toolbar>

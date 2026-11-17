@@ -3,6 +3,7 @@
    * 警示視窗：需要立刻處理的關鍵資訊，最多三個按鈕。
    * 標題要具體（「要把 128 個項目移到垃圾桶嗎？」），取消一律叫「取消」；按鈕順序自動依規範排列，Escape 等同取消。
    * actions：{label, role: "default" | "cancel" | "destructive", onPress, disabled}
+   * textField：{placeholder, value, onchange, error, secure}；有輸入框時 Enter 等同預設按鈕
    */
   import Button from "./Button.svelte";
   import Checkbox from "./Checkbox.svelte";
@@ -24,12 +25,16 @@
   });
   let card = $state();
   $effect(() => {
-    if (presented && card) (card.querySelector("[data-default]") || card.querySelector("button"))?.focus();
+    // 有輸入框時先讓輸入框取得焦點（例如替智慧資料夾取名字）
+    if (card && (presented || textField)) (card.querySelector("input") || card.querySelector("[data-default]") || card.querySelector("button"))?.focus();
   });
   function onkeydown(e) {
     if (e.key === "Escape") {
       const cancel = list.find((a) => a.role === "cancel");
       if (cancel && !cancel.disabled) { e.preventDefault(); cancel.onPress?.(); }
+    } else if (e.key === "Enter" && textField && e.target.closest?.("input")) {
+      const def = list.find((a) => a.role === "default");
+      if (def && !def.disabled) { e.preventDefault(); def.onPress?.(); }
     }
   }
 </script>
@@ -41,7 +46,8 @@
     {#if platform === "mac" && icon}<div class="lg-alert-icon">{@render icon()}</div>{/if}
     <div id="{id}-t" class="lg-alert-title {platform === 'ios' ? 'ios-headline' : 'mac-headline'}">{title}</div>
     {#if message}<div id="{id}-m" class="lg-alert-msg {platform === 'ios' ? 'ios-footnote' : 'mac-callout'}">{message}</div>{/if}
-    {#if textField}<div class="lg-alert-field"><TextField placeholder={textField.placeholder} secure={textField.secure} clearButton={false} /></div>{/if}
+    {#if textField}<div class="lg-alert-field"><TextField placeholder={textField.placeholder} secure={textField.secure} clearButton={false}
+      value={textField.value ?? ""} onchange={textField.onchange} error={textField.error || ""} /></div>{/if}
     {#if suppression && platform === "mac"}<div class="lg-alert-suppress"><Checkbox label={suppression} /></div>{/if}
     <div class="lg-alert-actions {stacked ? 'lg-stacked' : 'lg-row'}">
       {#each ordered as a, i (i)}

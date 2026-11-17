@@ -8,10 +8,11 @@
   import { t, formatBytes, formatDate, formatNumber } from "../i18n/index.svelte.js";
   import { app } from "../lib/state.svelte.js";
   import { route, navigate } from "../lib/router.svelte.js";
-  import { catalog } from "../data/catalog.svelte.js";
+  import { catalog, loadCatalog } from "../data/catalog.svelte.js";
   import { frame } from "./frame.svelte.js";
   import ContextMenu from "../views/ContextMenu.svelte";
   import { pinFolder, orderPins, DRAG_FOLDER } from "../data/browse.js";
+  import { findHref, deleteSmartFolder } from "../data/find.svelte.js";
   import { toast, refresh } from "../lib/state.svelte.js";
 
   let { width = 240 } = $props();
@@ -66,6 +67,10 @@
       value: `fav:${f.href}`, label: f.name, href: f.href, icon: f.kind === "album" ? "photo" : "folder",
       draggable: f.kind === "folder", droppable: f.kind === "folder", context: f.kind === "folder", fav: f,
     })), note: dropping && !favorites.length ? t("fav.dropHere") : "" }] : []),
+    // 智慧資料夾：儲存起來的搜尋；按一下重新搜尋，按右鍵移除（只移除搜尋，不影響檔案）
+    ...(catalog.smart.length ? [{ title: t("nav.smartFolders"), items: catalog.smart.map((sf) => ({
+      value: `smart:${sf.id}`, label: sf.name, href: findHref(sf.query, sf.id), icon: "magnifyingglass", context: true, smart: sf,
+    })) }] : []),
     ...(catalog.drives.length ? [{ title: t("nav.labels"), items: (catalog.labels.length ? catalog.labels : LABELS.map((label) => ({ label, count: 0 }))).map((l) => ({
       value: `label:${l.label}`, label: t(`label.${l.label}`), dot: `var(--label-${l.label})`, href: `/label/${l.label}`,
       badge: l.count ? formatNumber(l.count) : undefined,
@@ -111,6 +116,16 @@
     e.dataTransfer.effectAllowed = "move";
   }
   function itemMenu(e, it) {
+    if (it.smart) {
+      menu = { x: e.clientX, y: e.clientY, items: [
+        { label: t("smart.remove"), onSelect: () => save(async () => {
+          await deleteSmartFolder(it.smart.id);
+          await loadCatalog();
+          if (route.query.smart === String(it.smart.id)) navigate(findHref(route.query), { replace: true });
+        }, t("smart.removed", { name: it.smart.name })) },
+      ] };
+      return;
+    }
     menu = { x: e.clientX, y: e.clientY, items: [
       { label: t("fav.remove"), onSelect: () => save(() => pinFolder(it.fav.root_id, it.fav.path, false), t("fav.removed", { name: it.fav.name })) },
     ] };
@@ -129,6 +144,7 @@
   const value = $derived.by(() => {
     const fav = app.server?.favorites?.find((f) => f.href === hereKey);
     if (fav) return `fav:${fav.href}`;
+    if (page === "find" && route.query.smart) return `smart:${route.query.smart}`;
     if (page === "settings") return "settings";
     if (page === "duplicates") return "duplicates";
     if (page === "pending") return "pending";

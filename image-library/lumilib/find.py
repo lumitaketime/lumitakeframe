@@ -72,7 +72,8 @@ def _filters(q: Query, root: int | None, path: str, kind: str | None, year: int 
     kind = kind or q.kind
     if kind:
         kinds = KIND_GROUPS.get(kind, (kind,))
-        where.append(f"f.kind IN ({','.join('?' * len(kinds))})")
+        # 「+」：不要用類型的索引（找檔名時依資料夾順序掃描比較快；類型只是順便檢查）
+        where.append(f"+f.kind IN ({','.join('?' * len(kinds))})")
         args += list(kinds)
     if q.ext:
         where.append("lower(f.ext) = ?")
@@ -107,6 +108,10 @@ def _filters(q: Query, root: int | None, path: str, kind: str | None, year: int 
 
 _BASE = ("FROM files f JOIN folders d ON d.id = f.folder_id JOIN roots r ON r.id = f.root_id "
          "LEFT JOIN drives v ON v.id = r.drive_id")
+# 找檔名時固定「一個資料夾一個資料夾掃」（CROSS JOIN 讓 SQLite 照這個順序），讀硬碟上的資料庫最連續；
+# 讓 SQLite 自己挑的話，有時會改成依修改日期逐筆跳著讀資料夾，一百萬個檔案要多花好幾倍時間
+_SCAN = ("FROM folders d CROSS JOIN files f ON f.folder_id = d.id JOIN roots r ON r.id = f.root_id "
+         "LEFT JOIN drives v ON v.id = r.drive_id")
 _COLS = "f.id, f.name, f.kind, f.size, f.mtime, f.root_id, f.image_id, f.label, d.path AS folder_path"
 
 
@@ -124,9 +129,12 @@ def _text_query(terms: list[str]) -> str | None:
     return " AND ".join(parts) if parts else None
 
 
-def find(conn: sqlite3.Connection, q: str, *, root: int | None = None, path: str = "", kind: str | None = None,
-         year: int | None = None, size: str | None = None, drive: int | None = None, offset: int = 0, limit: int = 50) -> dict:
-    query = parse(q)
+CACHE_SECONDS = 30
+_recent: dict[tuple, tuple[float, list]] = {}
+
+
+def _hits(conn: sqlite3.Connection, query: Query, root, path, kind, year, size, drive) -> list[tuple[int, str]]:
+    """所有命中的檔案與命中的地方，依關聯排序（最多每種來源 MAX_HITS 筆）。"""
     where, args = _filters(query, root, path, kind, year, size, drive)
     terms = query.terms
     order: list[tuple[int, str]] = []  # (檔案, 命中的地方)
@@ -139,13 +147,15 @@ def find(conn: sqlite3.Connection, q: str, *, root: int | None = None, path: str
                 order.append((i, why))
 
     if terms:
-        # 1. 檔名（檔名全都符合的排最前面），再來是資料夾路徑
-        name_cond = " AND ".join("f.name LIKE ? ESCAPE '\\'" for _ in terms)
-        add([r[0] for r in conn.execute(f"SELECT f.id {_BASE} WHERE {where} AND {name_cond} ORDER BY length(f.name) LIMIT {MAX_HITS}",
-                                        args + [_like(t) for t in terms])], "name")
-        path_cond = " AND ".join("(f.name LIKE ? ESCAPE '\\' OR d.path LIKE ? ESCAPE '\\')" for _ in terms)
-        add([r[0] for r in conn.execute(f"SELECT f.id {_BASE} WHERE {where} AND {path_cond} LIMIT {MAX_HITS}",
-                                        args + [x for t in terms for x in (_like(t), _like(t))])], "path")
+        # 1. 檔名與資料夾路徑：掃一次，檔名全都符合的排前面（檔名短的優先），其次是資料夾路徑符合的
+        name_all = " AND ".join("f.name LIKE ? ESCAPE '\\'" for _ in terms)
+        any_cond = " AND ".join("(f.name LIKE ? ESCAPE '\\' OR d.path LIKE ? ESCAPE '\\')" for _ in terms)
+        rows = conn.execute(
+            f"SELECT f.id, ({name_all}) AS in_name {_SCAN} WHERE {where} AND {any_cond} "
+            f"ORDER BY in_name DESC, length(f.name) LIMIT {MAX_HITS}",
+            [_like(t) for t in terms] + args + [x for t in terms for x in (_like(t), _like(t))]).fetchall()
+        for r in rows:
+            add([r[0]], "name" if r[1] else "path")
         # 2. 文件內容與文字辨識（依全文索引的關聯度）
         match = _text_query(terms)
         if match:
@@ -155,15 +165,34 @@ def find(conn: sqlite3.Connection, q: str, *, root: int | None = None, path: str
                 f"WHERE {where} AND t.size = f.size AND t.mtime = f.mtime ORDER BY m.rank LIMIT {MAX_HITS}", [match] + args).fetchall()
             for r in rows:
                 add([r[0]], "ocr" if r[1] == "ocr" else "text")
-        # 3. 照片的 AI 描述、關鍵字、人物、地點（照片圖庫原有的索引）
+        # 3. 照片的 AI 描述、關鍵字、人物、地點（照片圖庫原有的索引）：先找出照片，再找對應的檔案
         pmatch = db.fts_query(" ".join(terms)) or _text_query(terms)
         if pmatch:
-            add([r[0] for r in conn.execute(
-                f"SELECT f.id {_BASE} JOIN (SELECT rowid FROM search_fts WHERE search_fts MATCH ? LIMIT {MAX_HITS * 3}) s ON s.rowid = f.image_id "
-                f"WHERE {where} LIMIT {MAX_HITS}", [pmatch] + args)], "photo")
+            images = [r[0] for r in conn.execute(f"SELECT rowid FROM search_fts WHERE search_fts MATCH ? LIMIT {MAX_HITS * 3}", [pmatch])]
+            for chunk in range(0, len(images), 500):
+                part = images[chunk:chunk + 500]
+                add([r[0] for r in conn.execute(
+                    f"SELECT f.id {_BASE} WHERE f.image_id IN ({','.join('?' * len(part))}) AND {where} LIMIT {MAX_HITS}", part + args)], "photo")
     else:
         # 只有篩選條件、沒有關鍵字：列出符合篩選的檔案（最近修改的在前）
         add([r[0] for r in conn.execute(f"SELECT f.id {_BASE} WHERE {where} ORDER BY f.mtime DESC LIMIT {MAX_HITS}", args)], "filter")
+    return order
+
+
+def find(conn: sqlite3.Connection, q: str, *, root: int | None = None, path: str = "", kind: str | None = None,
+         year: int | None = None, size: str | None = None, drive: int | None = None, offset: int = 0, limit: int = 50) -> dict:
+    query = parse(q)
+    terms = query.terms
+    # 第一段一定重新查詢；往下捲動拿後面的段落時，沿用剛剛那一次的結果（30 秒內），不用每段都重查一次
+    key = (conn.execute("PRAGMA database_list").fetchone()[2], q, root, path, kind, year, size, drive)
+    hit = _recent.get(key)
+    if offset > 0 and hit and time.monotonic() - hit[0] < CACHE_SECONDS:
+        order = hit[1]
+    else:
+        order = _hits(conn, query, root, path, kind, year, size, drive)
+        _recent[key] = (time.monotonic(), order)
+        while len(_recent) > 8:
+            _recent.pop(next(iter(_recent)))
 
     page = order[offset:offset + limit]
     rows = {r["id"]: r for r in conn.execute(
@@ -179,6 +208,11 @@ def find(conn: sqlite3.Connection, q: str, *, root: int | None = None, path: str
                     name_parts=textindex.snippet(r["name"], terms, width=10_000) if terms else [{"text": r["name"], "hit": False}])
         if why in ("text", "ocr"):
             item["snippet"] = textindex.snippet(textindex.body(conn, fid), terms)
+        elif why in ("name", "path") and terms:
+            # 檔名或資料夾已經符合，內容裡也有的話一併顯示那一段（沒有就不顯示）
+            parts = textindex.snippet(textindex.body(conn, fid) or "", terms)
+            if any(p["hit"] for p in parts):
+                item["snippet"] = parts
         elif why == "photo" and r["image_id"]:
             img = conn.execute("SELECT description, ocr_text, search_text FROM images WHERE id = ?", (r["image_id"],)).fetchone()
             text = " ".join(x for x in (img["description"], img["ocr_text"]) if x) or img["search_text"] if img else ""

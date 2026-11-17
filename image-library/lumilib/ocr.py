@@ -113,8 +113,11 @@ def _candidates_sql(scope: str) -> str | None:
     exts = ",".join(f"'{e}'" for e in IMAGE_EXT)
     images = f"(f.kind = 'photo' AND lower(f.ext) IN ({exts}) AND {'1' if scope == 'all' else _screenshot_sql()})"
     fresh = "t.size = f.size AND t.mtime = f.mtime"
+    # 兩種來源各自用得到索引：像掃描檔的 PDF（讀文字時標記過）、副檔名是圖片的檔案
     return (f"FROM files f JOIN folders d ON d.id = f.folder_id LEFT JOIN file_text t ON t.file_id = f.id "
             f"LEFT JOIN images i ON i.id = f.image_id WHERE f.status = 'ok' AND ("
+            f"f.id IN (SELECT file_id FROM file_text WHERE status = 'needs_ocr' "
+            f"UNION ALL SELECT id FROM files WHERE status = 'ok' AND lower(ext) IN ({exts}))) AND ("
             f"(t.status = 'needs_ocr' AND {fresh}) OR ({images} AND (t.file_id IS NULL OR NOT ({fresh}))))")
 
 
