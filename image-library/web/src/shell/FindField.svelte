@@ -46,11 +46,26 @@
       navigate(findHref({ ...scopeHere(), q }));
     }
   }
+  // 中文輸入法正在組字（例如「ㄒㄧㄢˋ」）時不搜尋，選好字才搜尋；按 Enter 選字也不算送出
+  let composing = false;
   function onchange(text) {
     clearTimeout(timer);
+    if (composing) return;
     timer = setTimeout(() => go(text), DELAY);
   }
+  function submit(text) {
+    if (!composing) go(text);
+  }
+  function oncompositionstart() {
+    composing = true;
+    clearTimeout(timer);
+  }
+  function oncompositionend() {
+    composing = false;
+    onchange(value);
+  }
   function onkeydown(e) {
+    if (e.isComposing) return;
     if (e.key === "Escape") {
       e.preventDefault();
       if (value) {
@@ -80,8 +95,8 @@
   <Button variant="glass" icon="magnifyingglass" iconOnly aria-label={t("find.field")} onclick={expand} />
 {:else}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="find" class:expanded={narrow && expanded} {onkeydown} {onfocusout}>
-    <SearchField glass bind:value bind:input placeholder={t("find.placeholder")} {onchange} onsubmit={go} width="100%" />
+  <div class="find" class:expanded={narrow && expanded} {onkeydown} {onfocusout} {oncompositionstart} {oncompositionend}>
+    <SearchField glass bind:value bind:input placeholder={t("find.placeholder")} {onchange} onsubmit={submit} width="100%" />
   </div>
 {/if}
 

@@ -7,6 +7,7 @@ import json
 import sys
 import threading
 import time
+from pathlib import Path
 
 from . import __version__, db
 from .analyzer import OllamaClient, OllamaUnavailable, analyze_images, embed_images
@@ -250,6 +251,99 @@ def cmd_password(conn, cfg, args):
     return 0
 
 
+def cmd_check_search(conn, cfg, args):
+    """搜尋找不到東西時的檢查：這份程式、正在執行的 Re'memor、目錄裡有沒有這個檔案、搜尋結果。
+    只讀取，不修改任何東西。把整段結果貼給開發者就能判斷問題在哪。"""
+    import json as _json
+    import subprocess
+    import unicodedata
+    import urllib.parse
+    import urllib.request
+
+    from .find import find
+    from .server import build_id
+
+    word = " ".join(args.word).strip()
+    print(f"== 搜尋檢查：「{word}」")
+    commit = ""
+    try:
+        commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).resolve().parent,
+                                capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    mine = build_id()
+    print(f"1. 這份程式：版本 {__version__}，建置 {mine or '（找不到介面檔）'}，git {commit or '不明'}")
+
+    port = cfg.port
+    running = None
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/server", timeout=3) as r:
+            running = _json.loads(r.read().decode("utf-8"))
+    except Exception as e:  # noqa: BLE001
+        print(f"2. 連接埠 {port}：沒有 Re'memor 在執行（{type(e).__name__}）")
+    if running is not None:
+        same = running.get("build") == mine
+        print(f"2. 正在執行的 Re'memor：版本 {running.get('version')}，建置 {running.get('build') or '（舊版，沒有建置代號）'}"
+              f" → {'和這份程式相同' if same else '和這份程式不同！畫面用的是另一份'}")
+    if sys.platform == "darwin":
+        try:
+            pids = subprocess.run(["/usr/sbin/lsof", "-nP", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"],
+                                  capture_output=True, text=True, timeout=5).stdout.split()
+            for pid in pids:
+                cmd = subprocess.run(["/bin/ps", "-p", pid, "-o", "command="], capture_output=True, text=True, timeout=5).stdout.strip()
+                print(f"   程序 {pid}：{cmd[:160]}")
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    counts = dict(conn.execute("SELECT status, COUNT(*) FROM files GROUP BY status").fetchall())
+    print(f"3. 目錄：{cfg.db_path}（結構 v{version}），檔案 {counts}")
+    roots = conn.execute("SELECT id, name, path FROM roots").fetchall()
+    print("   資料夾來源：" + "；".join(f"{r['id']} {r['name']}（{r['path']}）" for r in roots))
+
+    if word:
+        terms = word.split()
+        print(f"   查詢文字的字碼：{' '.join(f'U+{ord(ch):04X}' for ch in word[:12])}")
+        for label, form in (("原樣", word), ("NFC", unicodedata.normalize("NFC", word)), ("NFD", unicodedata.normalize("NFD", word))):
+            key = form.split()[0] if form.split() else form
+            rows = conn.execute(
+                "SELECT f.name, f.status, f.root_id, d.path FROM files f JOIN folders d ON d.id = f.folder_id "
+                "WHERE f.name LIKE ? LIMIT 5", (f"%{key}%",)).fetchall()
+            print(f"4. 目錄裡檔名含「{key}」（{label}）：{len(rows)} 筆" + "".join(
+                f"\n   - {r['name']}（狀態 {r['status']}，來源 {r['root_id']}，資料夾 {r['path'] or '最上層'}）" for r in rows))
+        if len(terms) == 1 and len(word) > 2:
+            part = word[: max(2, len(word) // 2)]
+            n = conn.execute("SELECT COUNT(*) FROM files WHERE name LIKE ?", (f"%{part}%",)).fetchone()[0]
+            print(f"   檔名含前半段「{part}」：{n} 筆")
+            # 整個詞找不到時，用兩個字一組找最接近的檔名，並列出字碼（看起來一樣的字，存的可能是不同的字碼）
+            if not conn.execute("SELECT 1 FROM files WHERE name LIKE ? LIMIT 1", (f"%{word}%",)).fetchone():
+                shown = 0
+                for i in range(len(word) - 1):
+                    pair = word[i:i + 2]
+                    if not pair.strip() or pair.isascii():
+                        continue
+                    for r in conn.execute("SELECT name FROM files WHERE name LIKE ? LIMIT 2", (f"%{pair}%",)):
+                        print(f"   相近的檔名（含「{pair}」）：{r['name']}\n     字碼：{' '.join(f'U+{ord(ch):04X}' for ch in r['name'][:16])}")
+                        shown += 1
+                    if shown >= 3:
+                        break
+        try:
+            res = find(conn, word, limit=5)
+            print(f"5. 直接用這份程式搜尋：{res['total']} 筆 " + "、".join(i["name"] for i in res["items"]))
+        except Exception as e:  # noqa: BLE001
+            print(f"5. 直接用這份程式搜尋：出錯 {type(e).__name__}: {e}")
+        if running is not None:
+            try:
+                q = urllib.parse.quote(word)
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/find?q={q}&limit=5", timeout=30) as r:
+                    res = _json.loads(r.read().decode("utf-8"))
+                print(f"6. 透過正在執行的 Re'memor 搜尋：{res.get('total')} 筆 " + "、".join(i["name"] for i in res.get("items", [])))
+            except Exception as e:  # noqa: BLE001
+                print(f"6. 透過正在執行的 Re'memor 搜尋：出錯 {type(e).__name__}: {e}")
+    print("== 檢查完成（只讀取，沒有修改任何東西）")
+    return 0
+
+
 def cmd_serve(conn, cfg, args):
     from .server import serve
 
@@ -333,6 +427,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("password", help="設定手機／平板連線密碼")
     s.set_defaults(func=cmd_password)
+
+    s = sub.add_parser("check-search", help="搜尋找不到東西時的檢查（只讀取）")
+    s.add_argument("word", nargs="*", help="要找的檔名或文字")
+    s.set_defaults(func=cmd_check_search)
 
     s = sub.add_parser("serve", help="開啟圖庫介面")
     s.add_argument("--host", help="預設 127.0.0.1；開啟手機連線後為 0.0.0.0")

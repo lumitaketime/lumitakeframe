@@ -483,6 +483,8 @@ export default {
   "set.photos.search": "Image Search",
   "set.photos.organize": "Organize & Stacks",
   "set.photos.library": "Appearance & Menu",
+  "set.general.version": "Version",
+  "set.general.versionHint": "The code in parentheses is the build ID. It changes with every update, so you can confirm you're on the latest one.",
   "gallery.title": "Base Components",
   "gallery.intro": "The Liquid Glass design system's components, rewritten in Svelte. This page is for development only, to check the four themes.",
   "gallery.theme": "Theme",

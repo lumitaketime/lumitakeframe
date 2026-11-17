@@ -143,6 +143,7 @@
           {#snippet trailing()}<PopUpButton value={i18n.locale} onchange={setLocale} options={LOCALES.map((l) => ({ value: l.id, label: l.label }))} />{/snippet}
         </ListRow>
         <ListRow title={t("set.general.appearance")} detail={t("set.general.appearanceSystem")} />
+        <ListRow title={t("set.general.version")} subtitle={t("set.general.versionHint")} detail={`${app.server?.version || ""}（${app.server?.build || "—"}）`} />
       </List>
       {#if settings}
         <List header={t("set.general.start")} footer={t("set.general.startHint")}>

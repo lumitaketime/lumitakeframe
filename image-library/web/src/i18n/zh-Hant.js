@@ -483,6 +483,8 @@ export default {
   "set.photos.search": "圖像搜尋",
   "set.photos.organize": "整理與疊放",
   "set.photos.library": "外觀與選單",
+  "set.general.version": "版本",
+  "set.general.versionHint": "括號裡是建置代號；每次更新後都會改變，可以用來確認是不是最新版。",
   "gallery.title": "基礎元件",
   "gallery.intro": "Liquid Glass 設計系統的元件，改寫成 Svelte。這一頁只在開發時使用，用來檢查四個主題。",
   "gallery.theme": "主題",
