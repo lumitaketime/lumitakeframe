@@ -36,6 +36,26 @@ SKIP_DIRS = {
     ".documentrevisions-v100", ".temporaryitems",
 }
 
+# Mac 的使用者「資源庫」（~/Library）是 App 自己的資料（設定、快取、OneDrive／Dropbox 的內部儲存…），不是你的檔案；
+# 只保留裡面放雲端硬碟（CloudStorage）與 iCloud 雲碟（Mobile Documents）的兩個資料夾。
+USER_LIBRARY_KEEP = {"cloudstorage", "mobile documents"}
+
+
+def is_user_library(path: str) -> bool:
+    """這個資料夾是不是某個使用者的 ~/Library（裡面有 Preferences 與 Application Support）。"""
+    return (os.path.basename(path) == "Library" and os.path.isdir(os.path.join(path, "Preferences"))
+            and os.path.isdir(os.path.join(path, "Application Support")))
+
+
+def skip_dir(name: str, parent: str, parent_is_library: bool) -> bool:
+    """掃描時略過的資料夾：系統與垃圾桶資料夾、名稱以 .noindex 結尾的（Apple 的「不要編目」慣例）、
+    以及 ~/Library 裡除了雲端硬碟以外的資料夾。以點開頭的隱藏資料夾在呼叫前就已經略過。"""
+    low = name.lower()
+    if low in SKIP_DIRS or low.endswith(".noindex"):
+        return True
+    return parent_is_library and low not in USER_LIBRARY_KEEP
+
+
 ANALYSIS_FIELDS = (
     "analyzed_at", "model", "description", "tags", "objects", "scene",
     "ocr_text", "error", "embedding", "embed_model",
@@ -68,6 +88,7 @@ class ScanResult:
     files_added: int = 0
     folders: int = 0  # 這次處理了幾個資料夾
     missing: int = 0  # 這次新標成遺失的檔案：照片與影片（搬到同一顆硬碟其他地方的不算）＋其他檔案
+    skipped: int = 0  # 依規則改成不編目、從目錄拿掉的檔案（例如 ~/Library 裡 App 的資料）
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -391,16 +412,20 @@ class _Scan:
             return []  # 讀不到的資料夾：保留原本的紀錄，不判定遺失
 
         dirs, files, packages = [], [], []
+        skipped: set[str] = set()  # 還在硬碟上、但依規則不編目的資料夾
+        in_library = is_user_library(abs_str)
         for e in entries:
             name = e.name
             if name.startswith("."):
                 continue
             try:
                 if e.is_dir(follow_symlinks=False):
-                    low = name.lower()
-                    if low in SKIP_DIRS or (self.exclude and os.path.join(abs_str, name) == self.exclude):
+                    if skip_dir(name, abs_str, in_library) or (self.exclude and os.path.join(abs_str, name) == self.exclude):
+                        skipped.add(name)
                         continue
                     (packages if filetypes.is_package(name) else dirs).append(name)
+                elif in_library:
+                    continue  # ~/Library 最上層的檔案也是 App 的資料
                 elif e.is_file(follow_symlinks=False):
                     files.append(name)
             except OSError:
@@ -465,7 +490,11 @@ class _Scan:
             children.append((cid, child_rel, cgen))
         for name, r in known.items():
             if name not in dirs and r["status"] == "ok":
+                before = self.result.missing
                 self.mark_subtree_missing(f"{rel}/{name}" if rel else name)
+                if name in skipped:  # 不是不見了，是改成不編目（例如 ~/Library）：不算「遺失」
+                    self.result.skipped += self.result.missing - before
+                    self.result.missing = before
 
         conn.execute("UPDATE folders SET scan_gen = ?, mtime = ?, status = 'ok', last_seen = ? WHERE id = ?",
                      (self.gen, dir_mtime, self.now, folder_id))
@@ -655,6 +684,8 @@ def describe(r: ScanResult) -> str:
     if r.moved:
         parts.append(f"搬移 {r.moved:,}")
     parts.append(f"遺失 {r.missing:,}")
+    if r.skipped:
+        parts.append(f"{r.skipped:,} 個 App 資料或雲端內部檔案改成不編目")
     text = f"{r.root}：" + "、".join(parts)
     if r.interrupted:
         text += "；硬碟在掃描中途被拔掉，下次接上會從中斷處繼續"

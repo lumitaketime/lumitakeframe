@@ -182,6 +182,8 @@
       <List header={t("set.catalog.skip")} footer={t("set.catalog.skipHint")}>
         <ListRow title={t("set.catalog.skipHidden")} />
         <ListRow title={t("set.catalog.skipSystem")} subtitle="$RECYCLE.BIN · System Volume Information · .Trashes · .Spotlight-V100 · node_modules" />
+        <ListRow title={t("set.catalog.skipLibrary")} subtitle={t("set.catalog.skipLibraryHint")} />
+        <ListRow title={t("set.catalog.skipNoindex")} subtitle={t("set.catalog.skipNoindexHint")} />
       </List>
       <List>
         <ListRow title={t("set.catalog.drives")} subtitle={t("set.catalog.drivesHint")} icon="external-drive-fill" accessory="disclosure" onclick={() => navigate("/drives")} />

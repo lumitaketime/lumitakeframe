@@ -260,6 +260,16 @@ class ExtractResult:
 SF_DATALESS = 0x40000000  # macOS：檔案只是雲端的佔位，內容還沒下載到這台電腦
 
 
+def _all_zero(path: Path, n: int = 4096) -> bool:
+    """檔案開頭是不是全是 0（雲端還沒下載的內容）。"""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(n)
+        return bool(head) and not head.strip(b"\x00")
+    except OSError:
+        return False
+
+
 def run_extract(conn: sqlite3.Connection, progress=None, stop=None, retry: bool = False) -> ExtractResult:
     """讀出還沒讀的文件文字。progress(done, total, 正在讀的檔案)。可以隨時停止，下次接著做。"""
     result = ExtractResult()
@@ -324,6 +334,12 @@ def run_extract(conn: sqlite3.Connection, progress=None, stop=None, retry: bool 
                 _store(conn, r["id"], r["size"], r["mtime"], "text", "", "error", "無法讀取這個檔案")
                 result.failed += 1
             except Exception as exc:  # noqa: BLE001  壞掉的檔案不能讓整個工作停下來
+                if _all_zero(path):
+                    # 開頭全是 0：雲端硬碟（例如 OneDrive）還沒把內容下載下來，不是檔案壞了
+                    _store(conn, r["id"], r["size"], r["mtime"], "text", "", "cloud", "內容還沒下載到這台電腦")
+                    result.cloud += 1
+                    pending += 1
+                    continue
                 _store(conn, r["id"], r["size"], r["mtime"], "text", "", "error", f"檔案格式有問題：{type(exc).__name__}: {exc}"[:300])
                 result.failed += 1
             pending += 1
