@@ -27,6 +27,15 @@ class FakeClient:
         return self.models
 
 
+class Cfg:
+    assistant_provider = "ollama"
+    assistant_model = "gemma4:e4b"
+    ollama_url = "http://127.0.0.1:11434"
+    assistant_api_url = ""
+    assistant_api_model = ""
+    assistant_api_key = ""
+
+
 class AssistantTests(CatalogTestCase):
     def setUp(self):
         super().setUp()
@@ -47,7 +56,8 @@ class AssistantTests(CatalogTestCase):
             yield {"done": True}
 
         with mock.patch.object(assistant, "_post_stream", fake_stream):
-            events = list(assistant.ask(self.conn, client, "http://127.0.0.1:11434", "gemma4:e4b", question, [], "備份A", "zh-Hant"))
+            llm = assistant.OllamaLLM(client, "http://127.0.0.1:11434", "gemma4:e4b")
+            events = list(assistant.ask(self.conn, llm, question, [], "備份A", "zh-Hant"))
         return events, sent
 
     def test_looks_up_the_catalog_then_answers_with_sources(self):
@@ -85,14 +95,77 @@ class AssistantTests(CatalogTestCase):
             yield  # noqa: unreachable
 
         with mock.patch.object(assistant, "_post_stream", broken):
-            events = list(assistant.ask(self.conn, FakeClient([]), "http://x", "m", "你好"))
+            events = list(assistant.ask(self.conn, assistant.OllamaLLM(FakeClient([]), "http://x", "m"), "你好"))
         self.assertEqual(events[-1], {"type": "error", "message": "沒有連到 Ollama。"})
 
     def test_status_and_suggestions(self):
-        self.assertTrue(assistant.status(FakeClient([]), "gemma4:e4b")["model_ready"])
-        self.assertFalse(assistant.status(FakeClient([], models=()), "gemma4:e4b")["model_ready"])
+        self.assertTrue(assistant.status(Cfg(), FakeClient([]))["model_ready"])
+        self.assertFalse(assistant.status(Cfg(), FakeClient([], models=()))["model_ready"])
+        api = Cfg()
+        api.assistant_provider, api.assistant_api_url, api.assistant_api_model = "openai", "https://api.example.com/v1", "m"
+        st = assistant.status(api, FakeClient([]))
+        self.assertTrue(st["remote"])  # 雲端服務：介面要提醒資料會送出去
+        api.assistant_api_url = "http://127.0.0.1:1234/v1"
+        self.assertFalse(assistant.status(api, FakeClient([]))["remote"])  # 本機的 LM Studio 不算送出去
         keys = [s["key"] for s in assistant.suggestions(self.conn)]
         self.assertIn("ask_find", keys)
+
+
+class OpenAICompatibleTests(CatalogTestCase):
+    """OpenAI 相容的 API（例如 LM Studio）：用一個本機的假服務測試規劃、串流回答與金鑰。"""
+
+    def test_plan_and_stream_over_the_api(self):
+        import json
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        seen = []
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                seen.append((self.headers.get("Authorization"), body))
+                self.send_response(200)
+                self.end_headers()
+                if body.get("stream"):
+                    for piece in ("你好", "！"):
+                        self.wfile.write(f"data: {json.dumps({'choices': [{'delta': {'content': piece}}]})}\n\n".encode())
+                    self.wfile.write(b"data: [DONE]\n\n")
+                else:
+                    content = json.dumps({"calls": []})
+                    self.wfile.write(json.dumps({"choices": [{"message": {"content": content}}]}).encode())
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            llm = assistant.OpenAILLM(f"http://127.0.0.1:{srv.server_port}/v1", "local-model", "sk-test")
+            self.assertFalse(llm.remote)
+            events = list(assistant.ask(self.conn, llm, "你好"))
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertEqual("".join(e["text"] for e in events if e["type"] == "token"), "你好！")
+        self.assertEqual(events[-1]["type"], "done")
+        self.assertEqual(seen[0][0], "Bearer sk-test")
+        self.assertEqual(seen[-1][1]["model"], "local-model")
+
+    def test_api_key_is_never_sent_back(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib.server import create_app
+
+        with TestClient(create_app(self.cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8766", client=("127.0.0.1", 1)) as c:
+            out = c.post("/api/settings", json={"assistant_provider": "openai", "assistant_api_key": "sk-secret"}).json()
+            self.assertNotIn("assistant_api_key", out)
+            self.assertTrue(out["assistant_api_key_set"])
+            self.assertNotIn("sk-secret", c.get("/api/settings").text)
+            c.post("/api/settings", json={"assistant_api_key": ""})  # 空白＝不改
+            self.assertTrue(c.get("/api/settings").json()["assistant_api_key_set"])
+            c.post("/api/settings", json={"assistant_api_key": "", "clear_api_key": True})
+            self.assertFalse(c.get("/api/settings").json()["assistant_api_key_set"])
 
 
 if __name__ == "__main__":

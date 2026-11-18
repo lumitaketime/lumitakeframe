@@ -29,3 +29,11 @@ export const checkCatalogMove = (path) => api("/api/catalog/location/check", { b
 export const moveCatalog = (path) => api("/api/catalog/move", { body: { path } });
 /** 在 Finder 中顯示某個資料夾（例如搬走前的舊目錄） */
 export const revealFolder = (path) => api("/api/reveal-path", { body: { path } });
+
+// ---- AI 助理用哪個模型 ----
+/** Ollama 已下載的模型、推薦清單（含大小與建議的記憶體） */
+export const loadModels = () => api("/api/models", { quiet: true });
+/** 試一下現在的設定：請模型回一句話（不送任何檔案資料） */
+export const testAssistant = () => api("/api/assistant/test", { body: {} });
+/** 一次存好幾個設定（例如助理的服務網址、模型、金鑰），回傳最新的設定（不含金鑰） */
+export const saveSettings = (values) => api("/api/settings", { body: values });

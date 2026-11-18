@@ -167,7 +167,104 @@ def _source(sources: list, item: dict) -> int:
     return len(sources)
 
 
-# ---- 和模型對話 ----
+# ---- 和模型對話：這台電腦的 Ollama，或 OpenAI 相容的 API（本機的 LM Studio、llama.cpp，或雲端服務） ----
+
+def is_local_url(url: str) -> bool:
+    """網址是不是這台電腦（資料不會離開）。"""
+    from urllib.parse import urlparse
+
+    host = (urlparse(url).hostname or "").lower()
+    return host in ("127.0.0.1", "localhost", "::1") or host.endswith(".local")
+
+
+class OllamaLLM:
+    """這台電腦上的 Ollama。"""
+
+    def __init__(self, client, base_url: str, model: str):
+        self.client, self.base_url, self.model = client, base_url, model
+        self.remote = False
+
+    def plan_json(self, prompt: str, schema: dict) -> dict:
+        return self.client.chat_json(self.model, prompt, schema, timeout=120, num_predict=300)
+
+    def stream(self, messages: list[dict]):
+        payload = {"model": self.model, "messages": messages, "stream": True, "keep_alive": "15m", "think": False,
+                   "options": {"temperature": 0.3, "num_ctx": 8192, "num_predict": 1200}}
+        for event in _post_stream(self.base_url, payload):
+            if event.get("error"):
+                raise RuntimeError(str(event["error"]))
+            text = (event.get("message") or {}).get("content") or ""
+            if text:
+                yield text
+
+    def complete(self, prompt: str, max_tokens: int = 50) -> str:
+        return "".join(self.stream([{"role": "user", "content": prompt}]))[:500]
+
+
+class OpenAILLM:
+    """OpenAI 相容的 API（/chat/completions）：本機的 LM Studio、llama.cpp server，或雲端服務。"""
+
+    def __init__(self, base_url: str, model: str, key: str = ""):
+        self.base_url, self.model, self.key = base_url.rstrip("/"), model, key
+        self.remote = not is_local_url(base_url)
+
+    def _request(self, payload: dict, timeout: int = 120):
+        headers = {"Content-Type": "application/json"}
+        if self.key:
+            headers["Authorization"] = f"Bearer {self.key}"
+        req = urllib.request.Request(self.base_url + "/chat/completions", data=json.dumps(payload).encode("utf-8"),
+                                     headers=headers, method="POST")
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", "ignore")[:200]
+            if exc.code in (401, 403):
+                raise RuntimeError("API 金鑰不對或沒有權限。請到設定 → AI 助理檢查。") from exc
+            if exc.code == 404:
+                raise RuntimeError(f"找不到這個服務或模型（{self.model}）。請檢查網址與模型名稱。") from exc
+            raise RuntimeError(f"服務回應 {exc.code}：{body}") from exc
+        except (urllib.error.URLError, ConnectionError, TimeoutError) as exc:
+            raise OllamaUnavailable(f"連不到 {self.base_url}。請確認服務有開啟、網址正確。") from exc
+
+    def plan_json(self, prompt: str, schema: dict) -> dict:
+        payload = {"model": self.model, "messages": [{"role": "user", "content": prompt + "\n只輸出 JSON，不要其他文字。"}],
+                   "temperature": 0.1, "max_tokens": 300}
+        with self._request(payload) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        return parse_model_json(content)
+
+    def stream(self, messages: list[dict]):
+        payload = {"model": self.model, "messages": messages, "stream": True, "temperature": 0.3, "max_tokens": 1200}
+        with self._request(payload, timeout=300) as resp:
+            for raw in resp:
+                line = raw.decode("utf-8").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    return
+                try:
+                    event = json.loads(data)
+                except ValueError:
+                    continue
+                text = ((event.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
+                if text:
+                    yield text
+
+    def complete(self, prompt: str, max_tokens: int = 50) -> str:
+        payload = {"model": self.model, "messages": [{"role": "user", "content": prompt}], "temperature": 0, "max_tokens": max_tokens}
+        with self._request(payload, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+
+
+def make_llm(cfg, client):
+    """依設定選擇：這台電腦的 Ollama（預設），或 OpenAI 相容的 API。"""
+    if cfg.assistant_provider == "openai" and cfg.assistant_api_url:
+        return OpenAILLM(cfg.assistant_api_url, cfg.assistant_api_model, cfg.assistant_api_key)
+    return OllamaLLM(client, cfg.ollama_url, cfg.assistant_model)
+
 
 def _post_stream(base_url: str, payload: dict, timeout: int = 300):
     req = urllib.request.Request(base_url.rstrip("/") + "/api/chat", data=json.dumps(payload).encode("utf-8"),
@@ -187,7 +284,7 @@ def _post_stream(base_url: str, payload: dict, timeout: int = 300):
                 yield json.loads(line.decode("utf-8"))
 
 
-def plan(client, model: str, question: str, history: list[dict], context: str) -> list[dict]:
+def plan(llm, question: str, history: list[dict], context: str) -> list[dict]:
     tools = "\n".join(f"- {name}：{desc}" for name, desc in TOOLS.items())
     recent = "\n".join(f"{m['role']}: {m['content'][:300]}" for m in history[-4:])
     prompt = (f"你是 Re'memor 的檔案管理助理，正在幫使用者查他的硬碟目錄。先決定要用哪些查詢工具（最多 3 個）。\n"
@@ -197,28 +294,28 @@ def plan(client, model: str, question: str, history: list[dict], context: str) -
               "只輸出 JSON：{\"calls\": [{\"tool\": 工具名稱, \"args\": {...}}]}。打招呼或不需要查資料的問題就給空陣列。"
               "搜尋關鍵字要用檔名或文件裡可能出現的詞，短一點（例如「預算」而不是整句話）。")
     try:
-        data = client.chat_json(model, prompt, PLAN_SCHEMA, timeout=120, num_predict=300)
+        data = llm.plan_json(prompt, PLAN_SCHEMA)
     except Exception:  # noqa: BLE001  規劃失敗就直接回答（不查資料）
         return []
     calls = data.get("calls") if isinstance(data, dict) else None
     return [c for c in (calls or []) if isinstance(c, dict) and c.get("tool") in RUN][:3]
 
 
-def ask(conn: sqlite3.Connection, client, base_url: str, model: str, question: str, history: list[dict] | None = None,
-        context: str = "", lang: str = "zh-Hant"):
+def ask(conn: sqlite3.Connection, llm, question: str, history: list[dict] | None = None, context: str = "", lang: str = "zh-Hant"):
     """回答一個問題，逐步產生事件（給介面即時顯示）：
     {"type": "step", "tool", "args"}、{"type": "token", "text"}、{"type": "done", "sources": [...]}、{"type": "error", "message"}。"""
     history = history or []
     sources: list[dict] = []
     results = []
-    for call in plan(client, model, question, history, context):
+    for call in plan(llm, question, history, context):
         yield {"type": "step", "tool": call["tool"], "args": call.get("args") or {}}
         try:
             results.append(f"### {call['tool']}\n" + RUN[call["tool"]](conn, call.get("args") or {}, sources))
         except Exception as exc:  # noqa: BLE001  單一工具失敗不影響回答
             results.append(f"### {call['tool']}\n（查詢失敗：{exc}）")
     language = LANG_NAMES.get(lang, "繁體中文")
-    system = (f"你是 Re'memor 的檔案管理助理，在使用者自己的電腦上離線執行。用{language}回答，語氣親切、白話、簡潔。\n"
+    where = "透過使用者自己選擇的服務執行" if getattr(llm, "remote", False) else "在使用者自己的電腦上離線執行"
+    system = (f"你是 Re'memor 的檔案管理助理，{where}。用{language}回答，語氣親切、白話、簡潔。\n"
               "規則：\n- 只根據「查到的資料」回答；資料裡沒有的，就說查不到，並建議可以怎麼找，不要編造檔名或路徑。\n"
               "- 提到檔案或資料夾時，在後面標上來源編號，例如 [1]。\n"
               "- 你不能刪除、搬移或修改任何檔案。需要整理時，提出具體建議，並說明要在 Re'memor 的哪個頁面由使用者自己確認"
@@ -229,16 +326,9 @@ def ask(conn: sqlite3.Connection, client, base_url: str, model: str, question: s
         if m.get("role") in ("user", "assistant") and m.get("content"):
             messages.append({"role": m["role"], "content": str(m["content"])[:2000]})
     messages.append({"role": "user", "content": f"使用者目前在：{context or '（沒有特定位置）'}\n\n查到的資料：\n{data}\n\n問題：{question}"})
-    payload = {"model": model, "messages": messages, "stream": True, "keep_alive": "15m", "think": False,
-               "options": {"temperature": 0.3, "num_ctx": 8192, "num_predict": 1200}}
     try:
-        for event in _post_stream(base_url, payload):
-            text = (event.get("message") or {}).get("content") or ""
-            if text:
-                yield {"type": "token", "text": text}
-            if event.get("error"):
-                yield {"type": "error", "message": str(event["error"])}
-                return
+        for text in llm.stream(messages):
+            yield {"type": "token", "text": text}
     except OllamaUnavailable as exc:
         yield {"type": "error", "message": str(exc)}
         return
@@ -250,12 +340,23 @@ def ask(conn: sqlite3.Connection, client, base_url: str, model: str, question: s
 
 # ---- 狀態與建議 ----
 
-def status(client, model: str) -> dict:
-    """助理能不能用：Ollama 有沒有開、模型下載了沒。"""
+def status(cfg, client) -> dict:
+    """助理能不能用。這台電腦（Ollama）：有沒有開、模型下載了沒。API：網址與模型填了沒、連不連得到。
+    remote＝問題與檔案片段會送到這台電腦以外的服務。"""
     from .analyzer import ollama_installed
     from .models import same_model
 
-    out = {"model": model, "ollama": False, "installed": False, "model_ready": False, "message": ""}
+    if cfg.assistant_provider == "openai":
+        url, model = cfg.assistant_api_url, cfg.assistant_api_model
+        out = {"provider": "openai", "model": model, "url": url, "remote": bool(url) and not is_local_url(url),
+               "ollama": True, "installed": True, "model_ready": False, "message": ""}
+        if not url or not model:
+            out["message"] = "請到設定 → AI 助理填寫服務網址與模型名稱。"
+            return out
+        out["model_ready"] = True  # 真的連不連得到，問的時候或按「測試連線」才知道（不在每次打開頁面時連到外面）
+        return out
+    model = cfg.assistant_model
+    out = {"provider": "ollama", "model": model, "remote": False, "ollama": False, "installed": False, "model_ready": False, "message": ""}
     try:
         names = client.list_models()
     except OllamaUnavailable:
@@ -319,4 +420,4 @@ def suggestions(conn: sqlite3.Connection, ocr_scope: str = "scans") -> list[dict
     return out
 
 
-__all__ = ["ask", "status", "suggestions", "TOOLS", "parse_model_json"]
+__all__ = ["ask", "status", "suggestions", "make_llm", "OllamaLLM", "OpenAILLM", "TOOLS", "parse_model_json"]

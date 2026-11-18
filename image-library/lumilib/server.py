@@ -68,7 +68,7 @@ SETTING_KEYS = {
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 MAX_IDS = 5000
@@ -1677,7 +1677,18 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     def assistant_status():
         from .assistant import status
 
-        return status(client_factory(), cfg.assistant_model)
+        return status(cfg, client_factory())
+
+    @app.post("/api/assistant/test")
+    def assistant_test(body: dict = Body(default={})):
+        """試一下現在的設定：請模型回一句話（不送任何檔案資料）。"""
+        from .assistant import make_llm
+
+        try:
+            reply = make_llm(cfg, client_factory()).complete("請只回答兩個字：可以", max_tokens=20)
+            return {"ok": True, "reply": reply[:80]}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)[:300]}
 
     @app.get("/api/assistant/suggestions")
     def assistant_suggestions():
@@ -1694,7 +1705,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         """回答一個問題：一行一個 JSON 事件（查詢步驟、逐字的回答、來源）。"""
         from fastapi.responses import StreamingResponse
 
-        from .assistant import ask
+        from .assistant import ask, make_llm
 
         question = str(body.get("question") or "").strip()[:2000]
         if not question:
@@ -1704,7 +1715,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         def events():
             c = conn()
             try:
-                for ev in ask(c, client_factory(), cfg.ollama_url, cfg.assistant_model, question, history,
+                for ev in ask(c, make_llm(cfg, client_factory()), question, history,
                               str(body.get("context") or "")[:300], str(body.get("lang") or "zh-Hant")):
                     yield json.dumps(ev, ensure_ascii=False) + "\n"
             finally:
@@ -2266,8 +2277,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     def settings():
         from .analyzer import PROMPTS
 
-        return {**{k: getattr(cfg, k) for k in CONFIG_KEYS},
-                "default_prompt": PROMPTS.get(cfg.language, PROMPTS["zh-TW"])}
+        return {**public_settings(), "default_prompt": PROMPTS.get(cfg.language, PROMPTS["zh-TW"])}
 
     @app.post("/api/settings")
     def save_settings(body: dict = Body(...)):
@@ -2282,9 +2292,17 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             finally:
                 c.close()
         for key, value in body.items():
+            if key == "assistant_api_key" and not value and not body.get("clear_api_key"):
+                continue  # 空白＝沒有改金鑰（介面不會拿到原本的金鑰）
             if key in SETTING_KEYS:
                 cfg.save_setting(key, value)
-        return {k: getattr(cfg, k) for k in CONFIG_KEYS}
+        return public_settings()
+
+    def public_settings() -> dict:
+        """設定值；API 金鑰不回傳，只說有沒有設定。"""
+        out = {k: getattr(cfg, k) for k in CONFIG_KEYS if k != "assistant_api_key"}
+        out["assistant_api_key_set"] = bool(cfg.assistant_api_key)
+        return out
 
     # ---- 手機連線 ----
     @app.get("/api/lan")

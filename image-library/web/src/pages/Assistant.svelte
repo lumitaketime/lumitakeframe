@@ -133,6 +133,7 @@
     if (s.type === "folder") return navigate(`/folders/${s.root_id}${s.path ? `?path=${encodeURIComponent(s.path)}` : ""}`);
     navigate(`/folders/${s.root_id}${s.folder ? `?path=${encodeURIComponent(s.folder)}` : ""}`);
   }
+  const hostOf = (u) => { try { return new URL(u).host; } catch { return u || ""; } };
   const STEP = { search_files: "ai.step.search", largest_folders: "ai.step.folders", drives_overview: "ai.step.drives", duplicates: "ai.step.dupes", read_document: "ai.step.read" };
 </script>
 
@@ -142,13 +143,20 @@
       <span class="badge"><Icon name="sparkles" size={20} weight="medium" /></span>
       <div>
         <h1 class="mac-title-2">{t("ai.title")}</h1>
-        <p class="mac-callout sub">{t("ai.lead")}</p>
+        <p class="mac-callout sub">{t("ai.lead")} {#if st}<a class="model" href="/settings/assistant" onclick={(e) => { e.preventDefault(); navigate("/settings/assistant"); }}>{st.model}</a>{/if}</p>
       </div>
     </header>
 
+    {#if st?.remote}
+      <p class="remote mac-callout"><Icon name="exclamation-triangle" size={13} />{t("ai.remoteBanner", { host: hostOf(st.url) })}
+        <a href="/settings/assistant" onclick={(e) => { e.preventDefault(); navigate("/settings/assistant"); }}>{t("ai.changeModel")}</a></p>
+    {/if}
     {#if st && !ready}
       <section class="setup mac-body" aria-live="polite">
-        {#if !st.ollama}
+        {#if st.provider === "openai"}
+          <p><b>{st.message}</b></p>
+          <div class="acts"><Button variant="borderedProminent" onclick={() => navigate("/settings/assistant")}>{t("ai.changeModel")}</Button></div>
+        {:else if !st.ollama}
           <p><b>{st.installed ? t("ai.setup.ollamaOff") : t("ai.setup.noOllama")}</b></p>
           <p class="sub mac-callout">{t("ai.setup.ollamaHint")}</p>
           <div class="acts">
@@ -244,6 +252,10 @@
   h1, h2 { margin: 0; color: var(--label-primary); }
   .sub { color: var(--label-secondary); }
   .intro p { margin: var(--space-1) 0 0; }
+  .intro .model { color: var(--accent); white-space: nowrap; }
+  .remote { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--system-orange) 14%, transparent); color: var(--label-primary); }
+  .remote a { color: var(--accent); }
   .setup { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--fill-quaternary); }
   .setup p { margin: 0; }
   .acts { display: flex; gap: var(--space-2); flex-wrap: wrap; }

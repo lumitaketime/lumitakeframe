@@ -69,6 +69,10 @@ DEFAULTS = {
     "ocr_scope": "scans",  # 文字辨識範圍：scans＝掃描檔與截圖／all＝再加上所有照片／off
     "ocr_languages": "zh-Hant,zh-Hans,en-US",  # 文字辨識的語言（Apple Vision 的語言代碼）
     "assistant_model": "gemma4:e4b",  # 檔案管理助理用的模型（在這台電腦上經由 Ollama 執行）
+    "assistant_provider": "ollama",  # ollama＝這台電腦；openai＝OpenAI 相容的 API（本機的 LM Studio 或雲端服務）
+    "assistant_api_url": "",  # 例如 http://127.0.0.1:1234/v1（本機）或 https://api.openai.com/v1（雲端）
+    "assistant_api_model": "",
+    "assistant_api_key": "",  # 只存在這台電腦的設定檔，介面不會顯示
     "auto_extract": 1,  # 掃描完自動接著讀取文件文字與文字辨識（在背景，可以暫停、隨時拔掉）
     "start_page": "folders",  # 開啟 App 時先看到的頁面：folders＝所有檔案／drives＝硬碟／find＝搜尋／photos＝照片
     "open_action": "",  # 按兩下照片以外的檔案：open＝用預設的 App 打開／reveal＝在 Finder 中顯示／空白＝第一次先問
@@ -136,6 +140,10 @@ class Config:
     ocr_scope: str = DEFAULTS["ocr_scope"]
     ocr_languages: str = DEFAULTS["ocr_languages"]
     assistant_model: str = DEFAULTS["assistant_model"]
+    assistant_provider: str = DEFAULTS["assistant_provider"]
+    assistant_api_url: str = DEFAULTS["assistant_api_url"]
+    assistant_api_model: str = DEFAULTS["assistant_api_model"]
+    assistant_api_key: str = DEFAULTS["assistant_api_key"]
     auto_extract: int = DEFAULTS["auto_extract"]
     start_page: str = DEFAULTS["start_page"]
     stack_enabled: int = DEFAULTS["stack_enabled"]

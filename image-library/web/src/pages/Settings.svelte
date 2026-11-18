@@ -7,6 +7,7 @@
   import { Alert, Button, Checkbox, Icon, List, ListRow, PopUpButton, ProgressIndicator, RadioGroup, SegmentedControl, Toggle } from "../ui/index.js";
   import PhotoSettings from "./PhotoSettings.svelte";
   import CatalogLocation from "../views/CatalogLocation.svelte";
+  import AssistantSettings from "../views/AssistantSettings.svelte";
   import { loadSettings, saveSetting, loadStorage, resetText } from "../data/settings.js";
   import { loadTextStatus, startExtract, startOcr, stopJob } from "../data/find.svelte.js";
   import { setFrame } from "../shell/frame.svelte.js";
@@ -21,6 +22,7 @@
     { id: "catalog", icon: "external-drive-fill", tint: "blue" },
     { id: "scan", icon: "clock", tint: "orange" },
     { id: "text", icon: "magnifyingglass", tint: "indigo" },
+    { id: "assistant", icon: "sparkles", tint: "purple" },
     { id: "photos", icon: "photo", tint: "pink" },
     { id: "system", icon: "slider-horizontal", tint: "gray-1" },
   ];
@@ -275,6 +277,9 @@
           {#snippet trailing()}<Button size="small" variant="bordered" disabled={!!textJob} onclick={() => (confirmReset = true)}>{t("set.text.resetButton")}</Button>{/snippet}
         </ListRow>
       </List>
+
+    {:else if shown === "assistant"}
+      <AssistantSettings {settings} {set} />
 
     {:else if shown === "photos"}
       <p class="lead mac-body">{t("set.photos.lead")}</p>
