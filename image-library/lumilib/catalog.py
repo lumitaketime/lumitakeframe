@@ -299,7 +299,7 @@ def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: st
             f"SELECT {file_cols} FROM (SELECT f.id FROM files AS f {index} WHERE f.status = 'ok' AND f.kind IN ({marks}) "
             f"ORDER BY {file_order} LIMIT ? OFFSET ?) p "
             "JOIN files f ON f.id = p.id JOIN folders d ON d.id = f.folder_id", (*kinds, limit, offset)).fetchall()
-        return {"total": total, "folders": 0, "offset": offset, "items": [_file_item(r) for r in rows]}
+        return {"total": total, "folders": 0, "offset": offset, "items": annotate_copies(conn, [_file_item(r) for r in rows])}
 
     if label is not None:
         if label not in LABELS:
@@ -310,7 +310,7 @@ def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: st
             f"SELECT {file_cols} FROM files f JOIN folders d ON d.id = f.folder_id WHERE f.label = ? AND f.status = 'ok' "
             f"ORDER BY {file_order}, f.id", (label,)).fetchall()
         items = [_folder_item(r) for r in folders] + [_file_item(r) for r in files]
-        return {"total": len(items), "folders": len(folders), "offset": offset, "items": items[offset:offset + limit]}
+        return {"total": len(items), "folders": len(folders), "offset": offset, "items": annotate_copies(conn, items[offset:offset + limit])}
 
     here = conn.execute("SELECT id FROM folders WHERE root_id = ? AND path = ?", (root_id, path.strip("/"))).fetchone()
     if here is None:
@@ -327,7 +327,47 @@ def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: st
             f"SELECT {file_cols} FROM files f JOIN folders d ON d.id = f.folder_id WHERE f.folder_id = ? AND f.status = 'ok' "
             f"ORDER BY {file_order}, f.id LIMIT ? OFFSET ?",
             (here["id"], limit - len(items), max(0, offset - n_folders)))]
-    return {"total": n_folders + n_files, "folders": n_folders, "offset": offset, "items": items}
+    return {"total": n_folders + n_files, "folders": n_folders, "offset": offset, "items": annotate_copies(conn, items)}
+
+
+def annotate_copies(conn: sqlite3.Connection, items: list[dict]) -> list[dict]:
+    """替一頁項目標上「別的地方也有一模一樣的副本」：copies＝{n: 其他份數, drives: [其他硬碟名稱], other_drive: 有沒有在別顆硬碟}。
+
+    只看完整比對過內容的（檔案的 content_hash、資料夾的 content_sig），沒比對過的不標，避免誤導（核心原則一）。
+    一頁最多幾百個項目，每種一次查詢，走雜湊的索引，很快。
+    """
+    def drive_key(r):
+        return ("d", r["drive_id"]) if r["drive_id"] is not None else ("r", r["root_id"])
+
+    for kind, table, sig in (("file", "files", "content_hash"), ("folder", "folders", "content_sig")):
+        ids = [it["id"] for it in items if it.get("type") == kind]
+        if not ids:
+            continue
+        marks = ",".join("?" * len(ids))
+        mine = {r["id"]: r for r in conn.execute(
+            f"SELECT x.id, x.{sig} AS sig, x.root_id, r.drive_id FROM {table} x JOIN roots r ON r.id = x.root_id "
+            f"WHERE x.id IN ({marks}) AND x.{sig} IS NOT NULL" + (" AND x.size > 0" if kind == "file" else ""), ids)}
+        sigs = sorted({r["sig"] for r in mine.values()})
+        if not sigs:
+            continue
+        others: dict[str, list] = {}
+        for start in range(0, len(sigs), 500):
+            part = sigs[start:start + 500]
+            for r in conn.execute(
+                    f"SELECT x.id, x.{sig} AS sig, x.root_id, r.drive_id, COALESCE(v.name, r.name) AS drive FROM {table} x "
+                    f"JOIN roots r ON r.id = x.root_id LEFT JOIN drives v ON v.id = r.drive_id "
+                    f"WHERE x.{sig} IN ({','.join('?' * len(part))}) AND x.status = 'ok'", part):
+                others.setdefault(r["sig"], []).append(r)
+        for it in items:
+            m = mine.get(it["id"]) if it.get("type") == kind else None
+            if m is None:
+                continue
+            copies = [r for r in others.get(m["sig"], []) if r["id"] != m["id"]]
+            if not copies:
+                continue
+            away = [r for r in copies if drive_key(r) != drive_key(m)]
+            it["copies"] = {"n": len(copies), "drives": sorted({r["drive"] for r in away}), "other_drive": bool(away)}
+    return items
 
 
 def location_info(conn: sqlite3.Connection, root_id: int, path: str = "") -> dict | None:

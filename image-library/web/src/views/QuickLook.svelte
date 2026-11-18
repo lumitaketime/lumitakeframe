@@ -8,17 +8,20 @@
   import KindIcon from "./KindIcon.svelte";
   import { t, formatBytes, formatDate } from "../i18n/index.svelte.js";
   import { previewUrl, thumbUrl, originalUrl } from "../lib/api.js";
-  import { loadText, rawUrl } from "../data/browse.js";
+  import { loadText, loadArchive, rawUrl } from "../data/browse.js";
   import { popIn, popOut, scrim } from "../lib/motion.js";
 
   let { item, online = true, driveName = "", canOpen = false, onclose, onmove, onopen, onreveal } = $props();
 
   const AUDIO = new Set(["mp3", "m4a", "aac", "wav", "flac", "ogg"]);
+  // 壓縮檔：顯示掃描時記下的檔案清單（沒有解開，硬碟沒接上也看得到）
+  const ARCHIVE = new Set(["zip", "rar", "7z", "tar", "tgz", "tbz", "tbz2", "txz", "gz", "bz2", "xz", "iso", "cab", "lha", "lzh", "xar"]);
   const TEXT = new Set(["txt", "md", "csv", "tsv", "json", "log", "xml", "html", "htm", "css", "js", "py", "srt", "yml", "yaml", "ini", "conf", "sh", "tex"]);
   const ext = $derived((item?.name.includes(".") ? item.name.split(".").pop() : "").toLowerCase());
   // 怎麼預覽：photo／video／audio／pdf／text 會顯示內容，info 只顯示圖示與資訊
   const mode = $derived(
     !item || item.type === "folder" ? "info"
+      : item.id && ARCHIVE.has(ext) ? "archive"
       : item.image_id ? (item.kind === "video" ? (online ? "video" : "photo") : "photo")
         : !online ? "info"
           : AUDIO.has(ext) ? "audio" : ext === "pdf" ? "pdf" : TEXT.has(ext) ? "text" : "info");
@@ -30,6 +33,11 @@
     text = null;
     textError = "";
     photoFailed = false;
+    if (mode === "archive") {
+      const it = item;
+      loadArchive(it.id).then((d) => { if (item === it) text = d; }).catch((e) => { if (item === it) textError = e.message; });
+      return;
+    }
     if (mode !== "text") return;
     const it = item;
     loadText(it).then((d) => { if (item === it) text = d; }).catch((e) => { if (item === it) textError = e.message; });
@@ -80,6 +88,27 @@
         {/key}
       {:else if mode === "pdf"}
         {#key item.id}<iframe src={rawUrl(item)} title={item.name}></iframe>{/key}
+      {:else if mode === "archive"}
+        {#if textError}
+          <p class="mac-body note" role="alert">{textError}</p>
+        {:else if !text}
+          <ProgressIndicator kind="spinner" label={t("view.loading")} />
+        {:else if text.status !== "ok"}
+          <div class="card">
+            <KindIcon kind="archive" size={96} />
+            <p class="mac-body note">{text.status === "todo" ? t("quick.archiveTodo") : text.message || t("quick.archiveEmpty")}</p>
+          </div>
+        {:else}
+          <div class="archive">
+            <p class="mac-callout head">{t("quick.archiveCount", { n: text.total })}{text.more ? `（${text.more.replace("…", "")}）` : ""}</p>
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex（讓鍵盤可以捲動清單） -->
+            <ul class="entries mac-callout" tabindex="0">
+              {#each text.entries as e, k (k)}
+                <li><KindIcon kind="other" size={13} /><span class="ename">{e.name}</span><span class="efolder">{e.folder}</span></li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
       {:else if mode === "text"}
         {#if textError}
           <p class="mac-body note" role="alert">{textError}</p>
@@ -125,6 +154,12 @@
     font-family: var(--font-mono); font-size: var(--text-callout); line-height: 1.5; color: var(--label-primary); outline: none; }
   .card { display: flex; flex-direction: column; align-items: center; gap: var(--space-6); padding: var(--space-6); }
   audio { width: min(420px, 80vw); }
+  .archive { align-self: stretch; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .archive .head { margin: 0; padding: var(--space-3) var(--space-4) var(--space-2); color: var(--label-secondary); }
+  .entries { flex: 1; min-height: 0; overflow: auto; list-style: none; margin: 0; padding: 0 var(--space-4) var(--space-4); outline: none; }
+  .entries li { display: flex; align-items: center; gap: var(--space-2); padding: 2px 0; min-width: 0; }
+  .ename { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--label-primary); }
+  .efolder { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--label-secondary); }
   .note { color: var(--label-secondary); padding: var(--space-6); text-align: center; }
   footer { flex: none; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); padding: var(--space-2) var(--space-4); border-top: 1px solid var(--separator); color: var(--label-secondary); }
   .offline { color: var(--label-primary); font-weight: 600; }

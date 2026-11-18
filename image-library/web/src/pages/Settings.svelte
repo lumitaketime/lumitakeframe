@@ -8,6 +8,7 @@
   import PhotoSettings from "./PhotoSettings.svelte";
   import CatalogLocation from "../views/CatalogLocation.svelte";
   import AssistantSettings from "../views/AssistantSettings.svelte";
+  import SemanticSettings from "../views/SemanticSettings.svelte";
   import { loadSettings, saveSetting, loadStorage, resetText } from "../data/settings.js";
   import { loadTextStatus, startExtract, startOcr, stopJob } from "../data/find.svelte.js";
   import { setFrame } from "../shell/frame.svelte.js";
@@ -117,7 +118,7 @@
   const local = $derived(!!app.server?.local);
   const isMac = $derived(app.server?.platform === "darwin");
   const go = (id) => navigate(`/settings/${id}`);
-  const FORMATS = ["pdf", "office", "text", "ebook", "mac"];
+  const FORMATS = ["pdf", "office", "text", "ebook", "mac", "archive"];
 </script>
 
 <div class="settings" bind:clientWidth={width} class:narrow>
@@ -240,6 +241,8 @@
           <ListRow title={t("set.text.indexSize")} detail={formatBytes(text.bytes) || "0 KB"} />
         {/if}
       </List>
+
+      <SemanticSettings {settings} {set} />
 
       <List header={t("set.text.formats")} footer={t("set.text.formatsLater")}>
         {#each FORMATS as f (f)}

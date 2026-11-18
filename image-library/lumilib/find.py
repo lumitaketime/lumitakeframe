@@ -18,7 +18,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import db, textindex
+from . import archives, db, textindex
 from .catalog import KIND_GROUPS, _file_item
 
 MAX_HITS = 1000  # 每一種來源最多取這麼多筆，合併後依關聯排序
@@ -138,7 +138,7 @@ CACHE_SECONDS = 30
 _recent: dict[tuple, tuple[float, list]] = {}
 
 
-def _hits(conn: sqlite3.Connection, query: Query, root, path, kind, year, size, drive) -> list[tuple[int, str]]:
+def _hits(conn: sqlite3.Connection, query: Query, root, path, kind, year, size, drive, meaning=None) -> list[tuple[int, str]]:
     """所有命中的檔案與命中的地方，依關聯排序（最多每種來源 MAX_HITS 筆）。"""
     where, args = _filters(query, root, path, kind, year, size, drive)
     terms = query.terms
@@ -169,7 +169,16 @@ def _hits(conn: sqlite3.Connection, query: Query, root, path, kind, year, size, 
                 f"{_BY_ID} JOIN file_text t ON t.file_id = f.id "
                 f"WHERE {where} AND t.size = f.size AND t.mtime = f.mtime ORDER BY m.rank LIMIT {MAX_HITS}", [match] + args).fetchall()
             for r in rows:
-                add([r[0]], "ocr" if r[1] == "ocr" else "text")
+                add([r[0]], {"ocr": "ocr", "archive": "archive"}.get(r[1], "text"))
+        # 2.5 意思相近的文件（跨語言、同義詞）：排在字面相符的後面
+        if meaning is not None:
+            near = meaning(" ".join(terms))
+            for chunk in range(0, len(near), 500):
+                part = [i for i, _ in near[chunk:chunk + 500]]
+                ok = {r[0] for r in conn.execute(
+                    f"SELECT f.id FROM files f JOIN folders d ON d.id = f.folder_id JOIN roots r ON r.id = f.root_id "
+                    f"LEFT JOIN drives v ON v.id = r.drive_id WHERE f.id IN ({','.join('?' * len(part))}) AND {where}", part + args)}
+                add([i for i in part if i in ok], "meaning")
         # 3. 照片的 AI 描述、關鍵字、人物、地點（照片圖庫原有的索引）：先找出照片，再找對應的檔案
         pmatch = db.fts_query(" ".join(terms)) or _text_query(terms)
         if pmatch:
@@ -189,16 +198,18 @@ def _hits(conn: sqlite3.Connection, query: Query, root, path, kind, year, size, 
 
 
 def find(conn: sqlite3.Connection, q: str, *, root: int | None = None, path: str = "", kind: str | None = None,
-         year: int | None = None, size: str | None = None, drive: int | None = None, offset: int = 0, limit: int = 50) -> dict:
+         year: int | None = None, size: str | None = None, drive: int | None = None, offset: int = 0, limit: int = 50,
+         meaning=None) -> dict:
+    """meaning(文字) -> [(檔案, 相似度)]：用意思找文件（沒有就只找字面相符的）。"""
     query = parse(q)
     terms = query.terms
     # 第一段一定重新查詢；往下捲動拿後面的段落時，沿用剛剛那一次的結果（30 秒內），不用每段都重查一次
-    key = (conn.execute("PRAGMA database_list").fetchone()[2], q, root, path, kind, year, size, drive)
+    key = (conn.execute("PRAGMA database_list").fetchone()[2], q, root, path, kind, year, size, drive, meaning is not None)
     hit = _recent.get(key)
     if offset > 0 and hit and time.monotonic() - hit[0] < CACHE_SECONDS:
         order = hit[1]
     else:
-        order = _hits(conn, query, root, path, kind, year, size, drive)
+        order = _hits(conn, query, root, path, kind, year, size, drive, meaning)
         _recent[key] = (time.monotonic(), order)
         while len(_recent) > 8:
             _recent.pop(next(iter(_recent)))
@@ -217,8 +228,19 @@ def find(conn: sqlite3.Connection, q: str, *, root: int | None = None, path: str
         item = _file_item(r)
         item.update(root=r["root_name"], drive=r["drive_name"], match=why,
                     name_parts=textindex.snippet(r["name"], terms, width=10_000) if terms else [{"text": r["name"], "hit": False}])
-        if why in ("text", "ocr"):
+        if why == "archive" or (terms and f".{(r['name'].rpartition('.')[2]).lower()}" in archives.ARCHIVE_EXT and why in ("name", "path")):
+            # 壓縮檔：列出裡面符合的檔案（不顯示一大段清單）
+            inside = archives.matching(textindex.body(conn, fid) or "", terms) if terms else []
+            if inside:
+                item["entries"] = inside
+                item["snippet"] = textindex.snippet(inside[0], terms, width=10_000)
+        elif why in ("text", "ocr"):
             item["snippet"] = textindex.snippet(textindex.body(conn, fid), terms)
+        elif why == "meaning":
+            # 意思相近：文件裡不一定有這些字，顯示開頭一段讓本人判斷
+            start = (textindex.body(conn, fid) or "")[:160].replace("\n", " ").strip()
+            if start:
+                item["snippet"] = [{"text": start, "hit": False}]
         elif why in ("name", "path") and terms:
             # 檔名或資料夾已經符合，內容裡也有的話一併顯示那一段（沒有就不顯示）
             parts = textindex.snippet(textindex.body(conn, fid) or "", terms)

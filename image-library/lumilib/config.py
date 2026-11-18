@@ -84,7 +84,10 @@ DEFAULTS = {
     # ／4＝可以搬移、改名檔案。每一個動作都要本人在畫面上確認才會執行，而且都可以復原；助理永遠不會刪除檔案。
     "assistant_permission": 2,
     "assistant_cloud_content": 0,  # 用雲端服務時，可不可以把文件內容送過去（關閉時只送檔名與統計）
-    "auto_extract": 1,  # 掃描完自動接著讀取文件文字與文字辨識（在背景，可以暫停、隨時拔掉）
+    "auto_extract": 1,
+    # 用意思找文件（跨語言、同義詞）：在這台電腦上用向量模型（預設 bge-m3，要先下載）替文件建立索引
+    "doc_semantic": 0,
+    "doc_embed_model": "bge-m3",  # 掃描完自動接著讀取文件文字與文字辨識（在背景，可以暫停、隨時拔掉）
     "start_page": "folders",  # 開啟 App 時先看到的頁面：folders＝所有檔案／drives＝硬碟／find＝搜尋／photos＝照片
     "open_action": "",  # 按兩下照片以外的檔案：open＝用預設的 App 打開／reveal＝在 Finder 中顯示／空白＝第一次先問
     "stack_enabled": 1,
@@ -161,6 +164,8 @@ class Config:
     assistant_gemini_key: str = DEFAULTS["assistant_gemini_key"]
     assistant_openai_model: str = DEFAULTS["assistant_openai_model"]
     assistant_openai_key: str = DEFAULTS["assistant_openai_key"]
+    doc_semantic: int = DEFAULTS["doc_semantic"]
+    doc_embed_model: str = DEFAULTS["doc_embed_model"]
     assistant_permission: int = DEFAULTS["assistant_permission"]
     assistant_cloud_content: int = DEFAULTS["assistant_cloud_content"]
     auto_extract: int = DEFAULTS["auto_extract"]

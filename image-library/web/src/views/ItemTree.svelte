@@ -6,6 +6,7 @@
    */
   import { Icon } from "../ui/index.js";
   import KindIcon from "./KindIcon.svelte";
+  import CopiesMark from "./CopiesMark.svelte";
   import { handleViewKey } from "./keys.js";
   import { t, formatBytes, formatNumber } from "../i18n/index.svelte.js";
 
@@ -103,6 +104,7 @@
               <KindIcon kind={isFolder ? "folder" : item.kind} />
               <span class="text">{item.name}</span>
               {#if item.label}<i class="label" style:background="var(--label-{item.label})" title={t(`label.${item.label}`)}></i>{/if}
+              {#if item.copies}<CopiesMark copies={item.copies} />{/if}
               {#if isFolder && item.files != null}<span class="count mac-callout">{t("status.filesOnly", { files: formatNumber(item.files) })}</span>{/if}
             </span>
             <span class="share"><span class="bar" aria-hidden="true"><i style:width="{pct * 100}%"></i></span><span class="pct">{pct ? `${pct >= 0.995 ? 100 : (pct * 100).toFixed(pct < 0.1 ? 1 : 0)}%` : ""}</span></span>

@@ -69,7 +69,7 @@ SETTING_KEYS = {
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "doc_semantic", "doc_embed_model", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 SECRET_KEYS = ("assistant_api_key", "assistant_claude_key", "assistant_gemini_key", "assistant_openai_key")
@@ -1451,6 +1451,30 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             text = raw.decode("utf-8", errors="replace")
         return {"text": text, "truncated": truncated}
 
+    @app.get("/api/archive")
+    def archive_listing(file: int, limit: int = 2000):
+        """壓縮檔裡有哪些檔案（掃描後記在目錄裡的清單，硬碟沒接上也看得到；沒有解開壓縮檔）。"""
+        from . import archives
+
+        c = conn()
+        try:
+            row = c.execute("SELECT t.status, t.error, t.body, t.size = f.size AND t.mtime = f.mtime AS fresh FROM files f "
+                            "LEFT JOIN file_text t ON t.file_id = f.id WHERE f.id = ?", (int(file),)).fetchone()
+        finally:
+            c.close()
+        if row is None:
+            raise HTTPException(404, "找不到這個檔案")
+        if row["status"] is None or not row["fresh"]:
+            return {"status": "todo", "entries": [], "total": 0}
+        if row["status"] != "ok":
+            return {"status": row["status"], "message": row["error"] or "", "entries": [], "total": 0}
+        import zlib
+
+        text = zlib.decompress(row["body"]).decode("utf-8") if row["body"] else ""
+        items = archives.listing(text)
+        more = text.rsplit("\n", 1)[-1] if text.endswith("個檔案") else ""
+        return {"status": "ok", "entries": items[:max(1, min(limit, 20_000))], "total": len(items), "more": more}
+
     @app.post("/api/items/label")
     def label_items(body: dict = Body(...)):
         """替檔案與資料夾加上或拿掉顏色標籤。只改目錄資料庫，不寫到硬碟。"""
@@ -1592,8 +1616,45 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
         c = conn()
         try:
+            meaning = None
+            if cfg.doc_semantic:
+                from . import semantic
+
+                client, model = client_factory(), semantic.model_of(cfg)
+                meaning = lambda text: semantic.nearest(c, client, model, text)  # noqa: E731
             return find(c, q, root=root, path=path, kind=kind or None, year=year, size=size or None, drive=drive,
-                        offset=max(0, offset), limit=max(1, min(200, limit)))
+                        offset=max(0, offset), limit=max(1, min(200, limit)), meaning=meaning)
+        finally:
+            c.close()
+
+    @app.get("/api/semantic/status")
+    def semantic_status():
+        """用意思找文件：開了沒、模型下載了沒、還有幾份文件要建立索引。"""
+        from . import semantic
+
+        model = semantic.model_of(cfg)
+        c = conn()
+        try:
+            p = semantic.plan(c, model)
+        finally:
+            c.close()
+        client = client_factory()
+        try:
+            names = client.list_models()
+            ollama_ok = True
+        except Exception:  # noqa: BLE001
+            names, ollama_ok = [], False
+        info = next((m for m in annotated(machine_info()["ram_gb"], names) if same_model(m["name"], model)), None)
+        return {"enabled": bool(cfg.doc_semantic), "model": model, "ollama": ollama_ok,
+                "model_ready": any(same_model(model, n) for n in names), "size_gb": info["size_gb"] if info else None, **p}
+
+    @app.post("/api/semantic/reset")
+    def semantic_reset(body: dict = Body(default={})):
+        from . import semantic
+
+        c = conn()
+        try:
+            return {"removed": semantic.reset(c)}
         finally:
             c.close()
 

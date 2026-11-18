@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 27  # v27：助理提出的動作（提案、執行、復原的紀錄）；v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 28  # v28：文件的語意向量（用意思找文件）；v27：助理提出的動作（提案、執行、復原的紀錄）；v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -215,6 +215,16 @@ CREATE TABLE IF NOT EXISTS delete_marks (
     UNIQUE (kind, item_id)
 );
 
+-- v28：文件的語意向量（用意思找、跨語言搜尋）。vec：調成長度 1 後壓成 8 位元整數
+CREATE TABLE IF NOT EXISTS file_vectors (
+    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    model TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    mtime REAL NOT NULL,
+    has_text INTEGER NOT NULL DEFAULT 0,
+    vec BLOB NOT NULL
+);
+
 -- v27：助理提出的動作。助理只能建立提案（state＝proposed）；本人在畫面上確認後才執行，並記下復原需要的資料。
 -- kind：label／smart_folder／mark_delete（只在目錄裡）、move／rename／to_pending（會改變硬碟上檔案的位置或名稱）
 CREATE TABLE IF NOT EXISTS assistant_actions (
@@ -307,6 +317,8 @@ CREATE INDEX IF NOT EXISTS idx_folders_label ON folders(label) WHERE label IS NO
 -- v20：重複項目。完整內容指紋相同的檔案、簽章相同的資料夾
 CREATE INDEX IF NOT EXISTS idx_files_hash ON files(content_hash, size) WHERE content_hash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_folders_shape ON folders(shape_sig) WHERE shape_sig IS NOT NULL;
+-- v28：列表上標出「別顆硬碟也有一模一樣的資料夾」
+CREATE INDEX IF NOT EXISTS idx_folders_content ON folders(content_sig) WHERE content_sig IS NOT NULL;
 -- 還沒比對內容的檔案：找「檔名與大小都相同」的待確認組別、算還要讀多少資料，都只讀這個索引
 CREATE INDEX IF NOT EXISTS idx_files_unhashed ON files(size, name, root_id) WHERE content_hash IS NULL AND status = 'ok' AND size > 0;
 """

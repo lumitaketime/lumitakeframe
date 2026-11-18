@@ -5,6 +5,7 @@
    */
   import { Icon } from "../ui/index.js";
   import KindIcon from "./KindIcon.svelte";
+  import CopiesMark from "./CopiesMark.svelte";
   import { handleViewKey } from "./keys.js";
   import { listLayout } from "./sections.js";
   import { prefs, COLUMNS, setSort, setWidth } from "./prefs.svelte.js";
@@ -117,6 +118,7 @@
                   <KindIcon kind={item.icon || (item.type === "folder" ? "folder" : item.kind)} />
                   <span class="text">{item.name}</span>
                   {#if item.label}<i class="label" style:background="var(--label-{item.label})" title={t(`label.${item.label}`)}></i>{/if}
+                  {#if item.copies}<CopiesMark copies={item.copies} />{/if}
                   {#if item.note}<span class="note mac-callout">{item.note}</span>{/if}
                 </span>
               {:else if c === "size"}

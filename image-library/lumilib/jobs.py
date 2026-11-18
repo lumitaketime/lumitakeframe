@@ -26,9 +26,9 @@ LABELS = {
     "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
-    "move_catalog": "搬移目錄",
+    "move_catalog": "搬移目錄", "embed_docs": "建立「用意思找」的索引",
 }
-LANES = {"analyze": "ai", "embed": "ai", "pull": "download", "face_model": "download", "clip_model": "download"}
+LANES = {"analyze": "ai", "embed": "ai", "embed_docs": "ai", "pull": "download", "face_model": "download", "clip_model": "download"}
 QUEUED_LANES = ("main", "ai")
 _ids = itertools.count(1)
 
@@ -88,8 +88,8 @@ class JobRunner:
             t.start()
 
     # ---- 工作紀錄：寫進資料庫，關掉 App 再開仍然看得到；紀錄失敗不影響工作本身 ----
-    LOGGED = ("scan", "index", "compare", "extract", "ocr", "analyze")
-    RESUMABLE = ("scan", "index", "compare", "extract", "ocr")
+    LOGGED = ("scan", "index", "compare", "extract", "ocr", "analyze", "embed_docs")
+    RESUMABLE = ("scan", "index", "compare", "extract", "ocr", "embed_docs")
 
     def _log_sql(self, sql: str, args: tuple = ()) -> int | None:
         try:
@@ -360,9 +360,35 @@ class JobRunner:
             message += f"；無法排入後續工作：{exc}"
         return message
 
+    def _semantic_follow_up(self) -> None:
+        """「用意思找文件」開著、模型也在：讀完文字後接著替新的文件建立索引（在 AI 通道，不擋掃描）。"""
+        from . import semantic
+
+        if not self.cfg.doc_semantic:
+            return
+        try:
+            model = semantic.model_of(self.cfg)
+            if not semantic.model_ready(self.client_factory(), model):
+                return
+            conn = db.connect(self.cfg.db_path)
+            try:
+                todo = semantic.plan(conn, model)["todo"]
+            finally:
+                conn.close()
+            if todo:
+                self.submit("embed_docs")
+        except Exception:  # noqa: BLE001  後續工作失敗不影響讀取結果
+            traceback.print_exc()
+
     def _after_pull(self, model: str | None, message: str) -> str:
-        """剛下載好的就是目前選用的視覺模型：有待分析的照片就直接開始。"""
+        """剛下載好的就是目前選用的視覺模型：有待分析的照片就直接開始。
+        剛下載好的是「用意思找文件」的模型：接著建立索引。"""
+        from . import semantic
         from .models import same_model
+
+        if model and self.cfg.doc_semantic and same_model(model, semantic.model_of(self.cfg)):
+            self._semantic_follow_up()
+            return message + "；接著替文件建立「用意思找」的索引"
 
         if not (model and same_model(model, self.cfg.vision_model) and self.cfg.auto_analyze):
             return message
@@ -453,6 +479,8 @@ class JobRunner:
                                   progress=lambda done, total, name: upd(done=done, total=total, message=name))
                 job["result"] = {"read": res.read, "interrupted": res.interrupted, "stopped": res.stopped}
                 parts.append(describe_extract(res))
+                if not res.stopped:
+                    self._semantic_follow_up()
             if kind == "ocr":
                 from .ocr import describe as describe_ocr
                 from .ocr import run_ocr
@@ -461,6 +489,8 @@ class JobRunner:
                               progress=lambda done, total, name: upd(done=done, total=total, message=name))
                 job["result"] = {"read": res.read, "interrupted": res.interrupted, "stopped": res.stopped}
                 parts.append(describe_ocr(res))
+                if not res.stopped and res.read:
+                    self._semantic_follow_up()
             if kind == "cluster":
                 from .faces import recluster
 
@@ -524,6 +554,15 @@ class JobRunner:
                 from .organize import rebuild_stacks
 
                 parts.append(f"疊放 {rebuild_stacks(conn, self.cfg)} 組")
+            if kind == "embed_docs":
+                from . import semantic
+
+                res = semantic.run_embed(conn, self.client_factory(), semantic.model_of(self.cfg), stop=stop,
+                                         progress=lambda done, total, name: upd(done=done, total=total, message=name))
+                job["result"] = {"done": res.done, "stopped": res.stopped}
+                if res.error and not res.done:
+                    raise RuntimeError(f"沒辦法建立「用意思找」的索引：{res.error}")
+                parts.append(semantic.describe(res))
             if kind == "embed":
                 n = embed_images(conn, self.cfg, self.client_factory(), stop=stop)
                 parts.append(f"建立語意向量 {n} 個")

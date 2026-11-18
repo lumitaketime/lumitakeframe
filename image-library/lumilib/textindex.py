@@ -21,7 +21,7 @@ import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import db
+from . import archives, db
 
 MAX_CHARS = 1_000_000  # 每個檔案最多存這麼多字
 MAX_FILE = 300_000_000  # 超過 300 MB 的文件不讀（多半是掃描檔，之後交給 OCR）
@@ -213,8 +213,11 @@ def reset(conn: sqlite3.Connection, ocr_only: bool = False) -> int:
     return len(rows)
 
 
-def _exts_sql() -> str:
-    return ",".join(f"'{e.lstrip('.')}'" for e in sorted(SUPPORTED))  # 目錄裡存的副檔名不含點
+ARCHIVE_EXT = archives.ARCHIVE_EXT  # 壓縮檔：不解開，只記下裡面有哪些檔案（source＝archive）
+
+
+def _exts_sql(exts=None) -> str:
+    return ",".join(f"'{e.lstrip('.')}'" for e in sorted(exts or (SUPPORTED | ARCHIVE_EXT)))  # 目錄裡存的副檔名不含點
 
 
 def _candidates_sql(extra: str = "", retry: bool = False, cloud: bool = False) -> str:
@@ -222,7 +225,8 @@ def _candidates_sql(extra: str = "", retry: bool = False, cloud: bool = False) -
     在雲端還沒下載的每次都再看一次；retry＝連之前讀不了的也再試一次。"""
     retry_sql = ("OR t.status = 'error' " if retry else "") + ("OR t.status = 'cloud'" if cloud else "")
     return (f"FROM files f JOIN folders d ON d.id = f.folder_id LEFT JOIN file_text t ON t.file_id = f.id "
-            f"WHERE f.status = 'ok' AND lower(f.ext) IN ({_exts_sql()}) AND f.size <= {MAX_FILE} "
+            f"WHERE f.status = 'ok' AND lower(f.ext) IN ({_exts_sql()}) "
+            f"AND (f.size <= {MAX_FILE} OR lower(f.ext) IN ({_exts_sql(ARCHIVE_EXT)})) "  # 壓縮檔只讀清單，再大也不怕
             f"AND (t.file_id IS NULL OR t.size != f.size OR t.mtime != f.mtime {retry_sql}) {extra}")
 
 
@@ -253,6 +257,7 @@ class ExtractResult:
     changed: int = 0
     offline: int = 0
     cloud: int = 0
+    archives: int = 0  # 其中幾個是壓縮檔（讀的是裡面的檔案清單）
     interrupted: list[str] = field(default_factory=list)
     stopped: bool = False
 
@@ -311,9 +316,17 @@ def run_extract(conn: sqlite3.Connection, progress=None, stop=None, retry: bool 
                     _store(conn, r["id"], r["size"], r["mtime"], "text", "", "cloud", "在雲端，還沒下載到這台電腦")
                     result.cloud += 1
                     continue
-                text, scanned = extract(path, stop)
-                text = clean(text)
-                if scanned and len(text) < 200:
+                if path.suffix.lower() in ARCHIVE_EXT:
+                    names, count = archives.entries(path, stop)
+                    _store(conn, r["id"], r["size"], r["mtime"], "archive", archives.as_text(names, count)[:MAX_CHARS], "ok" if names else "empty")
+                    result.archives += 1
+                    text, scanned = None, False
+                else:
+                    text, scanned = extract(path, stop)
+                    text = clean(text)
+                if text is None:
+                    pass  # 壓縮檔：上面已經存好清單
+                elif scanned and len(text) < 200:
                     _store(conn, r["id"], r["size"], r["mtime"], "text", text, "needs_ocr")
                     result.needs_ocr += 1
                 else:
@@ -323,8 +336,11 @@ def run_extract(conn: sqlite3.Connection, progress=None, stop=None, retry: bool 
                     result.chars += len(text)
             except Stopped:
                 raise
-            except Unsupported as exc:
+            except (Unsupported, archives.NoTool) as exc:
                 _store(conn, r["id"], r["size"], r["mtime"], "text", "", "unsupported", str(exc))
+                result.failed += 1
+            except archives.ArchiveError as exc:
+                _store(conn, r["id"], r["size"], r["mtime"], "archive", "", "error", str(exc))
                 result.failed += 1
             except OSError:
                 if not Path(root["path"]).is_dir():  # 硬碟被拔掉：這顆先停，其他硬碟繼續；不算錯誤
@@ -355,6 +371,8 @@ def run_extract(conn: sqlite3.Connection, progress=None, stop=None, retry: bool 
 
 def describe(r: ExtractResult) -> str:
     parts = [f"讀出 {r.read:,} 份文件的文字"]
+    if r.archives:
+        parts.append(f"記下 {r.archives:,} 個壓縮檔裡的檔案清單（沒有解開）")
     if r.needs_ocr:
         parts.append(f"{r.needs_ocr:,} 份像掃描檔，之後可以用文字辨識")
     if r.empty:

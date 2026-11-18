@@ -72,7 +72,7 @@
               {#if item.match !== "filter"}<span class="badge mac-caption-1">{t(`find.match.${item.match}`)}</span>{/if}
             </span>
             {#if item.snippet?.length}
-              <span class="line snippet mac-callout">{#each item.snippet as p, k (k)}{#if p.hit}<b>{p.text}</b>{:else}{p.text}{/if}{/each}</span>
+              <span class="line snippet mac-callout">{#if item.entries}<span class="inside">{t("find.inArchive")}</span>{/if}{#each item.snippet as p, k (k)}{#if p.hit}<b>{p.text}</b>{:else}{p.text}{/if}{/each}</span>
             {/if}
             <span class="line where mac-callout" title={where(item)}><Icon name="folder" size={11} /><span class="text">{where(item)}</span></span>
           </span>
@@ -102,6 +102,8 @@
   .line { display: flex; align-items: center; gap: var(--space-2); min-width: 0; white-space: nowrap; overflow: hidden; }
   .text { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .name b, .snippet b { font-weight: 700; color: var(--label-primary); }
+  .inside { margin-right: var(--space-1); color: var(--label-tertiary); }
+  .row.on .inside { color: inherit; }
   .snippet { display: block; text-overflow: ellipsis; color: var(--label-secondary); }
   /* 位置用次要文字色（第三層灰在淺色模式太淡，看不清楚），前面加資料夾圖示和段落區分 */
   .where { gap: var(--space-1); color: var(--label-secondary); }

@@ -2,6 +2,7 @@
   /** 直欄檢視的一欄：一個資料夾的內容，只畫看得到的列。activePath＝往下一欄走的那個資料夾（反白表示路徑）。 */
   import { Icon } from "../ui/index.js";
   import KindIcon from "./KindIcon.svelte";
+  import CopiesMark from "./CopiesMark.svelte";
   import { t } from "../i18n/index.svelte.js";
 
   let { source, sel = null, activePath = null, label = "", onpick, onopen, oncontext, ondragitem, onkeydown, focusable = false } = $props();
@@ -55,7 +56,7 @@
         draggable={item?.type === "folder" ? "true" : undefined} ondragstart={(e) => ondragitem?.(e, item)} title={item?.name}>
         {#if item}
           <KindIcon kind={item.icon || (item.type === "folder" ? "folder" : item.kind)} />
-          <span class="text">{item.name}</span>
+          <span class="text">{item.name}</span>{#if item.copies}<CopiesMark copies={item.copies} />{/if}
           {#if item.label}<i class="label" style:background="var(--label-{item.label})" title={t(`label.${item.label}`)}></i>{/if}
           {#if item.type === "folder"}<Icon name="chevron-right" size={9} weight="bold" class="go" />{/if}
         {:else}<i class="ph"></i>{/if}
