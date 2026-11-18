@@ -197,7 +197,7 @@
               <Button variant="bordered" loading={busy === d.key} disabled={!!busy || !d.online} onclick={() => scan(d)}>{d.last_scan ? t("drives.rescan") : t("drives.scan")}</Button>
             {/if}
             <span class="grow"></span>
-            <Button variant="borderless" role="destructive" disabled={!!busy || d.scanning} onclick={() => (removing = d)}>{t("drives.remove")}</Button>
+            <Button variant="borderless" role="destructive" disabled={!!busy} onclick={() => (removing = d)}>{t("drives.remove")}</Button>
           </div>
           {#if !d.online && !d.scanning}<p class="mac-callout sub">{t("drives.connectToScan", { name: d.name })}</p>{/if}
         </article>
@@ -208,7 +208,7 @@
 
 {#if removing}
   <div class="backdrop">
-    <Alert title={t("drives.removeTitle", { name: removing.name })} message={t("drives.removeMessage", { files: formatNumber(removing.files) })} actions={[
+    <Alert title={t("drives.removeTitle", { name: removing.name })} message={t("drives.removeMessage", { files: formatNumber(removing.files) }) + (removing.scanning ? `\n\n${t("drives.removeWhileScanning")}` : "")} actions={[
       { label: t("drives.remove"), role: "destructive", onPress: confirmRemove },
       { label: t("common.cancel"), role: "cancel", onPress: () => (removing = null) },
     ]} />

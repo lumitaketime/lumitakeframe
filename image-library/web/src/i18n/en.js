@@ -350,6 +350,7 @@ export default {
   "find.match.ocr": "Recognized Text",
   "find.match.photo": "Photo Contents",
   "find.match.filter": "Filter",
+  "drives.removeWhileScanning": "This drive is being scanned: the scan stops first (a few seconds), then it's removed from the catalog.",
   "activity.state.replaced": "Taken over by a later run",
   "quick.photoFailed": "This photo couldn't be read (it may still be in the cloud, damaged, or in a format this computer can't open).",
   "set.spotlight.title": "Spotlight",

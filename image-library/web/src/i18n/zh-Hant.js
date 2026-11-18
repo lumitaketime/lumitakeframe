@@ -350,6 +350,7 @@ export default {
   "find.match.ocr": "文字辨識",
   "find.match.photo": "照片內容",
   "find.match.filter": "篩選",
+  "drives.removeWhileScanning": "這顆硬碟正在掃描：會先停止掃描（幾秒鐘），再從目錄移除。",
   "activity.state.replaced": "已由之後的工作接手",
   "quick.photoFailed": "讀不出這張照片（檔案可能還在雲端、壞了，或是這台電腦打不開的格式）。",
   "set.spotlight.title": "Spotlight",

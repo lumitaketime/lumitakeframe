@@ -2283,6 +2283,9 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         """移除資料夾：連同縮圖、人臉與分析資料一起清掉（照片檔案不受影響）。"""
         from .storage import remove_root
 
+        # 正在掃描或讀這顆硬碟：先停下來（做完的部分保留），再移除，避免掃描還在寫它的紀錄
+        if not jobs().stop_disk_work(timeout=60):
+            raise HTTPException(409, "掃描還在停止中，請過幾秒再試一次。")
         c = conn()
         try:
             return remove_root(c, cfg, root_id)

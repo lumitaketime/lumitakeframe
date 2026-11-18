@@ -228,6 +228,26 @@ class JobRunner:
                 job["stop"].set()
             self.wake.notify_all()
 
+    def stop_disk_work(self, timeout: float = 60) -> bool:
+        """停下會讀硬碟的工作（掃描、比對、讀文字、辨識…，主要通道），並清掉排隊中的；等它們真的停了才回來。
+        例如從目錄移除一顆硬碟之前用（避免掃描還在寫入那顆硬碟的紀錄）。"""
+        import time
+
+        with self.lock:
+            if "main" in self.queues:
+                self.queues["main"].clear()
+            for job in self.active.values():
+                if job.get("lane") == "main":
+                    job["stop"].set()
+                    job["message"] = "停止中…"
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            with self.lock:
+                if not any(j.get("lane") == "main" for j in self.active.values()):
+                    return True
+            time.sleep(0.1)
+        return False
+
     def wait_idle(self, timeout: float = 30) -> bool:
         """測試用：等到所有通道都空了。"""
         import time

@@ -90,6 +90,7 @@ class ScanResult:
     folders: int = 0  # 這次處理了幾個資料夾
     missing: int = 0  # 這次新標成遺失的檔案：照片與影片（搬到同一顆硬碟其他地方的不算）＋其他檔案
     skipped: int = 0  # 依規則改成不編目、從目錄拿掉的檔案（例如 ~/Library 裡 App 的資料）
+    cloud: int = 0  # 只在雲端、還沒下載到這台電腦的照片：記下檔名，不讀內容（不會替你下載）
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -99,6 +100,9 @@ class ScanResult:
 
 class _Unplugged(Exception):
     """掃描中途硬碟消失。"""
+
+
+SF_DATALESS = 0x40000000  # macOS：檔案只是雲端的佔位，內容還沒下載到這台電腦
 
 
 class _Held(Exception):
@@ -179,11 +183,13 @@ class _Pending:
 
 
 def _process_batch(conn: sqlite3.Connection, cfg: Config, root: sqlite3.Row, batch: list[_Pending],
-                   result: ScanResult, now: str) -> None:
+                   result: ScanResult, now: str, stop=None) -> None:
     """讀取一批照片的拍攝資訊、產生縮圖並寫入圖庫（不在這裡寫入資料庫檔案，由掃描流程決定何時提交）。"""
     metas = read_metadata_batch([p.path for p in batch])
     set_meta = ", ".join(f"{f} = ?" for f in db.META_FIELDS)
     for item in batch:
+        if stop is not None and stop.is_set():
+            raise _Stopped()  # 這一批還沒做的照片，下次掃描再做
         meta = metas.get(item.path)
         err = None
         if isinstance(meta, MediaError):
@@ -329,8 +335,8 @@ class _Scan:
             batch, self.batch = self.batch, []
             r = self.result
             self.note = f"正在讀照片資訊、做縮圖（這次已做 {r.added + r.updated:,} 張；第一次掃描時每張約需 0.1–0.3 秒）"
-            self.report()
-            _process_batch(self.conn, self.cfg, self.root, batch, self.result, self.now)
+            self.report(force=True)  # 一批約 48 張，做之前一定回報一次，畫面才看得出在動
+            _process_batch(self.conn, self.cfg, self.root, batch, self.result, self.now, self.stop)
             self.note = ""
             self.report()
             self.pending += len(batch)
@@ -577,7 +583,13 @@ class _Scan:
         conn, root, result, now = self.conn, self.root, self.result, self.now
         existing = {r["rel_path"]: r for r in conn.execute(
             "SELECT * FROM images WHERE root_id = ? AND folder = ?", (root["id"], rel))}
-        for name, file_id, st in media:
+        for i, (name, file_id, st) in enumerate(media):
+            if i % 20 == 19:
+                self.check_stop()  # 一個資料夾裡有幾千張照片時，也要能馬上停
+            if getattr(st, "st_flags", 0) & SF_DATALESS:
+                # iCloud、OneDrive、Google 雲端硬碟只在雲端的檔案：讀它會從網路下載，可能卡很久。只記檔名，不讀內容
+                result.cloud += 1
+                continue
             path = abs_path / name
             item_rel = f"{rel}/{name}" if rel else name
             size, mtime = st.st_size, st.st_mtime
@@ -680,6 +692,7 @@ def scan_root(
         conn.rollback()  # 放棄還沒寫入的部分；已寫入的資料夾下次會跳過
         result.interrupted = True
     except (_Stopped, _Held) as exc:
+        scan.batch = []  # 還沒處理的照片不在停止時補做（下次掃描再做），這樣「停止」才會馬上生效
         try:
             scan.commit()  # 停止時保留已做完的工作
         except _Unplugged:
@@ -745,6 +758,8 @@ def describe(r: ScanResult) -> str:
     parts.append(f"遺失 {r.missing:,}")
     if r.skipped:
         parts.append(f"{r.skipped:,} 個 App 資料或雲端內部檔案改成不編目")
+    if r.cloud:
+        parts.append(f"{r.cloud:,} 張照片只在雲端、還沒下載到這台電腦，只記下檔名（不會替你下載）")
     text = f"{r.root}：" + "、".join(parts)
     if r.interrupted:
         text += "；硬碟在掃描中途被拔掉，下次接上會從中斷處繼續"
