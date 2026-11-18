@@ -52,7 +52,7 @@
   const amount = (j) => (!j.total ? "" : j.unit === "bytes" || j.kind === "compare"
     ? t("activity.amount", { done: formatBytes(j.done) || "0 KB", total: formatBytes(j.total) })
     : t("activity.amount", { done: formatNumber(j.done), total: formatNumber(j.total) }));
-  const STATE_ICON = { done: "checkmark", stopped: "minus", interrupted: "exclamation-triangle", error: "exclamation-triangle" };
+  const STATE_ICON = { done: "checkmark", stopped: "minus", interrupted: "exclamation-triangle", error: "exclamation-triangle", replaced: "minus" };
 </script>
 
 <div class="activity">

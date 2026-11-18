@@ -350,6 +350,7 @@ export default {
   "find.match.ocr": "文字辨識",
   "find.match.photo": "照片內容",
   "find.match.filter": "篩選",
+  "activity.state.replaced": "已由之後的工作接手",
   "quick.photoFailed": "讀不出這張照片（檔案可能還在雲端、壞了，或是這台電腦打不開的格式）。",
   "set.spotlight.title": "Spotlight",
   "set.spotlight.toggle": "在 Spotlight 找得到 Re'memor 的硬碟與智慧資料夾",

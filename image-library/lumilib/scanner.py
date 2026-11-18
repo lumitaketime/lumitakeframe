@@ -327,7 +327,12 @@ class _Scan:
     def flush(self) -> None:
         if self.batch:
             batch, self.batch = self.batch, []
+            r = self.result
+            self.note = f"正在讀照片資訊、做縮圖（這次已做 {r.added + r.updated:,} 張；第一次掃描時每張約需 0.1–0.3 秒）"
+            self.report()
             _process_batch(self.conn, self.cfg, self.root, batch, self.result, self.now)
+            self.note = ""
+            self.report()
             self.pending += len(batch)
             # 讀取這批照片時硬碟被拔掉，結果不可信：整批放棄
             self.check_online()

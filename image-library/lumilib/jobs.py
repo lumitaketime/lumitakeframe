@@ -114,6 +114,12 @@ class JobRunner:
         if not job.get("_log"):
             return
         stamp = "started_at" if state == "running" else "finished_at"
+        if state in ("running", "done") and job["kind"] in self.RESUMABLE:
+            # 這次開始做或做完了：更早之前中斷的同一種工作（範圍相同或這次是全部）會從沒做完的地方接著做，
+            # 紀錄裡不再顯示「繼續」，避免一堆重複的待辦
+            opts = json.dumps(job["options"], ensure_ascii=False, default=str)
+            self._log_sql("UPDATE job_log SET state = 'replaced' WHERE kind = ? AND id < ? AND state IN ('interrupted', 'stopped') "
+                          "AND (options = ? OR ? = '{}' OR ? = '{\"roots\": null}')", (job["kind"], job["_log"], opts, opts, opts))
         self._log_sql(f"UPDATE job_log SET state = ?, message = COALESCE(?, message), done = ?, total = ?, {stamp} = ? WHERE id = ?",
                       (state, message, int(job.get("done") or 0), int(job.get("total") or 0), db.now_iso(), job["_log"]))
 
