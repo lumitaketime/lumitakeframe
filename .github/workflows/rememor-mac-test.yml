@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   mac:
-    runs-on: macos-15
+    runs-on: macos-14  # macos-15 的機器常常排不到（GitHub 容量不足），先用 macos-14（同樣是 Apple 晶片）
     steps:
       - uses: actions/checkout@v4
 
