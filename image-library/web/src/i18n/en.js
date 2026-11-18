@@ -350,6 +350,7 @@ export default {
   "find.match.ocr": "Recognized Text",
   "find.match.photo": "Photo Contents",
   "find.match.filter": "Filter",
+  "quick.photoFailed": "This photo couldn't be read (it may still be in the cloud, damaged, or in a format this computer can't open).",
   "set.spotlight.title": "Spotlight",
   "set.spotlight.toggle": "Find Re'memor's drives and smart folders in Spotlight",
   "set.spotlight.what": "Type a drive's name in Spotlight to find it even when it isn't connected; choosing it opens Re'memor right there.",

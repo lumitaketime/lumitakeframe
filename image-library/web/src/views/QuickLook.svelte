@@ -8,11 +8,14 @@
   import KindIcon from "./KindIcon.svelte";
   import { t, formatBytes, formatDate } from "../i18n/index.svelte.js";
   import { previewUrl, thumbUrl, originalUrl } from "../lib/api.js";
-  import { loadText, loadArchive, loadMusic, rawUrl } from "../data/browse.js";
+  import { loadText, loadArchive, loadMusic, rawUrl, photoUrl } from "../data/browse.js";
   import { popIn, popOut, scrim } from "../lib/motion.js";
 
   let { item, online = true, driveName = "", canOpen = false, onclose, onmove, onopen, onreveal } = $props();
 
+  // 照片：還沒進照片圖庫（沒有 image_id）、或從佔比圖打開時，直接從硬碟讀原檔做預覽（硬碟要接著）
+  const PHOTO = new Set(["jpg", "jpeg", "jpe", "png", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif", "avif",
+    "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf", "sr2", "raf", "orf", "rw2", "dng", "pef", "srw", "x3f", "3fr", "iiq", "rwl", "erf", "mos", "kdc", "mrw"]);
   const AUDIO = new Set(["mp3", "m4a", "aac", "wav", "flac", "ogg"]);
   // 壓縮檔：顯示掃描時記下的檔案清單（沒有解開，硬碟沒接上也看得到）
   const ARCHIVE = new Set(["zip", "rar", "7z", "tar", "tgz", "tbz", "tbz2", "txz", "gz", "bz2", "xz", "iso", "cab", "lha", "lzh", "xar"]);
@@ -24,6 +27,7 @@
       : item.id && ARCHIVE.has(ext) ? "archive"
       : item.image_id ? (item.kind === "video" ? (online ? "video" : "photo") : "photo")
         : !online ? "info"
+          : PHOTO.has(ext) && item.path != null ? "file-photo"
           : AUDIO.has(ext) ? "audio" : ext === "pdf" ? "pdf" : TEXT.has(ext) ? "text" : "info");
 
   let text = $state(null);
@@ -73,7 +77,7 @@
 
 {#if item}
   <button class="scrim" onclick={onclose} aria-label={t("common.close")} transition:scrim></button>
-  <div class="ql" class:media={mode === "photo" || mode === "video"} role="dialog" aria-label={t("quick.title", { name: item.name })} in:popIn={{ y: 0, scale: 0.96 }} out:popOut={{ y: 0, scale: 0.98 }}>
+  <div class="ql" class:media={mode === "photo" || mode === "video" || mode === "file-photo"} role="dialog" aria-label={t("quick.title", { name: item.name })} in:popIn={{ y: 0, scale: 0.96 }} out:popOut={{ y: 0, scale: 0.98 }}>
     <header>
       <Button variant="borderless" icon="xmark" iconOnly aria-label={t("common.close")} onclick={onclose} />
       <div class="name mac-headline" title={item.name}>{item.name}</div>
@@ -86,6 +90,14 @@
       {#if mode === "photo"}
         {#key item.id}
           <img src={photoFailed || !online ? thumbUrl({ id: item.image_id }) : previewUrl({ id: item.image_id })} alt={item.name} onerror={() => (photoFailed = true)} draggable="false" />
+        {/key}
+      {:else if mode === "file-photo"}
+        {#key item.path}
+          {#if photoFailed}
+            <div class="card"><KindIcon kind="photo" size={96} /><p class="mac-body note">{t("quick.photoFailed")}</p></div>
+          {:else}
+            <img src={photoUrl(item)} alt={item.name} onerror={() => (photoFailed = true)} draggable="false" />
+          {/if}
         {/key}
       {:else if mode === "video"}
         {#key item.id}

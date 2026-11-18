@@ -1486,6 +1486,24 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             raise HTTPException(409, f"請接上「{r['name']}」以預覽這個檔案。")
         return target
 
+    @app.get("/api/items/photo")
+    def item_photo(root: int, path: str, size: int = 2048):
+        """直接從硬碟讀一張照片做成預覽（還沒進照片圖庫、或從佔比圖打開時用）。只讀取，不在硬碟上留下任何東西。
+        HEIC、TIFF、RAW（內嵌預覽）也可以；長邊縮到 size。"""
+        from .media import PHOTO_EXTENSIONS, RAW_EXTENSIONS, MediaError, encode, load_image
+
+        target = _preview_target(root, path)
+        ext = target.suffix.lower()
+        if ext not in PHOTO_EXTENSIONS and ext not in RAW_EXTENSIONS:
+            raise HTTPException(415, "這不是照片")
+        side = max(256, min(int(size), 4096))
+        try:
+            img = load_image(target, "photo", ext in RAW_EXTENSIONS, side)
+            data = encode(img, side, quality=85)
+        except MediaError as e:
+            raise HTTPException(422, str(e)) from e
+        return Response(data, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=300"})
+
     @app.get("/api/items/raw")
     def item_raw(root: int, path: str):
         target = _preview_target(root, path)

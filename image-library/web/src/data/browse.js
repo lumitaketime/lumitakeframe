@@ -15,6 +15,8 @@ export async function saveOpenAction(action) {
 }
 
 /** 快速預覽：可以直接播放或顯示的原檔（音樂、PDF）的網址；只讀取，硬碟要接著 */
+/** 直接從硬碟讀的照片預覽（還沒進照片圖庫的照片；HEIC、RAW 也可以） */
+export const photoUrl = (item, size = 2048) => `/api/items/photo?root=${item.root_id}&path=${encodeURIComponent(item.path)}&size=${size}`;
 export const rawUrl = (item) => `/api/items/raw?root=${item.root_id}&path=${encodeURIComponent(item.path)}`;
 
 /** 快速預覽：文字檔開頭的一段 */

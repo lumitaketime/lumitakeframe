@@ -299,6 +299,9 @@ class _Scan:
         self.pending = 0
         self.last_commit = time.monotonic()
         self.last_report = 0.0
+        self.current = ""  # 正在看的資料夾（顯示在進度上，卡住時看得出卡在哪裡）
+        self.note = ""  # 額外的說明，例如「正在計算照片圖庫的大小」
+        self.resumed_skips = 0  # 接著上次掃描時，略過的已完成資料夾
         home = cfg.home.resolve() if cfg.home.exists() else None
         self.exclude = str(home) if home else None
 
@@ -345,6 +348,13 @@ class _Scan:
             self.last_report = now
             r = self.result
             message = f"{self.root['name']}：已檢查 {r.files:,} 個檔案、{r.folders:,} 個資料夾，新增 {r.files_added:,} 個"
+            if self.resumed_skips:
+                message += f"（接著上次的進度，已略過 {self.resumed_skips:,} 個做完的資料夾）"
+            if self.note:
+                message += f"｜{self.note}"
+            elif self.current:
+                tail = "/".join(self.current.split("/")[-2:])
+                message += f"｜正在看：{tail}"
             if getattr(self.progress, "wants_scan", False):  # 背景工作另外要知道「正在掃哪一個、掃了幾個」
                 self.progress(message, scan={"root_id": self.root["id"], "files": r.files})
             else:
@@ -385,35 +395,56 @@ class _Scan:
         self.pending += n + len(ids) + 1
 
     def package_size(self, path: str) -> int:
-        """套件（.app、照片圖庫…）裡所有檔案的總大小。"""
-        total = 0
+        """套件（.app、照片圖庫…）裡所有檔案的總大小。照片圖庫可能有幾十萬個檔案：途中回報進度、可以停止。"""
+        total, seen = 0, 0
         stack = [path]
-        while stack:
-            current = stack.pop()
+        name = os.path.basename(path)
+        try:
+            while stack:
+                current = stack.pop()
+                seen += 1
+                if seen % 200 == 0:
+                    self.check_stop()
+                    self.note = f"正在計算「{name}」的大小（已看過 {seen:,} 個資料夾）"
+                    self.report()
+                total += self._dir_size(current, stack)
+        finally:
+            self.note = ""
+        return total
+
+    def _dir_size(self, current: str, stack: list) -> int:
+        """一層資料夾裡檔案的大小；子資料夾放進 stack 之後再看。"""
+        total = 0
+        try:
+            with os.scandir(current) as it:
+                entries = list(it)
+        except OSError:
+            self.check_online()
+            return 0
+        for e in entries:
             try:
-                with os.scandir(current) as it:
-                    entries = list(it)
+                if e.is_dir(follow_symlinks=False):
+                    stack.append(e.path)
+                elif e.is_file(follow_symlinks=False):
+                    total += e.stat(follow_symlinks=False).st_size
             except OSError:
                 self.check_online()
-                continue
-            for e in entries:
-                try:
-                    if e.is_dir(follow_symlinks=False):
-                        stack.append(e.path)
-                    elif e.is_file(follow_symlinks=False):
-                        total += e.stat(follow_symlinks=False).st_size
-                except OSError:
-                    self.check_online()
         return total
 
     def process_folder(self, folder_id: int, rel: str, done_gen: int) -> list[tuple[int, str, int]]:
         """處理一個資料夾；回傳子資料夾 [(id, 相對路徑, scan_gen)]。"""
         conn = self.conn
         if done_gen == self.gen:  # 這一輪已經處理過（上次掃描中斷前）：直接往下走
+            self.resumed_skips += 1
+            if self.resumed_skips % 500 == 0:
+                self.check_stop()
+                self.report()
             return [(r["id"], r["path"], r["scan_gen"]) for r in conn.execute(
                 "SELECT id, path, scan_gen FROM folders WHERE parent_id = ? AND status = 'ok' ORDER BY name", (folder_id,))]
         abs_path = self.root_path.joinpath(*rel.split("/")) if rel else self.root_path
         abs_str = str(abs_path)
+        self.current = rel
+        self.report()
         try:
             with os.scandir(abs_path) as it:
                 entries = list(it)
