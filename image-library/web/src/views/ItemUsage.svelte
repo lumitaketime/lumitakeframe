@@ -5,6 +5,7 @@
    * 用 Canvas 畫（可以有好幾萬塊），不是幾萬個 DOM 元素。顏色不是唯一線索：方塊裡有文字、下方有圖例、
    * 滑鼠停留時顯示完整路徑、大小、佔整體與佔上一層的百分比。按一下選取、按兩下進入資料夾、方向鍵換上一塊或下一塊。
    */
+  import { untrack } from "svelte";
   import { Button, ProgressIndicator, SegmentedControl } from "../ui/index.js";
   import KindIcon from "./KindIcon.svelte";
   import { handleViewKey } from "./keys.js";
@@ -32,6 +33,37 @@
   const total = $derived(usage?.bytes || 0);
   const chart = $derived(prefs.chart);
 
+  // ---- 縮放與平移：放大後小塊也看得到名稱；zoom＝倍數，panX／panY＝畫面左上角在放大後的圖上的位置 ----
+  const ZMAX = 32;
+  let zoom = $state(1);
+  let panX = $state(0);
+  let panY = $state(0);
+  const VW = $derived(width * zoom);
+  const VH = $derived(height * zoom);
+  $effect(() => {
+    tree;
+    chart;
+    untrack(() => { zoom = 1; panX = 0; panY = 0; }); // 換資料夾或換圖表：回到原來大小
+  });
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  /** 以畫面上的 (px, py) 為中心縮放 factor 倍 */
+  function zoomAt(factor, px = width / 2, py = height / 2) {
+    const z2 = clamp(zoom * factor, 1, ZMAX);
+    if (z2 === zoom) return;
+    panX = clamp((px + panX) * (z2 / zoom) - px, 0, width * z2 - width);
+    panY = clamp((py + panY) * (z2 / zoom) - py, 0, height * z2 - height);
+    zoom = z2;
+  }
+  function panBy(dx, dy) {
+    panX = clamp(panX + dx, 0, VW - width);
+    panY = clamp(panY + dy, 0, VH - height);
+  }
+  function resetZoom() {
+    zoom = 1;
+    panX = 0;
+    panY = 0;
+  }
+
   // ---- 幾何：方塊圖是一層一層的矩形，環狀圖是一圈一圈的扇形 ----
   const shapes = $derived.by(() => {
     const out = new Array(units.length).fill(null);
@@ -57,9 +89,9 @@
         });
         return placed;
       };
-      place(top, 0, 0, width, height);
+      place(top, 0, 0, VW, VH);
     } else {
-      const R = Math.min(width, height) / 2 - 6;
+      const R = Math.min(VW, VH) / 2 - 6;
       const r0 = R * 0.2;
       const step = (R - r0) / RINGS;
       const ring = (list, a0, span, d) => {
@@ -82,6 +114,8 @@
 
   // 找出滑鼠下最深的那一塊：從第一層往下找，每一層只看這個資料夾的子項目
   function hit(x, y) {
+    x += panX;
+    y += panY;
     if (chart === "treemap") {
       let list = top;
       let found = -1;
@@ -96,7 +130,7 @@
         list = kids[i];
       }
     }
-    const dx = x - width / 2, dy = y - height / 2;
+    const dx = x - VW / 2, dy = y - VH / 2;
     const r = Math.hypot(dx, dy);
     let ang = Math.atan2(dy, dx);
     if (ang < -Math.PI / 2) ang += Math.PI * 2;
@@ -156,6 +190,9 @@
     const ctx = canvas.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
+    ctx.save();
+    ctx.translate(-panX, -panY);
+    const x0 = panX, y0 = panY, x1 = panX + width, y1 = panY + height;
     const c = colors();
     ctx.textBaseline = "middle";
     const paint = (i) => c.map[colorKey(units[i])] || c.map.other;
@@ -164,7 +201,7 @@
       // 先畫資料夾的框（越深越淡一點），再畫檔案與「其他」
       for (let i = 0; i < shapes.length; i++) {
         const s = shapes[i];
-        if (!s) continue;
+        if (!s || s.x > x1 || s.y > y1 || s.x + s.w < x0 || s.y + s.h < y0) continue; // 不在畫面上的不畫
         const u = units[i];
         if (s.frame) {
           ctx.fillStyle = c.frame;
@@ -205,7 +242,7 @@
         ctx.strokeRect(s.x + 1, s.y + 1, Math.max(1, s.w - 2), Math.max(1, s.h - 2));
       }
     } else {
-      const cx = width / 2, cy = height / 2;
+      const cx = VW / 2, cy = VH / 2;
       const mark = (i, lw, color) => {
         const s = shapes[i];
         ctx.beginPath();
@@ -241,7 +278,7 @@
       }
       for (const i of sel.picked) if (shapes[i]) mark(i, 3, c.selection);
       if (hover >= 0 && shapes[hover]) mark(hover, 2, c.text);
-      const R = Math.min(width, height) / 2 - 6;
+      const R = Math.min(VW, VH) / 2 - 6;
       const r0 = R * 0.2;
       ctx.textAlign = "center";
       ctx.fillStyle = c.text;
@@ -252,12 +289,15 @@
       ctx.fillText(formatBytes(total), cx, cy + 10);
       ctx.textAlign = "left";
     }
+    ctx.restore();
   }
   let frame = 0;
   $effect(() => {
     shapes;
     hover;
     theme;
+    panX;
+    panY;
     sel.size;
     sel.focus;
     for (const i of sel.picked) i;
@@ -276,12 +316,64 @@
     };
   });
 
+  // 觸控板捏合（Chrome、Firefox 送出帶 ctrlKey 的滾輪；Safari 送出 gesture 事件）或 ⌘／Ctrl＋滾輪：縮放；
+  // 放大後兩指滑動或滾輪：移動畫面；按住拖曳也可以移動
+  function onwheel(e) {
+    const r = canvas.getBoundingClientRect();
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      zoomAt(clamp(Math.exp(-e.deltaY * 0.01), 0.8, 1.25), e.clientX - r.left, e.clientY - r.top); // 滑鼠滾輪一格最多 1.25 倍；觸控板捏合的量本來就小
+    } else if (zoom > 1) {
+      e.preventDefault();
+      panBy(e.deltaX, e.deltaY);
+    }
+  }
+  $effect(() => {
+    if (!canvas) return;
+    let base = 1;
+    const start = (e) => { e.preventDefault(); base = zoom; };
+    const change = (e) => {
+      e.preventDefault();
+      const r = canvas.getBoundingClientRect();
+      zoomAt((base * e.scale) / zoom, (e.clientX ?? r.left + width / 2) - r.left, (e.clientY ?? r.top + height / 2) - r.top);
+    };
+    canvas.addEventListener("wheel", onwheel, { passive: false });
+    canvas.addEventListener("gesturestart", start);
+    canvas.addEventListener("gesturechange", change);
+    return () => {
+      canvas.removeEventListener("wheel", onwheel);
+      canvas.removeEventListener("gesturestart", start);
+      canvas.removeEventListener("gesturechange", change);
+    };
+  });
+  let drag = null; // { x, y, moved }
+  let dragged = false;
+  function ondown(e) {
+    if (e.button !== 0 || zoom <= 1) return;
+    drag = { x: e.clientX, y: e.clientY, moved: false };
+  }
+  function ondragmove(e) {
+    if (!drag) return false;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < 4) return false;
+    drag.moved = true;
+    panBy(-dx, -dy);
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    return true;
+  }
+  function onup() {
+    dragged = !!drag?.moved;
+    drag = null;
+  }
+
   const at = (e) => {
     const r = canvas.getBoundingClientRect();
     return hit(e.clientX - r.left, e.clientY - r.top);
   };
   let moveRaf = 0;
   function onmove(e) {
+    if (ondragmove(e)) return;
     const { clientX, clientY } = e;
     if (moveRaf) return;
     moveRaf = requestAnimationFrame(() => {
@@ -299,6 +391,12 @@
   }
   function onkeydown(e) {
     if (rest) return;
+    if (!e.metaKey && !e.ctrlKey && (e.key === "+" || e.key === "=" || e.key === "-" || e.key === "0")) {
+      e.preventDefault();
+      if (e.key === "0") resetZoom();
+      else zoomAt(e.key === "-" ? 1 / 1.5 : 1.5);
+      return;
+    }
     const key = e.key === "ArrowRight" ? "ArrowDown" : e.key === "ArrowLeft" ? "ArrowUp" : e.key;
     handleViewKey(new Proxy(e, { get: (o, k) => (k === "key" ? key : typeof o[k] === "function" ? o[k].bind(o) : o[k]) }),
       { sel, total: units.length, onopen: open, onpreview });
@@ -344,10 +442,16 @@
   <div class="stage" bind:this={box} bind:clientWidth={width} bind:clientHeight={height} tabindex="0" role="listbox" aria-multiselectable="true"
     aria-label={t("usage.label", { name: usage?.name || "" })} aria-activedescendant={sel.focus >= 0 && sel.focus < 400 ? `item-${sel.focus}` : undefined} {onkeydown}>
     <canvas bind:this={canvas} style:width="{width}px" style:height="{height}px" aria-hidden="true"
-      onpointermove={onmove} onpointerleave={() => (hover = -1)}
-      onclick={(e) => { const i = at(e); if (i >= 0) sel.click(i, e); else sel.clear(); }}
+      class:grab={zoom > 1}
+      onpointerdown={ondown} onpointerup={onup} onpointermove={onmove} onpointerleave={() => { hover = -1; drag = null; }}
+      onclick={(e) => { if (dragged) { dragged = false; return; } const i = at(e); if (i >= 0) sel.click(i, e); else sel.clear(); }}
       ondblclick={(e) => { const i = at(e); if (i >= 0) open(i); }}
       oncontextmenu={(e) => { e.preventDefault(); const i = at(e); if (i >= 0) { sel.context(i); oncontext?.(e, i); } }}></canvas>
+    <div class="zoom" role="group" aria-label={t("usage.zoom")}>
+      <Button size="small" variant="glass" icon="minus" iconOnly aria-label={t("usage.zoomOut")} disabled={zoom <= 1} onclick={() => zoomAt(1 / 1.5)} />
+      <button type="button" class="zpct mac-caption-1" onclick={resetZoom} title={t("usage.zoomReset")} disabled={zoom === 1}>{Math.round(zoom * 100)}%</button>
+      <Button size="small" variant="glass" icon="plus" iconOnly aria-label={t("usage.zoomIn")} disabled={zoom >= ZMAX} onclick={() => zoomAt(1.5)} />
+    </div>
     <!-- 給螢幕閱讀器的清單：畫面上看不到；只列最大的前 400 塊，其餘可用方向鍵走到 -->
     <ul class="sr">
       {#each units.slice(0, 400) as u, i (i)}<li id="item-{i}" role="option" aria-selected={sel.has(i)}>{u.name}，{formatBytes(u.size)}</li>{/each}
@@ -399,7 +503,13 @@
   .count { flex: none; color: var(--label-tertiary); }
   .stage { position: relative; flex: 1; min-height: 0; margin: 0 var(--space-4) var(--space-4); outline: none; border-radius: var(--radius-sm); overflow: hidden; }
   .stage:focus-visible { box-shadow: var(--focus-ring); }
-  canvas { display: block; }
+  canvas { display: block; touch-action: none; }
+  canvas.grab { cursor: grab; }
+  canvas.grab:active { cursor: grabbing; }
+  .zoom { position: absolute; z-index: 2; right: var(--space-2); bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-1);
+    padding: 2px; border-radius: var(--radius-capsule); background: var(--glass-regular); box-shadow: var(--shadow-rim), var(--shadow-glass); }
+  .zpct { min-width: 3.4em; border: 0; background: none; color: var(--label-primary); font: inherit; text-align: center; cursor: pointer; font-feature-settings: "tnum"; }
+  .zpct:disabled { cursor: default; color: var(--label-secondary); }
   .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; list-style: none; }
   .tip { position: absolute; z-index: 2; pointer-events: none; display: flex; flex-direction: column; gap: 1px; max-width: 260px; padding: var(--space-1) var(--space-2);
     border-radius: var(--radius-sm); background: var(--elevated-primary); color: var(--label-primary); box-shadow: var(--shadow-popover); }
