@@ -167,3 +167,24 @@ def annotated(ram_gb: int, installed_names: list[str]) -> list[dict]:
             "installed": any(same_model(m["name"], n) for n in installed_names),
         })
     return out
+
+
+# ---- 檔案管理助理用的模型（依這台電腦的記憶體挑） ----
+# 由大到小：記憶體夠就用比較聰明的；助理要回答問題與整理檔案，Gemma 4 是實測過的系列。
+ASSISTANT_LADDER = ("gemma4:31b", "gemma4:26b", "gemma4:e4b", "gemma4:e2b")
+
+
+def recommend_assistant(ram_gb: int) -> str:
+    """這台電腦最適合的助理模型：8 GB → E2B，16 GB → E4B，32 GB → 26B，48 GB 以上 → 31B。不知道記憶體時用 E4B。"""
+    if not ram_gb:
+        return "gemma4:e4b"
+    by_name = {m["name"]: m for m in RECOMMENDED}
+    for name in ASSISTANT_LADDER:
+        if fit(by_name[name], ram_gb) == "good":
+            return name
+    return ASSISTANT_LADDER[-1]
+
+
+def assistant_model(cfg) -> str:
+    """助理現在用的模型：本人選過的，或依這台電腦挑的。"""
+    return cfg.assistant_model or recommend_assistant(machine_info()["ram_gb"])

@@ -22,6 +22,7 @@ dependencies = [
     "imageio-ffmpeg>=0.5",
     "certifi>=2024.2",
     "pypdfium2>=4.30",  # 讀 PDF 的文字（全文檢索）
+    "anthropic>=2.10",  # Claude（使用者選了 Claude 時才會用到）
     "pyobjc-framework-Vision>=10.0; sys_platform == 'darwin'",  # 文字辨識（macOS 內建的 Apple Vision）
 ]
 

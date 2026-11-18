@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from lumilib import assistant, db, textindex
+from lumilib import llm as llm_mod
 from lumilib.scanner import scan_all
 
 from test_catalog import CatalogTestCase
@@ -55,7 +56,7 @@ class AssistantTests(CatalogTestCase):
                 yield {"message": {"content": piece}}
             yield {"done": True}
 
-        with mock.patch.object(assistant, "_post_stream", fake_stream):
+        with mock.patch.object(llm_mod, "_post_ollama", fake_stream):
             llm = assistant.OllamaLLM(client, "http://127.0.0.1:11434", "gemma4:e4b")
             events = list(assistant.ask(self.conn, llm, question, [], "備份A", "zh-Hant"))
         return events, sent
@@ -94,7 +95,7 @@ class AssistantTests(CatalogTestCase):
             raise assistant.OllamaUnavailable("沒有連到 Ollama。")
             yield  # noqa: unreachable
 
-        with mock.patch.object(assistant, "_post_stream", broken):
+        with mock.patch.object(llm_mod, "_post_ollama", broken):
             events = list(assistant.ask(self.conn, assistant.OllamaLLM(FakeClient([]), "http://x", "m"), "你好"))
         self.assertEqual(events[-1], {"type": "error", "message": "沒有連到 Ollama。"})
 
@@ -164,7 +165,7 @@ class OpenAICompatibleTests(CatalogTestCase):
             self.assertNotIn("sk-secret", c.get("/api/settings").text)
             c.post("/api/settings", json={"assistant_api_key": ""})  # 空白＝不改
             self.assertTrue(c.get("/api/settings").json()["assistant_api_key_set"])
-            c.post("/api/settings", json={"assistant_api_key": "", "clear_api_key": True})
+            c.post("/api/settings", json={"assistant_api_key": "", "clear_assistant_api_key": True})
             self.assertFalse(c.get("/api/settings").json()["assistant_api_key_set"])
 
 

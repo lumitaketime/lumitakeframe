@@ -31,7 +31,7 @@ from .auth import COOKIE, SESSION_DAYS, Auth
 from .config import CONFIG_KEYS, Config
 from .jobs import JobRunner
 from .media import BROWSER_VIDEO, MediaError, encode, exiftool, load_image, thumb_path, tool_status, write_thumbnail
-from .models import annotated, machine_info, recommend, same_model
+from .models import annotated, machine_info, recommend, recommend_assistant, same_model
 from .search import STACK_COUNT_SQL, search, summarize, tag_covers, top_tags
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -62,15 +62,17 @@ def build_id() -> str:
         _BUILD = h.hexdigest()[:12]
     return _BUILD
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
-LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/catalog/move", "/api/catalog/location/check", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export"}
+LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/catalog/move", "/api/catalog/location/check", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export",
+                  "/api/assistant/actions/run", "/api/assistant/actions/undo"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
+SECRET_KEYS = ("assistant_api_key", "assistant_claude_key", "assistant_gemini_key", "assistant_openai_key")
 MAX_IDS = 5000
 
 
@@ -1690,6 +1692,19 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "error": str(exc)[:300]}
 
+    @app.post("/api/assistant/models")
+    def assistant_models(body: dict = Body(default={})):
+        """向服務取得可以用的模型清單（使用者按下按鈕才連線，只送金鑰，不送任何檔案資料）。"""
+        from .llm import PROVIDERS, list_models
+
+        provider = str(body.get("provider") or "")
+        if provider not in PROVIDERS or provider == "ollama":
+            raise HTTPException(400, "不認得的服務")
+        try:
+            return {"ok": True, "models": list_models(cfg, provider)[:300]}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)[:300], "models": []}
+
     @app.get("/api/assistant/suggestions")
     def assistant_suggestions():
         from .assistant import suggestions
@@ -1702,7 +1717,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     @app.post("/api/assistant/ask")
     def assistant_ask(body: dict = Body(...)):
-        """回答一個問題：一行一個 JSON 事件（查詢步驟、逐字的回答、來源）。"""
+        """回答一個問題：一行一個 JSON 事件（查詢步驟、提案、逐字的回答、來源）。"""
         from fastapi.responses import StreamingResponse
 
         from .assistant import ask, make_llm
@@ -1716,12 +1731,72 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             c = conn()
             try:
                 for ev in ask(c, make_llm(cfg, client_factory()), question, history,
-                              str(body.get("context") or "")[:300], str(body.get("lang") or "zh-Hant")):
+                              str(body.get("context") or "")[:300], str(body.get("lang") or "zh-Hant"),
+                              level=cfg.assistant_permission, cloud_content=bool(cfg.assistant_cloud_content)):
                     yield json.dumps(ev, ensure_ascii=False) + "\n"
             finally:
                 c.close()
 
         return StreamingResponse(events(), media_type="application/x-ndjson")
+
+    # ---- 助理提出的動作：本人確認後才執行，都可以復原 ----
+    @app.get("/api/assistant/actions")
+    def assistant_actions(limit: int = 30):
+        from .actions import history
+
+        c = conn()
+        try:
+            return history(c, limit)
+        finally:
+            c.close()
+
+    @app.get("/api/assistant/actions/{action_id:int}")
+    def assistant_action(action_id: int):
+        from .actions import ActionError, get
+
+        c = conn()
+        try:
+            return get(c, action_id)
+        except ActionError as e:
+            raise HTTPException(404, str(e)) from e
+        finally:
+            c.close()
+
+    def _action_call(body: dict, fn):
+        from .actions import ActionError
+
+        if body.get("confirm") is not True:
+            raise HTTPException(400, "需要本人確認")
+        c = conn()
+        try:
+            return fn(c, int(body.get("id")))
+        except (TypeError, ValueError) as e:
+            if isinstance(e, ActionError):
+                raise HTTPException(400, str(e)) from e
+            raise HTTPException(400, "動作編號不對") from e
+        finally:
+            c.close()
+
+    @app.post("/api/assistant/actions/run")
+    def assistant_action_run(body: dict = Body(...)):
+        """執行助理的提案。只有使用者在畫面上按下確認時才會呼叫（confirm=true），而且只限這台 Mac。"""
+        from .actions import run
+
+        only = body.get("only")
+        only = [int(i) for i in only] if isinstance(only, list) else None
+        return _action_call(body, lambda c, i: run(c, i, cfg.assistant_permission, only))
+
+    @app.post("/api/assistant/actions/undo")
+    def assistant_action_undo(body: dict = Body(...)):
+        from .actions import undo
+
+        return _action_call(body, undo)
+
+    @app.post("/api/assistant/actions/dismiss")
+    def assistant_action_dismiss(body: dict = Body(...)):
+        from .actions import dismiss
+
+        return _action_call({**body, "confirm": True}, dismiss)
 
     @app.get("/api/usage/tree")
     def usage_tree_api(root: int, path: str = "", px: int = 1_000_000, max_nodes: int = 30_000, depth: int = 64):
@@ -2264,6 +2339,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             "machine": machine,
             "picks": recommend(machine["ram_gb"]),
             "recommended": annotated(machine["ram_gb"], names),
+            "assistant_pick": recommend_assistant(machine["ram_gb"]),
             "active": {"vision": cfg.vision_model, "embed": cfg.embed_model, "text": cfg.text_model},
             "ollama_url": cfg.ollama_url,
         }
@@ -2292,16 +2368,25 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             finally:
                 c.close()
         for key, value in body.items():
-            if key == "assistant_api_key" and not value and not body.get("clear_api_key"):
+            if key in SECRET_KEYS and not value and not body.get("clear_" + key):
                 continue  # 空白＝沒有改金鑰（介面不會拿到原本的金鑰）
+            if key == "assistant_permission":
+                try:
+                    value = max(1, min(4, int(value)))
+                except (TypeError, ValueError):
+                    continue
             if key in SETTING_KEYS:
                 cfg.save_setting(key, value)
         return public_settings()
 
     def public_settings() -> dict:
         """設定值；API 金鑰不回傳，只說有沒有設定。"""
-        out = {k: getattr(cfg, k) for k in CONFIG_KEYS if k != "assistant_api_key"}
-        out["assistant_api_key_set"] = bool(cfg.assistant_api_key)
+        out = {k: getattr(cfg, k) for k in CONFIG_KEYS if k not in SECRET_KEYS}
+        for k in SECRET_KEYS:
+            out[k + "_set"] = bool(getattr(cfg, k))
+        from .models import assistant_model
+
+        out["assistant_model_effective"] = assistant_model(cfg)
         return out
 
     # ---- 手機連線 ----

@@ -68,11 +68,22 @@ DEFAULTS = {
     "folder_sort": "name",  # 資料夾排序：name／updated／count／custom
     "ocr_scope": "scans",  # 文字辨識範圍：scans＝掃描檔與截圖／all＝再加上所有照片／off
     "ocr_languages": "zh-Hant,zh-Hans,en-US",  # 文字辨識的語言（Apple Vision 的語言代碼）
-    "assistant_model": "gemma4:e4b",  # 檔案管理助理用的模型（在這台電腦上經由 Ollama 執行）
-    "assistant_provider": "ollama",  # ollama＝這台電腦；openai＝OpenAI 相容的 API（本機的 LM Studio 或雲端服務）
-    "assistant_api_url": "",  # 例如 http://127.0.0.1:1234/v1（本機）或 https://api.openai.com/v1（雲端）
+    "assistant_model": "",  # 檔案管理助理在這台電腦上用的模型（Ollama）；空白＝依這台電腦的記憶體自動挑
+    # 助理用哪個服務：ollama＝這台電腦（離線）／claude／gemini／openai／custom（其他 OpenAI 相容的服務，網址自己填）
+    "assistant_provider": "ollama",
+    "assistant_api_url": "",  # 其他相容服務的網址，例如 http://127.0.0.1:1234/v1（本機的 LM Studio）
     "assistant_api_model": "",
-    "assistant_api_key": "",  # 只存在這台電腦的設定檔，介面不會顯示
+    "assistant_api_key": "",  # 金鑰都只存在這台電腦的設定檔，介面不會顯示
+    "assistant_claude_model": "claude-opus-5-5",
+    "assistant_claude_key": "",
+    "assistant_gemini_model": "",
+    "assistant_gemini_key": "",
+    "assistant_openai_model": "",
+    "assistant_openai_key": "",
+    # 助理的權限：1＝只看目錄／2＝可以讀文件內容／3＝可以在 Re'memor 裡整理（標籤、智慧資料夾、待刪除標記）
+    # ／4＝可以搬移、改名檔案。每一個動作都要本人在畫面上確認才會執行，而且都可以復原；助理永遠不會刪除檔案。
+    "assistant_permission": 2,
+    "assistant_cloud_content": 0,  # 用雲端服務時，可不可以把文件內容送過去（關閉時只送檔名與統計）
     "auto_extract": 1,  # 掃描完自動接著讀取文件文字與文字辨識（在背景，可以暫停、隨時拔掉）
     "start_page": "folders",  # 開啟 App 時先看到的頁面：folders＝所有檔案／drives＝硬碟／find＝搜尋／photos＝照片
     "open_action": "",  # 按兩下照片以外的檔案：open＝用預設的 App 打開／reveal＝在 Finder 中顯示／空白＝第一次先問
@@ -144,6 +155,14 @@ class Config:
     assistant_api_url: str = DEFAULTS["assistant_api_url"]
     assistant_api_model: str = DEFAULTS["assistant_api_model"]
     assistant_api_key: str = DEFAULTS["assistant_api_key"]
+    assistant_claude_model: str = DEFAULTS["assistant_claude_model"]
+    assistant_claude_key: str = DEFAULTS["assistant_claude_key"]
+    assistant_gemini_model: str = DEFAULTS["assistant_gemini_model"]
+    assistant_gemini_key: str = DEFAULTS["assistant_gemini_key"]
+    assistant_openai_model: str = DEFAULTS["assistant_openai_model"]
+    assistant_openai_key: str = DEFAULTS["assistant_openai_key"]
+    assistant_permission: int = DEFAULTS["assistant_permission"]
+    assistant_cloud_content: int = DEFAULTS["assistant_cloud_content"]
     auto_extract: int = DEFAULTS["auto_extract"]
     start_page: str = DEFAULTS["start_page"]
     stack_enabled: int = DEFAULTS["stack_enabled"]
@@ -193,6 +212,10 @@ class Config:
         data[key] = _coerce(key, value)
         setattr(self, key, data[key])
         self.config_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            os.chmod(self.config_file, 0o600)  # 設定檔裡可能有 API 金鑰：只有自己能讀
+        except OSError:
+            pass
 
     def as_dict(self) -> dict:
         data = asdict(self)

@@ -1,5 +1,5 @@
 /**
- * 資料層：檔案管理助理。問題與回答都只在這台電腦上（Re'memor 的引擎 → 本機的 Ollama），不會送到網路上。
+ * 資料層：檔案管理助理。預設只在這台電腦上（Re'memor 的引擎 → 本機的 Ollama）；使用者選了雲端服務時才會送到那個服務。
  */
 import { api } from "../lib/api.js";
 
@@ -49,3 +49,15 @@ export function ask({ question, history, context, lang }, onEvent) {
   })();
   return () => ctrl.abort();
 }
+
+// ---- 助理提出的動作（提案 → 本人確認 → 執行；都可以復原） ----
+/** 執行一個提案。only＝只做勾選的項目（索引）。只有使用者在畫面上確認後才呼叫。 */
+export const runAction = (id, only) => api("/api/assistant/actions/run", { body: { id, only, confirm: true } });
+/** 復原做過的動作 */
+export const undoAction = (id) => api("/api/assistant/actions/undo", { body: { id, confirm: true } });
+/** 不要這個提案 */
+export const dismissAction = (id) => api("/api/assistant/actions/dismiss", { body: { id } });
+/** 助理做過的動作（最近的在前） */
+export const loadActions = (limit = 30) => api(`/api/assistant/actions?limit=${limit}`, { quiet: true });
+/** 向雲端服務取得可以用的模型（使用者按下按鈕才連線，只送金鑰） */
+export const loadProviderModels = (provider) => api("/api/assistant/models", { body: { provider } });

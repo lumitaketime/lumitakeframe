@@ -1,12 +1,14 @@
 <script>
   /**
    * 檔案管理助理：上方是「我可以幫忙什麼」的建議卡片（直接從目錄算出來），下方是對話。
-   * 助理在這台電腦上執行（Ollama＋Gemma 4），先查目錄再回答，並附上來源；它不會刪除、搬移或修改任何檔案。
-   * 問題與回答只存在這個畫面（關掉就沒了），不會上傳。
+   * 助理預設在這台電腦上執行（Ollama＋Gemma 4），先查目錄再回答，並附上來源。
+   * 權限允許時，助理會提出整理動作（動作卡片）；本人勾選、按「執行」才會做，都可以復原。助理自己不會刪除、搬移或修改任何檔案。
+   * 問題與回答只存在這個畫面（關掉就沒了）；用雲端服務時才會送到那個服務。
    */
   import { tick } from "svelte";
   import { Alert, Button, Icon, ProgressIndicator } from "../ui/index.js";
   import KindIcon from "../views/KindIcon.svelte";
+  import ActionCard from "../views/ActionCard.svelte";
   import { loadAssistantStatus, loadSuggestions, downloadModel, startOllama, ask } from "../data/assistant.js";
   import { setFrame } from "../shell/frame.svelte.js";
   import { t, i18n, formatBytes, formatNumber } from "../i18n/index.svelte.js";
@@ -52,7 +54,7 @@
     question = "";
     const history = messages.filter((m) => !m.error).map((m) => ({ role: m.role, content: m.content }));
     messages.push({ role: "user", content: q });
-    const reply = { role: "assistant", content: "", steps: [], sources: [], error: "", busy: true };
+    const reply = { role: "assistant", content: "", steps: [], sources: [], actions: [], error: "", busy: true };
     messages.push(reply);
     const at = messages.length - 1;
     asking = true;
@@ -60,6 +62,7 @@
     stopAsk = ask({ question: q, history, context, lang: i18n.locale }, (ev) => {
       const m = messages[at];
       if (ev.type === "step") m.steps.push(ev);
+      else if (ev.type === "action") m.actions.push(ev.action);
       else if (ev.type === "token") m.content += ev.text;
       else if (ev.type === "done") { m.sources = ev.sources || []; m.busy = false; asking = false; }
       else if (ev.type === "error") { m.error = ev.message; m.busy = false; asking = false; }
@@ -134,7 +137,8 @@
     navigate(`/folders/${s.root_id}${s.folder ? `?path=${encodeURIComponent(s.folder)}` : ""}`);
   }
   const hostOf = (u) => { try { return new URL(u).host; } catch { return u || ""; } };
-  const STEP = { search_files: "ai.step.search", largest_folders: "ai.step.folders", drives_overview: "ai.step.drives", duplicates: "ai.step.dupes", read_document: "ai.step.read" };
+  const STEP = { propose_label: "ai.step.propose", propose_smart_folder: "ai.step.propose", propose_mark_delete: "ai.step.propose",
+    propose_move: "ai.step.propose", propose_rename: "ai.step.propose", propose_to_pending: "ai.step.propose", search_files: "ai.step.search", largest_folders: "ai.step.folders", drives_overview: "ai.step.drives", duplicates: "ai.step.dupes", read_document: "ai.step.read" };
 </script>
 
 <div class="assistant">
@@ -143,17 +147,18 @@
       <span class="badge"><Icon name="sparkles" size={20} weight="medium" /></span>
       <div>
         <h1 class="mac-title-2">{t("ai.title")}</h1>
-        <p class="mac-callout sub">{t("ai.lead")} {#if st}<a class="model" href="/settings/assistant" onclick={(e) => { e.preventDefault(); navigate("/settings/assistant"); }}>{st.model}</a>{/if}</p>
+        <p class="mac-callout sub">{t("ai.lead")} {#if st}<a class="model" href="/settings/assistant" onclick={(e) => { e.preventDefault(); navigate("/settings/assistant"); }}>{st.service ? `${st.service} · ` : ""}{st.model}</a>
+          · <a class="model" href="/settings/assistant" onclick={(e) => { e.preventDefault(); navigate("/settings/assistant"); }}>{t("ai.permChip", { level: t(`set.ai.perm.${st.permission}`) })}</a>{/if}</p>
       </div>
     </header>
 
     {#if st?.remote}
-      <p class="remote mac-callout"><Icon name="exclamation-triangle" size={13} />{t("ai.remoteBanner", { host: hostOf(st.url) })}
+      <p class="remote mac-callout"><Icon name="exclamation-triangle" size={13} />{t("ai.remoteBanner", { host: hostOf(st.url), content: st.cloud_content && st.permission >= 2 ? t("ai.remoteContent") : t("ai.remoteNoContent") })}
         <a href="/settings/assistant" onclick={(e) => { e.preventDefault(); navigate("/settings/assistant"); }}>{t("ai.changeModel")}</a></p>
     {/if}
     {#if st && !ready}
       <section class="setup mac-body" aria-live="polite">
-        {#if st.provider === "openai"}
+        {#if st.provider !== "ollama"}
           <p><b>{st.message}</b></p>
           <div class="acts"><Button variant="borderedProminent" onclick={() => navigate("/settings/assistant")}>{t("ai.changeModel")}</Button></div>
         {:else if !st.ollama}
@@ -195,7 +200,7 @@
       {:else}
         <div class="msg bot mac-body">
           {#each m.steps as s, j (j)}
-            <p class="step mac-callout"><Icon name="magnifyingglass" size={11} />{t(STEP[s.tool] || "ai.step.other", { q: s.args?.query || "" })}</p>
+            <p class="step mac-callout"><Icon name={s.tool.startsWith("propose_") ? "sparkles" : "magnifyingglass"} size={11} />{t(STEP[s.tool] || "ai.step.other", { q: s.args?.query || "" })}</p>
           {/each}
           {#if m.content}
             <p class="answer">{#each parts(m.content) as p, j (j)}{#if p.ref}<button type="button" class="ref mac-caption-1" onclick={() => openSource(m.sources[p.ref - 1])}
@@ -204,6 +209,9 @@
             <p class="thinking mac-callout"><ProgressIndicator kind="spinner" size="small" label={t("ai.thinking")} />{t("ai.thinking")}</p>
           {/if}
           {#if m.error}<p class="err mac-callout">{m.error}</p>{/if}
+          {#each m.actions as _, j (m.actions[j].id)}
+            <ActionCard bind:action={m.actions[j]} />
+          {/each}
           {#if m.sources.length && !m.busy}
             <ol class="sources mac-callout">
               {#each m.sources as s, j (j)}
@@ -231,7 +239,7 @@
       <Button variant="borderedProminent" icon="arrow-up" iconOnly aria-label={t("ai.send")} disabled={!ready || !question.trim()} onclick={() => send()} />
     {/if}
   </footer>
-  <p class="privacy mac-caption-1">{t("ai.privacy")}</p>
+  <p class="privacy mac-caption-1">{st?.remote ? t("ai.privacyRemote", { service: st.service || hostOf(st.url) }) : t("ai.privacy")}</p>
 </div>
 
 {#if confirmDownload}

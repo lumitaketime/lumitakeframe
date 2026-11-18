@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_sub
 
 datas, binaries, hiddenimports = [], [], []
 for pkg in ("onnxruntime", "tokenizers", "pillow_heif", "imageio_ffmpeg", "certifi", "pypdfium2", "pypdfium2_raw",
-            "objc", "Foundation", "CoreFoundation", "Quartz", "Vision"):  # 後五個是 Mac 的文字辨識，其他系統上沒有會略過
+            "anthropic", "objc", "Foundation", "CoreFoundation", "Quartz", "Vision"):  # anthropic：Claude；後五個是 Mac 的文字辨識，其他系統上沒有會略過
     try:
         d, b, h = collect_all(pkg)
         datas += d
