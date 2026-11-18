@@ -63,7 +63,7 @@ def build_id() -> str:
     return _BUILD
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
 LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/catalog/move", "/api/catalog/location/check", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export",
-                  "/api/assistant/actions/run", "/api/assistant/actions/undo"}
+                  "/api/assistant/actions/run", "/api/assistant/actions/undo", "/api/health/decide", "/api/health/check"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
@@ -324,6 +324,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "stats": db.stats(c),
                 "roots": roots,
                 "jobs": jobs().snapshot(),
+                "health_alerts": health_alerts(c),
                 "models": {"vision": cfg.vision_model, "embed": cfg.embed_model, "language": cfg.language},
                 "tools": tool_status(),
                 "ssl_ca": bool(ca_file()),
@@ -337,6 +338,69 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "platform": sys.platform,
                 "home": str(cfg.home) if request.state.local else None,
             }
+        finally:
+            c.close()
+
+    def health_alerts(c) -> list[dict]:
+        from .health import alerts
+
+        try:
+            return alerts(c)
+        except sqlite3.Error:
+            return []
+
+    # ---- 硬碟健康：有狀況先停下來問本人 ----
+    @app.get("/api/health")
+    def health_list(check: bool = True):
+        """每顆接著的硬碟的健康狀態（最近看過的直接用上次的結果；只讀取）。"""
+        from . import health
+
+        c = conn()
+        try:
+            out, seen = [], set()
+            for r in db.list_roots(c):
+                key = health.key_of(r)
+                online = Path(r["path"]).is_dir()
+                if key in seen:
+                    continue
+                seen.add(key)
+                h = health.check(c, r) if (online and check) else None
+                if h is None:
+                    row = c.execute("SELECT * FROM drive_health WHERE key = ?", (key,)).fetchone()
+                    h = health.public(row) if row else {"key": key, "name": r["name"], "status": "unknown", "findings": [],
+                                                         "io_errors": 0, "needs_decision": False, "decision": None, "smart": None}
+                same = [x for x in db.list_roots(c) if health.key_of(x) == key]
+                out.append({**h, "online": online, "roots": [x["name"] for x in same], "root_ids": [x["id"] for x in same], "root_id": r["id"]})
+            return out
+        finally:
+            c.close()
+
+    @app.post("/api/health/check")
+    def health_check(body: dict = Body(default={})):
+        """重新看一次某顆硬碟的自我檢測（使用者按下「重新檢查」）。"""
+        from . import health
+
+        c = conn()
+        try:
+            root = c.execute("SELECT * FROM roots WHERE id = ?", (int(body.get("root_id") or 0),)).fetchone()
+            if root is None:
+                raise HTTPException(404, "找不到這個資料夾來源")
+            if not Path(root["path"]).is_dir():
+                raise HTTPException(400, "這顆硬碟沒有接上")
+            return health.check(c, root, force=True)
+        finally:
+            c.close()
+
+    @app.post("/api/health/decide")
+    def health_decide(body: dict = Body(...)):
+        """本人選擇怎麼處理有狀況的硬碟：pause（先暫停）／light（只記錄檔名、不讀內容）／continue（照常進行）。"""
+        from . import health
+
+        c = conn()
+        try:
+            return health.decide(c, str(body.get("key") or ""), str(body.get("decision") or ""))
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
         finally:
             c.close()
 
@@ -1450,6 +1514,20 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         else:
             text = raw.decode("utf-8", errors="replace")
         return {"text": text, "truncated": truncated}
+
+    @app.get("/api/music")
+    def music_info(file: int):
+        """音樂的曲名、演出者、專輯（讀文件文字時記下的標籤；硬碟沒接上也看得到）。"""
+        from . import music
+        from .textindex import body
+
+        c = conn()
+        try:
+            row = c.execute("SELECT t.status FROM file_text t JOIN files f ON f.id = t.file_id WHERE t.file_id = ? AND t.source = 'music' "
+                            "AND t.size = f.size AND t.mtime = f.mtime", (int(file),)).fetchone()
+            return {"status": row["status"] if row else "todo", "tags": music.parse(body(c, int(file))) if row else {}}
+        finally:
+            c.close()
 
     @app.get("/api/archive")
     def archive_listing(file: int, limit: int = 2000):

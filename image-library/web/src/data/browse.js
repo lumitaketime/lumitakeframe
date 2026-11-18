@@ -20,6 +20,8 @@ export const rawUrl = (item) => `/api/items/raw?root=${item.root_id}&path=${enco
 /** 快速預覽：文字檔開頭的一段 */
 /** 壓縮檔裡的檔案清單（掃描後記在目錄裡；沒有解開，硬碟沒接上也拿得到） */
 export const loadArchive = (fileId) => api("/api/archive", { params: { file: fileId }, quiet: true });
+/** 音樂的曲名、演出者、專輯（讀文件文字時記下的標籤） */
+export const loadMusic = (fileId) => api("/api/music", { params: { file: fileId }, quiet: true });
 export const loadText = (item) => api("/api/items/text", { params: { root: item.root_id, path: item.path }, quiet: true });
 
 /** 顏色標籤：只存在 Re'memor 的目錄裡，不寫到硬碟。label 為 null＝拿掉 */

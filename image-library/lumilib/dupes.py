@@ -69,9 +69,10 @@ class CompareResult:
     interrupted: list[str] = field(default_factory=list)  # 中途被拔掉的硬碟
     offline: int = 0
     stopped: bool = False
+    held: list[str] = field(default_factory=list)  # 硬碟可能有狀況、等本人決定的（先不碰）
 
 
-def run_compare(conn: sqlite3.Connection, large: bool = False, progress=None, stop=None) -> CompareResult:
+def run_compare(conn: sqlite3.Connection, large: bool = False, progress=None, stop=None, hold: set[int] | None = None) -> CompareResult:
     """比對內容：替「大小相同的候選檔案」算出完整指紋。分批寫入，可以隨時停止或拔掉硬碟，下次從還沒做的繼續。
 
     large＝False 只處理 1GB 以下的檔案。progress(done_bytes, total_bytes, message)。
@@ -86,6 +87,9 @@ def run_compare(conn: sqlite3.Connection, large: bool = False, progress=None, st
         "ORDER BY f.root_id, d.path, f.name").fetchall()
     todo = [r for r in rows if online.get(r["root_id"])]
     result.offline = len(rows) - len(todo)
+    if hold:
+        result.held = sorted({roots[r["root_id"]]["name"] for r in todo if r["root_id"] in hold})
+        todo = [r for r in todo if r["root_id"] not in hold]
     total = sum(r["size"] for r in todo)
     done = 0
     pending, last_commit, last_report = 0, time.monotonic(), 0.0
@@ -129,13 +133,18 @@ def run_compare(conn: sqlite3.Connection, large: bool = False, progress=None, st
                     continue
             except Stopped:
                 raise
-            except OSError:
+            except OSError as exc:
                 done = before + r["size"]
                 if not Path(root["path"]).is_dir():  # 硬碟被拔掉：這顆先停，其他硬碟繼續；不算錯誤
                     dead.add(r["root_id"])
                     result.interrupted.append(root["name"])
                 else:
                     result.unreadable += 1
+                    from .health import io_error
+
+                    if io_error(conn, r["root_id"], exc):  # 讀取錯誤太多：這顆先停，等本人決定
+                        dead.add(r["root_id"])
+                        result.held.append(root["name"])
                 continue
             conn.execute("UPDATE files SET content_hash = ?, hashed_at = ? WHERE id = ? AND size = ? AND mtime = ?",
                          (digest, db.now_iso(), r["id"], r["size"], r["mtime"]))
@@ -164,6 +173,8 @@ def describe(r: CompareResult) -> str:
         parts.append(f"{r.unreadable:,} 個無法讀取")
     if r.interrupted:
         parts.append("已中斷：" + "、".join(f"「{n}」" for n in r.interrupted) + "，接上後可繼續")
+    if r.held:
+        parts.append("、".join(f"「{n}」" for n in r.held) + " 可能有狀況，先停下來，等你決定怎麼處理")
     if r.offline:
         parts.append(f"{r.offline:,} 個在沒接上的硬碟")
     return ("已停止。" if r.stopped else "") + "，".join(parts)

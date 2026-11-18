@@ -118,7 +118,7 @@
   const local = $derived(!!app.server?.local);
   const isMac = $derived(app.server?.platform === "darwin");
   const go = (id) => navigate(`/settings/${id}`);
-  const FORMATS = ["pdf", "office", "text", "ebook", "mac", "archive"];
+  const FORMATS = ["pdf", "office", "text", "ebook", "mac", "archive", "music"];
 </script>
 
 <div class="settings" bind:clientWidth={width} class:narrow>

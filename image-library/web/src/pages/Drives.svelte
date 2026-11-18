@@ -10,6 +10,8 @@
   import { t, formatNumber, formatBytes, formatDate } from "../i18n/index.svelte.js";
   import { app, toast, refresh } from "../lib/state.svelte.js";
   import { link } from "../lib/router.svelte.js";
+  import HealthAlert from "../views/HealthAlert.svelte";
+  import { loadHealth, recheckHealth } from "../data/health.js";
 
   let detail = $state(null);
   let error = $state("");
@@ -17,7 +19,23 @@
   let removing = $state(null);
   const local = $derived(!!app.server?.local);
 
+  let health = $state([]);
+  const healthOf = (d) => health.find((h) => d.roots.some((r) => h.root_ids?.includes(r.id))) || null;
+  const needing = $derived(health.filter((h) => h.needs_decision));
+  let checking = $state("");
+  async function recheck(d) {
+    checking = d.key;
+    try {
+      await recheckHealth(d.roots[0].id);
+      health = await loadHealth();
+    } catch (e) {
+      toast(e.message, "error");
+    } finally {
+      checking = "";
+    }
+  }
   async function load() {
+    loadHealth().then((h) => (health = h)).catch(() => {});
     try {
       detail = await loadDrivesDetail();
       error = "";
@@ -119,10 +137,17 @@
       </div>
     {/if}
 
+    {#if needing.length}
+      <div class="alerts">
+        {#each needing as h (h.key)}<HealthAlert health={h} onchange={() => load()} />{/each}
+      </div>
+    {/if}
+
     <div class="cards">
       {#each detail.drives as d0 (d0.key)}
         {@const d = { ...d0, ...live(d0), kinds: d0.kinds }}
         {@const segs = segments(d)}
+        {@const h = healthOf(d)}
         <article class="card" class:offline={!d.online}>
           <div class="head">
             <span class="glyph"><Icon name={d.online ? "external-drive-fill" : "external-drive"} size={22} weight="medium" /></span>
@@ -151,6 +176,15 @@
                 <li><i class="dot" style:background="var(--kind-{s.kind})" aria-hidden="true"></i>{t(`kind.${s.kind}`)} <span class="sub">{formatBytes(s.bytes)}</span></li>
               {/each}
             </ul>
+          {/if}
+          {#if h}
+            <div class="health mac-callout">
+              <i class="dot h-{h.status}" aria-hidden="true"></i>
+              <span>{t(`health.status.${h.status}`)}{#if h.decision} · {t(`health.chosen.${h.decision}`)}{/if}</span>
+              {#if h.findings.length}<span class="sub" title={h.findings.map((f) => f.text).join("\n")}>{h.findings[0].text}{h.findings.length > 1 ? "…" : ""}</span>{/if}
+              <span class="grow"></span>
+              {#if d.online}<Button size="small" variant="borderless" loading={checking === d.key} onclick={() => recheck(d)}>{t("health.recheck")}</Button>{/if}
+            </div>
           {/if}
           <p class="mac-callout sub">
             {d.last_scan ? t("drive.lastScan", { date: formatDate(new Date(d.last_scan)) }) : t("drive.neverScanned")}{#if d.last_scan && !d.complete} · {t("drive.incomplete")}{/if}
@@ -186,6 +220,13 @@
   .top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
   h2, h3, p { margin: 0; }
   .section { margin: var(--space-5) 0 var(--space-3); color: var(--label-secondary); }
+  .alerts { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-4); }
+  .health { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+  .health .sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .health .dot { flex: none; width: var(--space-2); height: var(--space-2); border-radius: var(--radius-capsule); background: var(--label-tertiary); }
+  .health .dot.h-ok { background: var(--system-green); }
+  .health .dot.h-warn { background: var(--system-orange); }
+  .health .dot.h-fail { background: var(--system-red); }
   .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--space-4); }
   .card { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-lg); background: var(--fill-quaternary);
     box-shadow: inset 0 0 0 1px var(--separator); }

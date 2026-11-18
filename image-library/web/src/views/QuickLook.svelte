@@ -8,7 +8,7 @@
   import KindIcon from "./KindIcon.svelte";
   import { t, formatBytes, formatDate } from "../i18n/index.svelte.js";
   import { previewUrl, thumbUrl, originalUrl } from "../lib/api.js";
-  import { loadText, loadArchive, rawUrl } from "../data/browse.js";
+  import { loadText, loadArchive, loadMusic, rawUrl } from "../data/browse.js";
   import { popIn, popOut, scrim } from "../lib/motion.js";
 
   let { item, online = true, driveName = "", canOpen = false, onclose, onmove, onopen, onreveal } = $props();
@@ -27,12 +27,18 @@
           : AUDIO.has(ext) ? "audio" : ext === "pdf" ? "pdf" : TEXT.has(ext) ? "text" : "info");
 
   let text = $state(null);
+  let tagsOf = $state({}); // 音樂的曲名、演出者、專輯
   let textError = $state("");
   let photoFailed = $state(false);
   $effect(() => {
     text = null;
+    tagsOf = {};
     textError = "";
     photoFailed = false;
+    if (mode === "audio" || (item && AUDIO.has(ext) && item.id)) {
+      const it = item;
+      if (it.id) loadMusic(it.id).then((d) => { if (item === it) tagsOf = d.tags || {}; }).catch(() => {});
+    }
     if (mode === "archive") {
       const it = item;
       loadArchive(it.id).then((d) => { if (item === it) text = d; }).catch((e) => { if (item === it) textError = e.message; });
@@ -123,6 +129,13 @@
       {:else}
         <div class="card">
           <KindIcon kind={item.icon || (item.type === "folder" ? "folder" : item.kind)} size={96} />
+          {#if tagsOf["曲名"] || tagsOf["演出者"]}
+            <div class="tags">
+              <b class="mac-title-3">{tagsOf["曲名"] || item.name}</b>
+              <span class="mac-body">{[tagsOf["演出者"], tagsOf["專輯"]].filter(Boolean).join(" — ")}</span>
+              <span class="mac-callout sub">{[tagsOf["年份"], tagsOf["類型"], tagsOf["長度"]].filter(Boolean).join(" · ")}</span>
+            </div>
+          {/if}
           {#if mode === "audio"}
             {#key item.id}<audio src={rawUrl(item)} controls preload="metadata"></audio>{/key}
           {/if}
@@ -154,6 +167,8 @@
     font-family: var(--font-mono); font-size: var(--text-callout); line-height: 1.5; color: var(--label-primary); outline: none; }
   .card { display: flex; flex-direction: column; align-items: center; gap: var(--space-6); padding: var(--space-6); }
   audio { width: min(420px, 80vw); }
+  .tags { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); text-align: center; color: var(--label-primary); }
+  .tags .sub { color: var(--label-secondary); }
   .archive { align-self: stretch; flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .archive .head { margin: 0; padding: var(--space-3) var(--space-4) var(--space-2); color: var(--label-secondary); }
   .entries { flex: 1; min-height: 0; overflow: auto; list-style: none; margin: 0; padding: 0 var(--space-4) var(--space-4); outline: none; }

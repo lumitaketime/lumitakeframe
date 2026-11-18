@@ -169,7 +169,7 @@ def _hits(conn: sqlite3.Connection, query: Query, root, path, kind, year, size, 
                 f"{_BY_ID} JOIN file_text t ON t.file_id = f.id "
                 f"WHERE {where} AND t.size = f.size AND t.mtime = f.mtime ORDER BY m.rank LIMIT {MAX_HITS}", [match] + args).fetchall()
             for r in rows:
-                add([r[0]], {"ocr": "ocr", "archive": "archive"}.get(r[1], "text"))
+                add([r[0]], {"ocr": "ocr", "archive": "archive", "music": "music"}.get(r[1], "text"))
         # 2.5 意思相近的文件（跨語言、同義詞）：排在字面相符的後面
         if meaning is not None:
             near = meaning(" ".join(terms))
@@ -234,6 +234,11 @@ def find(conn: sqlite3.Connection, q: str, *, root: int | None = None, path: str
             if inside:
                 item["entries"] = inside
                 item["snippet"] = textindex.snippet(inside[0], terms, width=10_000)
+        elif why == "music":
+            # 音樂：把符合的欄位排前面（例如「演出者：周杰倫」）
+            lines = [ln for ln in (textindex.body(conn, fid) or "").splitlines() if ln]
+            hit = [ln for ln in lines if any(t.lower() in ln.lower() for t in terms)]
+            item["snippet"] = textindex.snippet("　".join(hit + [ln for ln in lines if ln not in hit])[:200], terms, width=10_000)
         elif why in ("text", "ocr"):
             item["snippet"] = textindex.snippet(textindex.body(conn, fid), terms)
         elif why == "meaning":

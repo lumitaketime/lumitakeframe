@@ -1,5 +1,6 @@
 <script>
   import { onMount } from "svelte";
+  import HealthBanner from "./components/HealthBanner.svelte";
   import { fade } from "svelte/transition";
   import Viewer from "./components/Viewer.svelte";
   import SelectionBar from "./components/SelectionBar.svelte";
@@ -321,6 +322,9 @@
       <div class="body">
         <main class="scroll-area" use:touchBounce>
           <div class="load-bar" class:on={app.busy} aria-hidden="true"><span></span></div>
+          {#if app.server?.health_alerts?.length && page !== "drives"}
+            <HealthBanner alerts={app.server.health_alerts} />
+          {/if}
           {#key routeKey}
             <div class="route" class:fill={page === "folders" || page === "kind" || page === "label" || page === "find" || page === "assistant"}>
             {#if page === "" || page === "welcome"}

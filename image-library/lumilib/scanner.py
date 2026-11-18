@@ -76,6 +76,7 @@ class ScanResult:
     other_drive: bool = False  # 這個位置現在接的是另一顆硬碟，沒有掃描
     interrupted: bool = False  # 掃描中途硬碟被拔掉，下次接上會從中斷處繼續
     stopped: bool = False  # 使用者按了停止，下次會從中斷處繼續
+    held: bool = False  # 硬碟可能有狀況：先沒有掃（或掃到一半停下來），等本人決定怎麼處理
     resumed: bool = False  # 這次是接著上次沒掃完的地方繼續
     # 照片與影片（圖庫）
     added: int = 0
@@ -93,11 +94,15 @@ class ScanResult:
 
     @property
     def complete(self) -> bool:
-        return not (self.offline or self.interrupted or self.stopped)
+        return not (self.offline or self.interrupted or self.stopped or self.held)
 
 
 class _Unplugged(Exception):
     """掃描中途硬碟消失。"""
+
+
+class _Held(Exception):
+    """讀取錯誤太多：這顆硬碟先停，等本人決定。"""
 
 
 class _Stopped(Exception):
@@ -309,6 +314,13 @@ class _Scan:
         if self.stop is not None and self.stop.is_set():
             raise _Stopped()
 
+    def check_health(self, exc: OSError) -> None:
+        """硬碟的讀取錯誤（I/O error）累積太多：這顆先停，等本人決定（核心原則：有狀況先問）。"""
+        from . import health
+
+        if health.io_error(self.conn, self.root["id"], exc):
+            raise _Held()
+
     def flush(self) -> None:
         if self.batch:
             batch, self.batch = self.batch, []
@@ -408,6 +420,7 @@ class _Scan:
             dir_mtime = os.stat(abs_path).st_mtime
         except OSError as exc:
             self.check_online()
+            self.check_health(exc)
             self.result.errors.append(f"{rel or '（最上層）'}：無法讀取資料夾（{exc.strerror or exc}）")
             return []  # 讀不到的資料夾：保留原本的紀錄，不判定遺失
 
@@ -446,6 +459,7 @@ class _Scan:
                 st = os.stat(full, follow_symlinks=False)
             except OSError as exc:
                 self.check_online()
+                self.check_health(exc)
                 self.result.errors.append(f"{rel + '/' if rel else ''}{name}：無法讀取（{exc.strerror or exc}）")
                 continue
             file_id = self.upsert_file(folder_id, name, filetypes.kind_of(name), st.st_size, st.st_mtime,
@@ -629,13 +643,16 @@ def scan_root(
     except _Unplugged:
         conn.rollback()  # 放棄還沒寫入的部分；已寫入的資料夾下次會跳過
         result.interrupted = True
-    except _Stopped:
+    except (_Stopped, _Held) as exc:
         try:
             scan.commit()  # 停止時保留已做完的工作
         except _Unplugged:
             conn.rollback()
             result.interrupted = True
-        result.stopped = not result.interrupted
+        if isinstance(exc, _Held):
+            result.held = not result.interrupted
+        else:
+            result.stopped = not result.interrupted
     except BaseException:
         conn.rollback()
         raise
@@ -652,7 +669,8 @@ def scan_root(
     return result
 
 
-def scan_all(conn, cfg, root_names=None, progress=None, stop=None) -> list[ScanResult]:
+def scan_all(conn, cfg, root_names=None, progress=None, stop=None, hold: set[int] | None = None) -> list[ScanResult]:
+    """hold：硬碟可能有狀況、等本人決定的資料夾來源，這次先不掃。"""
     roots = db.list_roots(conn)
     if root_names:
         wanted = {str(n) for n in root_names}
@@ -661,6 +679,9 @@ def scan_all(conn, cfg, root_names=None, progress=None, stop=None) -> list[ScanR
     for root in roots:
         if stop is not None and stop.is_set():
             break
+        if hold and root["id"] in hold:
+            results.append(ScanResult(root=root["name"], held=True))
+            continue
         results.append(scan_root(conn, cfg, root, progress, stop))
     from .organize import rebuild_stacks
     from .places import geocode_images
@@ -676,6 +697,8 @@ def describe(r: ScanResult) -> str:
         return f"{r.root}：這個位置現在接的是另一顆硬碟，沒有掃描（避免把兩顆硬碟的內容混在一起）"
     if r.offline:
         return f"{r.root}：未連接，已略過"
+    if r.held and not r.files:
+        return f"{r.root}：硬碟可能有狀況，先沒有掃描，等你決定怎麼處理（請看「硬碟」頁的提醒）"
     parts = [f"新增 {r.files_added:,} 個檔案"]
     if r.added:
         parts.append(f"其中照片與影片 {r.added:,} 個")

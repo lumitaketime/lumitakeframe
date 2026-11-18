@@ -21,7 +21,7 @@ import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import archives, db
+from . import archives, db, music
 
 MAX_CHARS = 1_000_000  # 每個檔案最多存這麼多字
 MAX_FILE = 300_000_000  # 超過 300 MB 的文件不讀（多半是掃描檔，之後交給 OCR）
@@ -214,10 +214,12 @@ def reset(conn: sqlite3.Connection, ocr_only: bool = False) -> int:
 
 
 ARCHIVE_EXT = archives.ARCHIVE_EXT  # 壓縮檔：不解開，只記下裡面有哪些檔案（source＝archive）
+MUSIC_EXT = music.MUSIC_EXT  # 音樂：只讀曲名、演出者、專輯等標籤（source＝music）
+NO_SIZE_LIMIT = ARCHIVE_EXT | MUSIC_EXT  # 只讀清單或標籤，檔案再大也不怕
 
 
 def _exts_sql(exts=None) -> str:
-    return ",".join(f"'{e.lstrip('.')}'" for e in sorted(exts or (SUPPORTED | ARCHIVE_EXT)))  # 目錄裡存的副檔名不含點
+    return ",".join(f"'{e.lstrip('.')}'" for e in sorted(exts or (SUPPORTED | ARCHIVE_EXT | MUSIC_EXT)))  # 目錄裡存的副檔名不含點
 
 
 def _candidates_sql(extra: str = "", retry: bool = False, cloud: bool = False) -> str:
@@ -226,7 +228,7 @@ def _candidates_sql(extra: str = "", retry: bool = False, cloud: bool = False) -
     retry_sql = ("OR t.status = 'error' " if retry else "") + ("OR t.status = 'cloud'" if cloud else "")
     return (f"FROM files f JOIN folders d ON d.id = f.folder_id LEFT JOIN file_text t ON t.file_id = f.id "
             f"WHERE f.status = 'ok' AND lower(f.ext) IN ({_exts_sql()}) "
-            f"AND (f.size <= {MAX_FILE} OR lower(f.ext) IN ({_exts_sql(ARCHIVE_EXT)})) "  # 壓縮檔只讀清單，再大也不怕
+            f"AND (f.size <= {MAX_FILE} OR lower(f.ext) IN ({_exts_sql(NO_SIZE_LIMIT)})) "  # 壓縮檔、音樂只讀清單或標籤
             f"AND (t.file_id IS NULL OR t.size != f.size OR t.mtime != f.mtime {retry_sql}) {extra}")
 
 
@@ -258,8 +260,10 @@ class ExtractResult:
     offline: int = 0
     cloud: int = 0
     archives: int = 0  # 其中幾個是壓縮檔（讀的是裡面的檔案清單）
+    music: int = 0  # 其中幾個是音樂（讀的是曲名、演出者等標籤）
     interrupted: list[str] = field(default_factory=list)
     stopped: bool = False
+    held: list[str] = field(default_factory=list)  # 硬碟可能有狀況、等本人決定的（先不碰）
 
 
 SF_DATALESS = 0x40000000  # macOS：檔案只是雲端的佔位，內容還沒下載到這台電腦
@@ -275,8 +279,15 @@ def _all_zero(path: Path, n: int = 4096) -> bool:
         return False
 
 
-def run_extract(conn: sqlite3.Connection, progress=None, stop=None, retry: bool = False) -> ExtractResult:
-    """讀出還沒讀的文件文字。progress(done, total, 正在讀的檔案)。可以隨時停止，下次接著做。"""
+def _health_stop(conn: sqlite3.Connection, root_id: int, exc: OSError) -> bool:
+    from . import health
+
+    return health.io_error(conn, root_id, exc)
+
+
+def run_extract(conn: sqlite3.Connection, progress=None, stop=None, retry: bool = False, hold: set[int] | None = None) -> ExtractResult:
+    """讀出還沒讀的文件文字。progress(done, total, 正在讀的檔案)。可以隨時停止，下次接著做。
+    hold：硬碟可能有狀況、等本人決定的資料夾來源，這次不碰。"""
     result = ExtractResult()
     roots = {r["id"]: r for r in conn.execute("SELECT * FROM roots")}
     online = {rid: Path(r["path"]).is_dir() for rid, r in roots.items()}
@@ -284,6 +295,9 @@ def run_extract(conn: sqlite3.Connection, progress=None, stop=None, retry: bool 
                         "ORDER BY f.root_id, d.path, f.name").fetchall()
     todo = [r for r in rows if online.get(r["root_id"])]
     result.offline = len(rows) - len(todo)
+    if hold:
+        result.held = sorted({roots[r["root_id"]]["name"] for r in todo if r["root_id"] in hold})
+        todo = [r for r in todo if r["root_id"] not in hold]
     total, done = len(todo), 0
     pending, last_commit, last_report = 0, time.monotonic(), 0.0
     dead: set[int] = set()
@@ -316,7 +330,12 @@ def run_extract(conn: sqlite3.Connection, progress=None, stop=None, retry: bool 
                     _store(conn, r["id"], r["size"], r["mtime"], "text", "", "cloud", "在雲端，還沒下載到這台電腦")
                     result.cloud += 1
                     continue
-                if path.suffix.lower() in ARCHIVE_EXT:
+                if path.suffix.lower() in MUSIC_EXT:
+                    info = music.tags(path)
+                    _store(conn, r["id"], r["size"], r["mtime"], "music", music.as_text(info), "ok" if info else "empty")
+                    result.music += 1
+                    text, scanned = None, False
+                elif path.suffix.lower() in ARCHIVE_EXT:
                     names, count = archives.entries(path, stop)
                     _store(conn, r["id"], r["size"], r["mtime"], "archive", archives.as_text(names, count)[:MAX_CHARS], "ok" if names else "empty")
                     result.archives += 1
@@ -342,11 +361,17 @@ def run_extract(conn: sqlite3.Connection, progress=None, stop=None, retry: bool 
             except archives.ArchiveError as exc:
                 _store(conn, r["id"], r["size"], r["mtime"], "archive", "", "error", str(exc))
                 result.failed += 1
-            except OSError:
+            except music.MusicError as exc:
+                _store(conn, r["id"], r["size"], r["mtime"], "music", "", "error", str(exc))
+                result.failed += 1
+            except OSError as exc:
                 if not Path(root["path"]).is_dir():  # 硬碟被拔掉：這顆先停，其他硬碟繼續；不算錯誤
                     dead.add(r["root_id"])
                     result.interrupted.append(root["name"])
                     continue
+                if _health_stop(conn, r["root_id"], exc):  # 讀取錯誤太多：這顆先停，等本人決定
+                    dead.add(r["root_id"])
+                    result.held.append(root["name"])
                 _store(conn, r["id"], r["size"], r["mtime"], "text", "", "error", "無法讀取這個檔案")
                 result.failed += 1
             except Exception as exc:  # noqa: BLE001  壞掉的檔案不能讓整個工作停下來
@@ -373,6 +398,8 @@ def describe(r: ExtractResult) -> str:
     parts = [f"讀出 {r.read:,} 份文件的文字"]
     if r.archives:
         parts.append(f"記下 {r.archives:,} 個壓縮檔裡的檔案清單（沒有解開）")
+    if r.music:
+        parts.append(f"讀出 {r.music:,} 首音樂的曲名與演出者")
     if r.needs_ocr:
         parts.append(f"{r.needs_ocr:,} 份像掃描檔，之後可以用文字辨識")
     if r.empty:
@@ -385,6 +412,8 @@ def describe(r: ExtractResult) -> str:
         parts.append(f"{r.changed:,} 份在掃描後有變動（重新掃描後再讀）")
     if r.interrupted:
         parts.append("已中斷：" + "、".join(f"「{n}」" for n in r.interrupted) + "，接上後可繼續")
+    if r.held:
+        parts.append("、".join(f"「{n}」" for n in r.held) + " 可能有狀況，先沒有讀，等你決定怎麼處理")
     if r.offline:
         parts.append(f"{r.offline:,} 份在沒接上的硬碟")
     return ("已停止。" if r.stopped else "") + "，".join(parts)

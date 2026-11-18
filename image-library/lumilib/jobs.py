@@ -432,7 +432,11 @@ class JobRunner:
                     upd(message=m, scan=scan)
 
                 scan_progress.wants_scan = True  # 側邊欄要顯示「哪一顆硬碟正在掃描、進度多少」
-                results = scan_all(conn, self.cfg, opts.get("roots"), progress=scan_progress, stop=stop)
+                from .health import held_roots
+
+                upd(message="檢查硬碟的健康狀態")
+                results = scan_all(conn, self.cfg, opts.get("roots"), progress=scan_progress, stop=stop,
+                                   hold=held_roots(conn, "scan"))
                 upd(scan=None)
                 from .scanner import describe
 
@@ -454,7 +458,9 @@ class JobRunner:
                 from .dupes import describe as describe_compare
                 from .dupes import run_compare
 
-                res = run_compare(conn, large=bool(opts.get("large")), stop=stop,
+                from .health import held_roots
+
+                res = run_compare(conn, large=bool(opts.get("large")), stop=stop, hold=held_roots(conn, "read"),
                                   progress=lambda done, total, name: upd(done=done, total=total, message=name, unit="bytes"))
                 job["result"] = {"hashed": res.hashed, "interrupted": res.interrupted, "stopped": res.stopped}
                 parts.append(describe_compare(res))
@@ -475,7 +481,9 @@ class JobRunner:
                 from .textindex import describe as describe_extract
                 from .textindex import run_extract
 
-                res = run_extract(conn, stop=stop, retry=bool(opts.get("retry_failed")),
+                from .health import held_roots
+
+                res = run_extract(conn, stop=stop, retry=bool(opts.get("retry_failed")), hold=held_roots(conn, "read"),
                                   progress=lambda done, total, name: upd(done=done, total=total, message=name))
                 job["result"] = {"read": res.read, "interrupted": res.interrupted, "stopped": res.stopped}
                 parts.append(describe_extract(res))
@@ -485,7 +493,9 @@ class JobRunner:
                 from .ocr import describe as describe_ocr
                 from .ocr import run_ocr
 
-                res = run_ocr(conn, self.cfg.ocr_scope, self.cfg.ocr_languages, stop=stop,
+                from .health import held_roots
+
+                res = run_ocr(conn, self.cfg.ocr_scope, self.cfg.ocr_languages, stop=stop, hold=held_roots(conn, "read"),
                               progress=lambda done, total, name: upd(done=done, total=total, message=name))
                 job["result"] = {"read": res.read, "interrupted": res.interrupted, "stopped": res.stopped}
                 parts.append(describe_ocr(res))

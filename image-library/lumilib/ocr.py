@@ -141,10 +141,12 @@ class OcrResult:
     offline: int = 0
     interrupted: list[str] = field(default_factory=list)
     stopped: bool = False
+    held: list[str] = field(default_factory=list)  # 硬碟可能有狀況、等本人決定的（先不碰）
     unavailable: bool = False
 
 
-def run_ocr(conn, scope: str = "scans", languages: str = DEFAULT_LANGUAGES, progress=None, stop=None, force: bool = False) -> OcrResult:
+def run_ocr(conn, scope: str = "scans", languages: str = DEFAULT_LANGUAGES, progress=None, stop=None, force: bool = False,
+            hold: set[int] | None = None) -> OcrResult:
     """辨識還沒辨識的掃描檔與截圖（或所有照片）。force＝不是 Mac 也照做（測試用，會換掉 recognize）。"""
     result = OcrResult()
     sql = _candidates_sql(scope)
@@ -159,6 +161,9 @@ def run_ocr(conn, scope: str = "scans", languages: str = DEFAULT_LANGUAGES, prog
     rows = conn.execute(f"SELECT f.id, f.root_id, f.name, f.ext, f.size, f.mtime, d.path AS folder {sql} ORDER BY f.root_id, d.path, f.name").fetchall()
     todo = [r for r in rows if online.get(r["root_id"])]
     result.offline = len(rows) - len(todo)
+    if hold:
+        result.held = sorted({roots[r["root_id"]]["name"] for r in todo if r["root_id"] in hold})
+        todo = [r for r in todo if r["root_id"] not in hold]
     total, done = len(todo), 0
     pending, last_commit, last_report = 0, time.monotonic(), 0.0
     dead: set[int] = set()
@@ -193,11 +198,14 @@ def run_ocr(conn, scope: str = "scans", languages: str = DEFAULT_LANGUAGES, prog
                     result.empty += 1
             except textindex.Stopped:
                 raise
-            except OSError:
+            except OSError as exc:
                 if not Path(root["path"]).is_dir():
                     dead.add(r["root_id"])
                     result.interrupted.append(root["name"])
                     continue
+                if textindex._health_stop(conn, r["root_id"], exc):  # 讀取錯誤太多：這顆先停，等本人決定
+                    dead.add(r["root_id"])
+                    result.held.append(root["name"])
                 textindex._store(conn, r["id"], r["size"], r["mtime"], "ocr", "", "error", "無法讀取這個檔案")
                 result.failed += 1
             except Exception as exc:  # noqa: BLE001
@@ -227,6 +235,8 @@ def describe(r: OcrResult) -> str:
         parts.append(f"{r.changed:,} 個在掃描後有變動")
     if r.interrupted:
         parts.append("已中斷：" + "、".join(f"「{n}」" for n in r.interrupted) + "，接上後可繼續")
+    if r.held:
+        parts.append("、".join(f"「{n}」" for n in r.held) + " 可能有狀況，先停下來，等你決定怎麼處理")
     if r.offline:
         parts.append(f"{r.offline:,} 個在沒接上的硬碟")
     return ("已停止。" if r.stopped else "") + "，".join(parts)

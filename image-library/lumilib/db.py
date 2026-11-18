@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 28  # v28：文件的語意向量（用意思找文件）；v27：助理提出的動作（提案、執行、復原的紀錄）；v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 29  # v29：硬碟健康（自我檢測、讀取錯誤、本人的處理方式）；v28：文件的語意向量（用意思找文件）；v27：助理提出的動作（提案、執行、復原的紀錄）；v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -213,6 +213,21 @@ CREATE TABLE IF NOT EXISTS delete_marks (
     sig TEXT NOT NULL,
     marked_at TEXT NOT NULL,
     UNIQUE (kind, item_id)
+);
+
+-- v29：硬碟健康。status：ok／warn／fail／unknown；decision：本人選的處理方式（pause／light／continue），
+-- decided_level：做決定時的嚴重程度（狀況變糟時要再問一次）
+CREATE TABLE IF NOT EXISTS drive_health (
+    key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    smart TEXT,
+    findings TEXT,
+    io_errors INTEGER NOT NULL DEFAULT 0,
+    checked_at TEXT,
+    decision TEXT,
+    decided_level INTEGER,
+    decided_at TEXT
 );
 
 -- v28：文件的語意向量（用意思找、跨語言搜尋）。vec：調成長度 1 後壓成 8 位元整數
