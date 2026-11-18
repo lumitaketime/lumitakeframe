@@ -69,7 +69,7 @@ SETTING_KEYS = {
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "doc_semantic", "doc_embed_model", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "doc_semantic", "doc_embed_model", "spotlight", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 SECRET_KEYS = ("assistant_api_key", "assistant_claude_key", "assistant_gemini_key", "assistant_openai_key")
@@ -1514,6 +1514,17 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         else:
             text = raw.decode("utf-8", errors="replace")
         return {"text": text, "truncated": truncated}
+
+    @app.get("/api/spotlight/items")
+    def spotlight_items():
+        """Mac App 要放進 Spotlight 的項目（硬碟、智慧資料夾）。索引只存在這台 Mac。"""
+        from .spotlight import payload
+
+        c = conn()
+        try:
+            return payload(c, bool(cfg.spotlight))
+        finally:
+            c.close()
 
     @app.get("/api/music")
     def music_info(file: int):

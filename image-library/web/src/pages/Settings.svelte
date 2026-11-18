@@ -159,6 +159,13 @@
               options={["folders", "drives", "find", "photos"].map((v) => ({ value: v, label: t(`set.start.${v}`) }))} />{/snippet}
           </ListRow>
         </List>
+        {#if isMac}
+          <List header={t("set.spotlight.title")} footer={t("set.spotlight.hint")}>
+            <ListRow title={t("set.spotlight.toggle")} subtitle={t("set.spotlight.what")}>
+              {#snippet trailing()}<Toggle checked={!!settings.spotlight} onchange={(v) => set("spotlight", v ? 1 : 0)} aria-label={t("set.spotlight.toggle")} />{/snippet}
+            </ListRow>
+          </List>
+        {/if}
         <List header={t("settings.open.title")} footer={t("settings.open.hint")}>
           <div class="pad">
             <RadioGroup value={settings.open_action || ""} onchange={(v) => set("open_action", v)} options={[

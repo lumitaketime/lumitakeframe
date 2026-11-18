@@ -16,3 +16,11 @@ serde_json = "1"
 
 [profile.release]
 strip = true
+
+# macOS：把重要項目放進 App 專用的 Spotlight 索引，點下去打開 Re'memor（src/spotlight.rs）
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSDictionary", "NSUserActivity", "NSError", "block2"] }
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSResponder"] }
+objc2-core-spotlight = "0.3"

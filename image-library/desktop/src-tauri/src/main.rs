@@ -6,6 +6,9 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "macos")]
+mod spotlight;
+
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -236,6 +239,11 @@ fn open_when_ready(app: AppHandle) {
                         let _ = window.navigate(url);
                     }
                 }
+                #[cfg(target_os = "macos")]
+                {
+                    spotlight::ready(&app); // 從 Spotlight 啟動時點的那一項，介面載入後打開
+                    spotlight::start_sync_thread(); // 把硬碟與智慧資料夾放進 Spotlight（只在這台 Mac）
+                }
                 return;
             }
             let exited = {
@@ -416,6 +424,8 @@ fn main() {
                 .hidden_title(true)
                 .traffic_light_position(tauri::LogicalPosition::new(22.0, 26.0));
             window.build()?;
+            #[cfg(target_os = "macos")]
+            spotlight::install(&handle); // 點 Spotlight 的結果：打開 Re'memor 跳到那一頁
 
             let starter = handle.clone();
             thread::spawn(move || {
