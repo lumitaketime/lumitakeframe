@@ -167,7 +167,9 @@ class AutoAnalyzeTests(unittest.TestCase):
 
         done = self.run_scan(Missing)
         self.assertNotIn("analyze", done)
-        self.assertIn("尚未開始 AI 分析", done["scan"]["message"])
+        # 先建目錄、照片之後再做：AI 分析要等照片進了圖庫，所以說明出現在「整理照片」做完之後
+        self.assertIn("photos", done)
+        self.assertIn("尚未開始 AI 分析", done["photos"]["message"])
 
     def test_pull_of_selected_model_starts_analysis(self):
         from lumilib.scanner import scan_all

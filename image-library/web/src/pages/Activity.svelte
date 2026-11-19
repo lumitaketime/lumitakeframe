@@ -49,7 +49,9 @@
   }
   const STAGE = { scan: "activity.stage.scan", index: "activity.stage.scan", compare: "activity.stage.compare", analyze: "activity.stage.analyze" };
   const stage = (kind, label) => (STAGE[kind] ? t(STAGE[kind]) : label);
-  const amount = (j) => (!j.total ? "" : j.unit === "bytes" || j.kind === "compare"
+  const amount = (j) => (!j.total ? ((j.kind === "scan" || j.kind === "index") ? t("activity.firstScan") : "")
+    : j.unit === "folders" ? t("activity.folders", { done: formatNumber(j.done), total: formatNumber(j.total) })
+    : j.unit === "bytes" || j.kind === "compare"
     ? t("activity.amount", { done: formatBytes(j.done) || "0 KB", total: formatBytes(j.total) })
     : t("activity.amount", { done: formatNumber(j.done), total: formatNumber(j.total) }));
   const STATE_ICON = { done: "checkmark", stopped: "minus", interrupted: "exclamation-triangle", error: "exclamation-triangle", replaced: "minus" };
@@ -72,7 +74,7 @@
               <ProgressIndicator kind="circular" size="small" value={j.total ? j.done / j.total : undefined} label={stage(j.kind, j.label)} />
               <div class="titles">
                 <b class="mac-body">{stage(j.kind, j.label)}</b>
-                <p class="mac-callout sub">{[amount(j), j.eta ? t("dupes.remaining", { time: formatDuration(j.eta) }) : ""].filter(Boolean).join(" · ") || t("activity.working")}</p>
+                <p class="mac-callout sub">{[amount(j), j.eta ? t("activity.eta", { time: formatDuration(j.eta) }) : ""].filter(Boolean).join(" · ") || t("activity.working")}</p>
               </div>
               <Button variant="bordered" loading={busy === j.id} disabled={!!busy} onclick={() => act(j.id, () => stopJob(j.id))}>{t("drives.stop")}</Button>
             </div>

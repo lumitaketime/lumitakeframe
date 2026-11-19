@@ -8,6 +8,7 @@
   import PhotoSettings from "./PhotoSettings.svelte";
   import CatalogLocation from "../views/CatalogLocation.svelte";
   import AssistantSettings from "../views/AssistantSettings.svelte";
+  import { api } from "../lib/api.js";
   import SemanticSettings from "../views/SemanticSettings.svelte";
   import { loadSettings, saveSetting, loadStorage, resetText } from "../data/settings.js";
   import { loadTextStatus, startExtract, startOcr, stopJob } from "../data/find.svelte.js";
@@ -118,6 +119,11 @@
   const local = $derived(!!app.server?.local);
   const isMac = $derived(app.server?.platform === "darwin");
   const go = (id) => navigate(`/settings/${id}`);
+  let spot = $state(null);
+  $effect(() => {
+    app.refreshKey;
+    if (shown === "general" && isMac) api("/api/spotlight/status", { quiet: true }).then((d) => (spot = d)).catch(() => {});
+  });
   const FORMATS = ["pdf", "office", "text", "ebook", "mac", "archive", "music"];
 </script>
 
@@ -164,6 +170,11 @@
             <ListRow title={t("set.spotlight.toggle")} subtitle={t("set.spotlight.what")}>
               {#snippet trailing()}<Toggle checked={!!settings.spotlight} onchange={(v) => set("spotlight", v ? 1 : 0)} aria-label={t("set.spotlight.toggle")} />{/snippet}
             </ListRow>
+            {#if settings.spotlight && spot}
+              <ListRow title={!spot.report ? t("set.spotlight.noReport") : spot.report.ok ? t("set.spotlight.ok", { n: formatNumber(spot.report.count) }) : t("set.spotlight.failed")}
+                subtitle={spot.report && !spot.report.ok ? spot.report.error : !spot.report ? t("set.spotlight.noReportHint") : t("set.spotlight.okHint")}
+                icon={spot.report?.ok ? "checkmark" : "exclamation-triangle"} iconTint={spot.report?.ok ? "green" : "orange"} />
+            {/if}
           </List>
         {/if}
         <List header={t("settings.open.title")} footer={t("settings.open.hint")}>

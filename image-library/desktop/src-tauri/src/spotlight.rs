@@ -181,7 +181,22 @@ pub fn sync() {
             })
         })
         .collect();
+    if !unsafe { CSSearchableIndex::isIndexingAvailable() } {
+        report(false, 0, "這台 Mac 的 Spotlight 目前不能讓 App 加入項目（可能 Spotlight 被關掉了）");
+        return;
+    }
     unsafe { replace_all(&items) };
+}
+
+/// 把結果告訴 Re'memor（設定頁顯示「放進 Spotlight 了沒、有沒有出錯」，方便本人知道狀況）
+fn report(ok: bool, count: usize, error: &str) {
+    let body = serde_json::json!({ "ok": ok, "count": count, "error": error }).to_string();
+    let _ = crate::http_post("/api/spotlight/report", &body);
+}
+
+unsafe fn describe(err: *mut NSError) -> Option<String> {
+    let err = err.as_ref()?;
+    Some(format!("{}（{} {}）", err.localizedDescription(), err.domain(), err.code()))
 }
 
 /// 先清掉 Re'memor 放過的項目，再放入新的清單（清單是空的就只清掉，例如在設定裡關掉）。
@@ -209,10 +224,23 @@ unsafe fn replace_all(items: &[Item]) {
     let array = NSArray::from_retained_slice(&list);
     let domains = NSArray::from_retained_slice(&[domain]);
     let target = index.clone();
-    let after = RcBlock::new(move |_err: *mut NSError| {
-        if array.count() > 0 {
-            target.indexSearchableItems_completionHandler(&array, None);
+    let count = list.len();
+    let after = RcBlock::new(move |err: *mut NSError| {
+        if let Some(message) = describe(err) {
+            report(false, 0, &format!("清掉舊的項目時出錯：{message}"));
         }
+        if array.count() == 0 {
+            report(true, 0, "");
+            return;
+        }
+        let done = RcBlock::new(move |err: *mut NSError| match describe(err) {
+            Some(message) => {
+                LAST_VERSION.lock().unwrap().clear(); // 下次再試一次
+                report(false, 0, &message);
+            }
+            None => report(true, count, ""),
+        });
+        target.indexSearchableItems_completionHandler(&array, Some(&done));
     });
     index.deleteSearchableItemsWithDomainIdentifiers_completionHandler(&domains, Some(&after));
 }

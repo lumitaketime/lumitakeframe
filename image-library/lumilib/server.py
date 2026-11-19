@@ -63,7 +63,7 @@ def build_id() -> str:
     return _BUILD
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
 LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/catalog/move", "/api/catalog/location/check", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export",
-                  "/api/assistant/actions/run", "/api/assistant/actions/undo", "/api/health/decide", "/api/health/check"}
+                  "/api/assistant/actions/run", "/api/assistant/actions/undo", "/api/health/decide", "/api/health/check", "/api/spotlight/report"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
@@ -1544,6 +1544,26 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    spotlight_state: dict = {}
+
+    @app.post("/api/spotlight/report")
+    def spotlight_report(body: dict = Body(...)):
+        """Mac App 回報放進 Spotlight 的結果（設定頁顯示，方便知道狀況）。"""
+        spotlight_state.update(ok=bool(body.get("ok")), count=int(body.get("count") or 0),
+                               error=str(body.get("error") or "")[:300], at=db.now_iso())
+        return {"ok": True}
+
+    @app.get("/api/spotlight/status")
+    def spotlight_status():
+        from .spotlight import items
+
+        c = conn()
+        try:
+            n = len(items(c))
+        finally:
+            c.close()
+        return {"enabled": bool(cfg.spotlight), "items": n, "report": spotlight_state or None}
+
     @app.get("/api/music")
     def music_info(file: int):
         """音樂的曲名、演出者、專輯（讀文件文字時記下的標籤；硬碟沒接上也看得到）。"""
@@ -1890,6 +1910,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
         from .assistant import ask, make_llm
 
+        from . import chats
+
         question = str(body.get("question") or "").strip()[:2000]
         if not question:
             raise HTTPException(400, "請輸入問題")
@@ -1898,14 +1920,82 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         def events():
             c = conn()
             try:
-                for ev in ask(c, make_llm(cfg, client_factory()), question, history,
-                              str(body.get("context") or "")[:300], str(body.get("lang") or "zh-Hant"),
-                              level=cfg.assistant_permission, cloud_content=bool(cfg.assistant_cloud_content)):
-                    yield json.dumps(ev, ensure_ascii=False) + "\n"
+                # 對話紀錄：沒有指定對話（或已經刪掉）就開一段新的；問題先存，回答在結束時一起存
+                chat_id = body.get("chat_id")
+                if not (isinstance(chat_id, int) and chats.exists(c, chat_id)):
+                    chat_id = chats.create(c, question)
+                chats.add_message(c, chat_id, "user", question)
+                yield json.dumps({"type": "chat", "id": chat_id}, ensure_ascii=False) + "\n"
+                text, steps, sources, acts, error = [], [], [], [], ""
+                try:
+                    for ev in ask(c, make_llm(cfg, client_factory()), question, history,
+                                  str(body.get("context") or "")[:300], str(body.get("lang") or "zh-Hant"),
+                                  level=cfg.assistant_permission, cloud_content=bool(cfg.assistant_cloud_content)):
+                        kind = ev.get("type")
+                        if kind == "token":
+                            text.append(ev["text"])
+                        elif kind == "step":
+                            steps.append(ev)
+                        elif kind == "action":
+                            acts.append(ev["action"]["id"])
+                        elif kind == "done":
+                            sources = ev.get("sources") or []
+                        elif kind == "error":
+                            error = ev.get("message") or ""
+                        yield json.dumps(ev, ensure_ascii=False) + "\n"
+                finally:
+                    # 使用者中途按停止也存下已經回答的部分
+                    chats.add_message(c, chat_id, "assistant", "".join(text), steps, sources, acts, error)
             finally:
                 c.close()
 
         return StreamingResponse(events(), media_type="application/x-ndjson")
+
+    # ---- 助理的對話紀錄（只存在這台電腦）----
+    @app.get("/api/assistant/chats")
+    def assistant_chats():
+        from . import chats
+
+        c = conn()
+        try:
+            return chats.listing(c)
+        finally:
+            c.close()
+
+    @app.get("/api/assistant/chats/{chat_id:int}")
+    def assistant_chat(chat_id: int):
+        from . import chats
+
+        c = conn()
+        try:
+            data = chats.load(c, chat_id)
+        finally:
+            c.close()
+        if data is None:
+            raise HTTPException(404, "找不到這段對話")
+        return data
+
+    @app.post("/api/assistant/chats/delete")
+    def assistant_chats_delete(body: dict = Body(...)):
+        """刪除對話紀錄（可以一次好幾段）。只刪 Re'memor 存的對話，不動任何檔案、也不影響已經執行的動作。"""
+        from . import chats
+
+        c = conn()
+        try:
+            return {"deleted": chats.delete(c, body.get("ids") or [])}
+        finally:
+            c.close()
+
+    @app.post("/api/assistant/chats/rename")
+    def assistant_chats_rename(body: dict = Body(...)):
+        from . import chats
+
+        c = conn()
+        try:
+            chats.rename(c, int(body.get("id") or 0), str(body.get("title") or ""))
+            return {"ok": True}
+        finally:
+            c.close()
 
     # ---- 助理提出的動作：本人確認後才執行，都可以復原 ----
     @app.get("/api/assistant/actions")

@@ -27,6 +27,7 @@ LABELS = {
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
     "move_catalog": "搬移目錄", "embed_docs": "建立「用意思找」的索引",
+    "photos": "整理照片（拍攝資訊與縮圖）",
 }
 LANES = {"analyze": "ai", "embed": "ai", "embed_docs": "ai", "pull": "download", "face_model": "download", "clip_model": "download"}
 QUEUED_LANES = ("main", "ai")
@@ -88,8 +89,8 @@ class JobRunner:
             t.start()
 
     # ---- 工作紀錄：寫進資料庫，關掉 App 再開仍然看得到；紀錄失敗不影響工作本身 ----
-    LOGGED = ("scan", "index", "compare", "extract", "ocr", "analyze", "embed_docs")
-    RESUMABLE = ("scan", "index", "compare", "extract", "ocr", "embed_docs")
+    LOGGED = ("scan", "index", "compare", "extract", "ocr", "analyze", "embed_docs", "photos")
+    RESUMABLE = ("scan", "index", "compare", "extract", "ocr", "embed_docs", "photos")
 
     def _log_sql(self, sql: str, args: tuple = ()) -> int | None:
         try:
@@ -295,8 +296,8 @@ class JobRunner:
         stopped = job["stop"].is_set()
         if stopped and not error:
             message = f"已停止。{message}"
-        elif job["kind"] == "scan" and not error:
-            message = self._follow_up(message)
+        elif job["kind"] in ("scan", "photos") and not error:
+            message = self._follow_up(message, after=job["kind"])
         elif job["kind"] == "pull" and not error:
             message = self._after_pull(job["options"].get("model"), message)
         result = job.get("result") or {}
@@ -338,7 +339,7 @@ class JobRunner:
             stop.wait(30)
         return False
 
-    def _follow_up(self, message: str) -> str:
+    def _follow_up(self, message: str, after: str = "scan") -> str:
         """掃描完自動接著做：人臉、圖像索引，以及開啟「自動分析」時的 AI 分析（各自需要的模型都準備好才做）。"""
         from .analyzer import ai_status
 
@@ -357,13 +358,32 @@ class JobRunner:
                 conn = db.connect(self.cfg.db_path)
                 try:
                     todo = extract_plan(conn)["todo"]["files"]
-                    ocr_todo = ocr_plan(conn, self.cfg.ocr_scope)["todo"] if ocr_available() else 0
                 finally:
                     conn.close()
                 if todo:
                     self.submit("extract")
                     message += f"；接著讀取 {todo:,} 份文件的文字"
-                if (todo or ocr_todo) and ocr_available() and self.cfg.ocr_scope != "off":
+            # 先建目錄、照片之後再做：還沒做縮圖的照片與影片，排在讀文件文字之後
+            from .scanner import photos_plan
+
+            conn = db.connect(self.cfg.db_path)
+            try:
+                photos_todo = photos_plan(conn)["todo"]
+            finally:
+                conn.close()
+            if photos_todo and after != "photos":  # 做完照片之後不再排一次（只在雲端的照片一直會算在裡面）
+                self.submit("photos")
+                message += f"；接著替 {photos_todo:,} 張照片與影片做縮圖"
+            if self.cfg.auto_extract:
+                from .ocr import available as ocr_available
+                from .ocr import ocr_plan
+
+                conn = db.connect(self.cfg.db_path)
+                try:
+                    ocr_todo = ocr_plan(conn, self.cfg.ocr_scope)["todo"] if ocr_available() else 0
+                finally:
+                    conn.close()
+                if ocr_todo and ocr_available() and self.cfg.ocr_scope != "off":
                     self.submit("ocr")
             if st["faces_pending"] and self._faces_ready("auto"):
                 self.submit("faces")
@@ -455,14 +475,20 @@ class JobRunner:
                 opts = {**opts}
             if kind in ("scan", "index"):
                 def scan_progress(m, scan=None):
-                    upd(message=m, scan=scan)
+                    if scan and scan.get("folders_total"):
+                        # 依上次掃描時有幾個資料夾估計還要多久（第一次掃描不知道總數，不估）
+                        upd(message=m, scan=scan, unit="folders", done=scan["folders_done"],
+                            total=max(scan["folders_total"], scan["folders_done"] + 1))
+                    else:
+                        upd(message=m, scan=scan)
 
                 scan_progress.wants_scan = True  # 側邊欄要顯示「哪一顆硬碟正在掃描、進度多少」
                 from .health import held_roots
 
                 upd(message="檢查硬碟的健康狀態")
+                # 一般的掃描：先建目錄（檔名、大小、資料夾），照片的拍攝資訊與縮圖之後由「整理照片」補做
                 results = scan_all(conn, self.cfg, opts.get("roots"), progress=scan_progress, stop=stop,
-                                   hold=held_roots(conn, "scan"))
+                                   hold=held_roots(conn, "scan"), photos=kind != "scan")
                 upd(scan=None)
                 from .scanner import describe
 
@@ -590,6 +616,14 @@ class JobRunner:
                 from .organize import rebuild_stacks
 
                 parts.append(f"疊放 {rebuild_stacks(conn, self.cfg)} 組")
+            if kind == "photos":
+                from .health import held_roots
+                from .scanner import describe_photos, process_photos
+
+                res = process_photos(conn, self.cfg, stop=stop, hold=held_roots(conn, "read"),
+                                     progress=lambda done, total, name: upd(done=done, total=total, message=name))
+                job["result"] = {"done": res.done, "interrupted": res.interrupted, "stopped": res.stopped}
+                parts.append(describe_photos(res))
             if kind == "embed_docs":
                 from . import semantic
 

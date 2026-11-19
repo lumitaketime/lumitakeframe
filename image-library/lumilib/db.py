@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 29  # v29：硬碟健康（自我檢測、讀取錯誤、本人的處理方式）；v28：文件的語意向量（用意思找文件）；v27：助理提出的動作（提案、執行、復原的紀錄）；v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 30  # v30：助理的對話紀錄；v29：硬碟健康（自我檢測、讀取錯誤、本人的處理方式）；v28：文件的語意向量（用意思找文件）；v27：助理提出的動作（提案、執行、復原的紀錄）；v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -214,6 +214,26 @@ CREATE TABLE IF NOT EXISTS delete_marks (
     marked_at TEXT NOT NULL,
     UNIQUE (kind, item_id)
 );
+
+-- v30：助理的對話紀錄（只存在這台電腦）。steps／sources／actions 是 JSON（actions 是動作提案的編號）
+CREATE TABLE IF NOT EXISTS assistant_chats (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS assistant_messages (
+    id INTEGER PRIMARY KEY,
+    chat_id INTEGER NOT NULL REFERENCES assistant_chats(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    steps TEXT,
+    sources TEXT,
+    actions TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_assistant_messages_chat ON assistant_messages(chat_id, id);
 
 -- v29：硬碟健康。status：ok／warn／fail／unknown；decision：本人選的處理方式（pause／light／continue），
 -- decided_level：做決定時的嚴重程度（狀況變糟時要再問一次）

@@ -16,13 +16,13 @@ export const startOllama = () => api("/api/ollama/start", { body: {} });
  * 問一個問題。onEvent 會依序收到：{type:"step", tool, args}、{type:"token", text}、{type:"done", sources}、{type:"error", message}。
  * 回傳一個可以呼叫來中途停止的函式。
  */
-export function ask({ question, history, context, lang }, onEvent) {
+export function ask({ question, history, context, lang, chatId }, onEvent) {
   const ctrl = new AbortController();
   (async () => {
     try {
       const res = await fetch("/api/assistant/ask", {
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", signal: ctrl.signal,
-        body: JSON.stringify({ question, history, context, lang }),
+        body: JSON.stringify({ question, history, context, lang, chat_id: chatId || undefined }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -61,3 +61,11 @@ export const dismissAction = (id) => api("/api/assistant/actions/dismiss", { bod
 export const loadActions = (limit = 30) => api(`/api/assistant/actions?limit=${limit}`, { quiet: true });
 /** 向雲端服務取得可以用的模型（使用者按下按鈕才連線，只送金鑰） */
 export const loadProviderModels = (provider) => api("/api/assistant/models", { body: { provider } });
+
+// ---- 對話紀錄（只存在這台電腦） ----
+/** 所有對話（最近的在前） */
+export const loadChats = () => api("/api/assistant/chats", { quiet: true });
+/** 一段對話的內容：問題、回答、查詢步驟、找到的來源、提出的動作 */
+export const loadChat = (id) => api(`/api/assistant/chats/${id}`);
+/** 刪除對話紀錄（可以一次好幾段；不動任何檔案） */
+export const deleteChats = (ids) => api("/api/assistant/chats/delete", { body: { ids } });

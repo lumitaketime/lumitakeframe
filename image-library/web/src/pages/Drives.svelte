@@ -7,7 +7,7 @@
   import { catalog, loadCatalog } from "../data/catalog.svelte.js";
   import { loadDrivesDetail, scanRoots, stopJob, addRoot, pickFolder, removeRoot } from "../data/drives.js";
   import { setFrame } from "../shell/frame.svelte.js";
-  import { t, formatNumber, formatBytes, formatDate } from "../i18n/index.svelte.js";
+  import { t, formatNumber, formatBytes, formatDate, formatDuration } from "../i18n/index.svelte.js";
   import { app, toast, refresh } from "../lib/state.svelte.js";
   import { link } from "../lib/router.svelte.js";
   import HealthAlert from "../views/HealthAlert.svelte";
@@ -53,6 +53,11 @@
     load();
   });
   const live = (d) => catalog.drives.find((x) => x.key === d.key) || d;
+  // 正在掃這顆硬碟的工作估計還要多久（依上次掃描時的資料夾數；第一次掃描不估）
+  const etaOf = (d) => {
+    const j = app.server?.jobs?.active?.find((x) => (x.kind === "scan" || x.kind === "index") && x.scan && d.roots.some((r) => r.id === x.scan.root_id));
+    return j?.eta || null;
+  };
   $effect(() => {
     setFrame({ crumbs: [], status: "", location: null, info: null });
   });
@@ -161,7 +166,7 @@
             <span class="mac-callout state-tag" class:on={d.online}>
               {#if d.scanning}
                 <ProgressIndicator kind="circular" size="small" value={d.progress ?? undefined} label={t("drive.scanning")} />
-                {d.progress != null ? t("drive.scanningPercent", { percent: Math.round(d.progress * 100) }) : t("drive.scanning")}
+                {d.progress != null ? t("drive.scanningPercent", { percent: Math.round(d.progress * 100) }) : t("drive.scanning")}{#if etaOf(d)} · {t("activity.eta", { time: formatDuration(etaOf(d)) })}{/if}
               {:else}{d.online ? t("drive.online") : t("drive.offline")}{/if}
             </span>
           </div>

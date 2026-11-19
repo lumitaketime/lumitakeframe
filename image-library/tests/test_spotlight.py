@@ -33,3 +33,16 @@ class SpotlightTests(CatalogTestCase):
         self.assertIn("沒接上", next(i for i in p2["items"] if i["type"] == "public.volume")["description"])  # 拔掉之後還在
         self.assertNotEqual(p2["version"], v1)
         self.assertEqual(payload(self.conn, enabled=False), {"enabled": False, "version": "off", "items": []})
+
+
+class SpotlightReportTests(CatalogTestCase):
+    def test_report_is_shown(self):
+        from fastapi.testclient import TestClient
+
+        from lumilib.server import create_app
+
+        with TestClient(create_app(self.cfg, start_jobs_on_boot=False), base_url="http://127.0.0.1:8766", client=("127.0.0.1", 1)) as c:
+            self.assertIsNone(c.get("/api/spotlight/status").json()["report"])
+            c.post("/api/spotlight/report", json={"ok": False, "count": 0, "error": "測試錯誤"})
+            r = c.get("/api/spotlight/status").json()["report"]
+            self.assertEqual((r["ok"], r["error"]), (False, "測試錯誤"))

@@ -91,6 +91,7 @@ class ScanResult:
     missing: int = 0  # 這次新標成遺失的檔案：照片與影片（搬到同一顆硬碟其他地方的不算）＋其他檔案
     skipped: int = 0  # 依規則改成不編目、從目錄拿掉的檔案（例如 ~/Library 裡 App 的資料）
     cloud: int = 0  # 只在雲端、還沒下載到這台電腦的照片：記下檔名，不讀內容（不會替你下載）
+    photos_later: int = 0  # 先建目錄：這些照片與影片的拍攝資訊與縮圖，之後由「整理照片」工作補做
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -308,6 +309,8 @@ class _Scan:
         self.current = ""  # 正在看的資料夾（顯示在進度上，卡住時看得出卡在哪裡）
         self.note = ""  # 額外的說明，例如「正在計算照片圖庫的大小」
         self.resumed_skips = 0  # 接著上次掃描時，略過的已完成資料夾
+        self.read_media = True  # False＝先建目錄：新的或改過的照片先不讀內容、不做縮圖（之後由 process_photos 補做）
+        self.folders_total = 0  # 上次掃描時這個來源有幾個資料夾（估計剩餘時間用；第一次掃描是 0）
         home = cfg.home.resolve() if cfg.home.exists() else None
         self.exclude = str(home) if home else None
 
@@ -366,8 +369,9 @@ class _Scan:
             elif self.current:
                 tail = "/".join(self.current.split("/")[-2:])
                 message += f"｜正在看：{tail}"
-            if getattr(self.progress, "wants_scan", False):  # 背景工作另外要知道「正在掃哪一個、掃了幾個」
-                self.progress(message, scan={"root_id": self.root["id"], "files": r.files})
+            if getattr(self.progress, "wants_scan", False):  # 背景工作另外要知道「正在掃哪一個、掃了幾個」（估計剩餘時間也用）
+                self.progress(message, scan={"root_id": self.root["id"], "files": r.files, "root": self.root["name"],
+                                             "folders_done": r.folders + self.resumed_skips, "folders_total": self.folders_total})
             else:
                 self.progress(message)
 
@@ -603,6 +607,9 @@ class _Scan:
                     result.unchanged += 1
                 conn.execute("UPDATE files SET image_id = ? WHERE id = ? AND image_id IS NOT ?", (row["id"], file_id, row["id"]))
                 continue
+            if not self.read_media:
+                result.photos_later += 1  # 先建目錄：不讀內容，之後再做縮圖
+                continue
             try:
                 fp = fingerprint(path, size)
             except OSError as exc:
@@ -661,7 +668,9 @@ def scan_root(
     root: sqlite3.Row,
     progress: Callable[[str], None] | None = None,
     stop=None,
+    photos: bool = True,
 ) -> ScanResult:
+    """photos＝False：先建目錄（檔名、大小、資料夾），新的照片之後再由 process_photos 讀資訊、做縮圖。"""
     result = ScanResult(root=root["name"])
     root = _locate(conn, root)
     root_path = Path(root["path"])
@@ -686,6 +695,9 @@ def scan_root(
     root = db.get_root(conn, root["id"])
 
     scan = _Scan(conn, cfg, root, root_path, drive_id, gen, now, result, progress, stop)
+    scan.read_media = photos
+    scan.folders_total = conn.execute("SELECT COUNT(*) FROM folders WHERE root_id = ? AND status = 'ok'", (root["id"],)).fetchone()[0] \
+        if root["last_scan"] else 0
     try:
         scan.run()
     except _Unplugged:
@@ -718,7 +730,7 @@ def scan_root(
     return result
 
 
-def scan_all(conn, cfg, root_names=None, progress=None, stop=None, hold: set[int] | None = None) -> list[ScanResult]:
+def scan_all(conn, cfg, root_names=None, progress=None, stop=None, hold: set[int] | None = None, photos: bool = True) -> list[ScanResult]:
     """hold：硬碟可能有狀況、等本人決定的資料夾來源，這次先不掃。"""
     roots = db.list_roots(conn)
     if root_names:
@@ -731,7 +743,7 @@ def scan_all(conn, cfg, root_names=None, progress=None, stop=None, hold: set[int
         if hold and root["id"] in hold:
             results.append(ScanResult(root=root["name"], held=True))
             continue
-        results.append(scan_root(conn, cfg, root, progress, stop))
+        results.append(scan_root(conn, cfg, root, progress, stop, photos=photos))
     from .organize import rebuild_stacks
     from .places import geocode_images
 
@@ -760,9 +772,137 @@ def describe(r: ScanResult) -> str:
         parts.append(f"{r.skipped:,} 個 App 資料或雲端內部檔案改成不編目")
     if r.cloud:
         parts.append(f"{r.cloud:,} 張照片只在雲端、還沒下載到這台電腦，只記下檔名（不會替你下載）")
+    if r.photos_later:
+        parts.append(f"{r.photos_later:,} 張照片與影片的縮圖接著在背景做")
     text = f"{r.root}：" + "、".join(parts)
     if r.interrupted:
         text += "；硬碟在掃描中途被拔掉，下次接上會從中斷處繼續"
     elif r.stopped:
         text += "；已停止，下次掃描會從中斷處繼續"
     return text
+
+
+# ---- 先建目錄、照片之後再做：補做照片與影片的拍攝資訊、縮圖 -------------------------------------
+
+@dataclass
+class PhotosResult:
+    done: int = 0
+    cloud: int = 0
+    stopped: bool = False
+    interrupted: list[str] = field(default_factory=list)
+    held: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+
+def _photo_folders_sql() -> str:
+    """還要讀資訊、做縮圖的照片與影片：目錄裡有，但圖庫裡還沒有、或內容變了。"""
+    return ("FROM files f JOIN folders d ON d.id = f.folder_id LEFT JOIN images i ON i.id = f.image_id "
+            f"WHERE f.status = 'ok' AND f.kind IN {MEDIA_KINDS} "
+            "AND (f.image_id IS NULL OR i.status != 'ok' OR i.size != f.size OR i.mtime != f.mtime)")
+
+
+def photos_plan(conn: sqlite3.Connection) -> dict:
+    online = {r["id"]: Path(r["path"]).is_dir() for r in conn.execute("SELECT id, path FROM roots")}
+    out = {"todo": 0, "offline": 0}
+    for r in conn.execute(f"SELECT f.root_id, COUNT(*) AS n {_photo_folders_sql()} GROUP BY f.root_id"):
+        out["todo" if online.get(r["root_id"]) else "offline"] += r["n"]
+    return out
+
+
+def process_photos(conn: sqlite3.Connection, cfg: Config, progress=None, stop=None, hold: set[int] | None = None) -> PhotosResult:
+    """替還沒進圖庫的照片與影片讀拍攝資訊、做縮圖（只讀取硬碟；縮圖存在 Re'memor 的資料夾）。
+    一個資料夾一個資料夾做，做完就寫入：可以隨時停止、拔掉，下次從還沒做的接著做。progress(done, total, 訊息)。"""
+    res = PhotosResult()
+    rows = conn.execute(f"SELECT f.root_id, f.folder_id, d.path, COUNT(*) AS n {_photo_folders_sql()} "
+                        "GROUP BY f.root_id, f.folder_id ORDER BY f.root_id, d.path").fetchall()
+    roots = {r["id"]: r for r in conn.execute("SELECT * FROM roots")}
+    online = {rid: Path(r["path"]).is_dir() for rid, r in roots.items()}
+    todo = [r for r in rows if online.get(r["root_id"]) and not (hold and r["root_id"] in hold)]
+    res.held = sorted({roots[r["root_id"]]["name"] for r in rows if hold and r["root_id"] in hold and online.get(r["root_id"])})
+    total = sum(r["n"] for r in todo)
+    done = 0
+    dead: set[int] = set()
+    scans: dict[int, _Scan] = {}
+    now = db.now_iso()
+    last = 0.0
+    for r in todo:
+        if stop is not None and stop.is_set():
+            res.stopped = True
+            break
+        rid = r["root_id"]
+        if rid in dead:
+            continue
+        root = roots[rid]
+        scan = scans.get(rid)
+        if scan is None:
+            result = ScanResult(root=root["name"])
+            scan = scans[rid] = _Scan(conn, cfg, root, Path(root["path"]), root["drive_id"], root["scan_gen"] or 0, now, result, None, stop)
+            if progress:
+                # 一個資料夾裡可能有幾千張：每做完一批（約 48 張）就回報一次，剩餘時間才估得準
+                def batch_progress(message, scan=None, sc=scan):
+                    rr = sc.result
+                    progress(done + rr.added + rr.updated + rr.moved + rr.unchanged + rr.cloud - sc.photo_base, total,
+                             message.split("｜", 1)[-1])
+                scan.progress = batch_progress
+        r_ = scan.result
+        scan.photo_base = r_.added + r_.updated + r_.moved + r_.unchanged + r_.cloud
+        abs_path = scan.root_path.joinpath(*[p for p in r["path"].split("/") if p])
+        files = conn.execute(f"SELECT f.id, f.name {_photo_folders_sql()} AND f.folder_id = ?", (r["folder_id"],)).fetchall()
+        listed = {x[0] for x in conn.execute("SELECT name FROM files WHERE folder_id = ? AND status = 'ok'", (r["folder_id"],))}
+        media = []
+        for f in files:
+            try:
+                media.append((f["name"], f["id"], os.stat(abs_path / f["name"], follow_symlinks=False)))
+            except OSError:
+                pass  # 掃描之後被移走了：下次掃描會更新目錄
+        try:
+            before = scan.result.cloud
+            scan.process_media(r["path"], abs_path, media, listed)
+            scan.commit()
+            res.cloud += scan.result.cloud - before
+        except _Stopped:
+            scan.batch = []
+            conn.commit()
+            res.stopped = True
+            break
+        except _Unplugged:
+            conn.rollback()
+            dead.add(rid)
+            res.interrupted.append(root["name"])
+            continue
+        except _Held:
+            scan.batch = []
+            conn.commit()
+            dead.add(rid)
+            res.held.append(root["name"])
+            continue
+        done += r["n"]
+        res.done = done
+        if progress and (time.monotonic() - last > 0.5):
+            last = time.monotonic()
+            progress(done, total, f"{root['name']}：{r['path'] or '最上層'}")
+    for scan in scans.values():
+        res.errors += scan.result.errors[:20]
+    if scans:
+        from .organize import rebuild_stacks
+        from .places import geocode_images
+
+        geocode_images(conn, None)
+        rebuild_stacks(conn, cfg)
+    conn.commit()
+    if progress:
+        progress(done, total, "")
+    return res
+
+
+def describe_photos(r: PhotosResult) -> str:
+    parts = [f"替 {r.done:,} 張照片與影片讀了拍攝資訊、做了縮圖"]
+    if r.cloud:
+        parts.append(f"{r.cloud:,} 張只在雲端、還沒下載到這台電腦（不會替你下載）")
+    if r.stopped:
+        parts.append("已暫停，下次接著做")
+    if r.interrupted:
+        parts.append("已中斷：" + "、".join(f"「{n}」" for n in r.interrupted) + "，接上後可繼續")
+    if r.held:
+        parts.append("、".join(f"「{n}」" for n in r.held) + " 可能有狀況，先沒有做，等你決定怎麼處理")
+    return "；".join(parts)

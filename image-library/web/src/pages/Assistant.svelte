@@ -9,13 +9,65 @@
   import { Alert, Button, Icon, ProgressIndicator } from "../ui/index.js";
   import KindIcon from "../views/KindIcon.svelte";
   import ActionCard from "../views/ActionCard.svelte";
-  import { loadAssistantStatus, loadSuggestions, downloadModel, startOllama, ask } from "../data/assistant.js";
+  import { loadAssistantStatus, loadSuggestions, downloadModel, startOllama, ask, loadChats, loadChat, deleteChats } from "../data/assistant.js";
+  import { Checkbox } from "../ui/index.js";
   import { setFrame } from "../shell/frame.svelte.js";
   import { t, i18n, formatBytes, formatNumber } from "../i18n/index.svelte.js";
   import { app, toast, refresh } from "../lib/state.svelte.js";
   import { route, navigate } from "../lib/router.svelte.js";
 
   let st = $state(null);
+  // ---- 對話紀錄：每段對話存在這台電腦，換頁、重開 App 都看得到；可以多選刪除 ----
+  let chats = $state([]);
+  let chatId = $state(null);
+  let selecting = $state(false);
+  let picked = $state(new Set());
+  let confirmDelete = $state(false);
+  let showHistory = $state(false); // 窄的視窗：對話紀錄收起來，按按鈕才打開
+  let pageWidth = $state(1200);
+  const reloadChats = () => loadChats().then((d) => (chats = d)).catch(() => {});
+  $effect(() => {
+    reloadChats();
+  });
+  async function openChat(id) {
+    if (asking) return;
+    try {
+      const d = await loadChat(id);
+      chatId = d.id;
+      messages = d.messages.map((m) => ({ ...m, busy: false }));
+      await scroll();
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+  function newChat() {
+    if (asking) return;
+    chatId = null;
+    messages = [];
+    input?.focus();
+  }
+  function togglePick(id, on) {
+    const next = new Set(picked);
+    if (on) next.add(id);
+    else next.delete(id);
+    picked = next;
+  }
+  const allPicked = $derived(chats.length > 0 && chats.every((c) => picked.has(c.id)));
+  async function removePicked() {
+    confirmDelete = false;
+    const ids = [...picked];
+    try {
+      await deleteChats(ids);
+      if (ids.includes(chatId)) newChat();
+      picked = new Set();
+      selecting = false;
+      toast(t("ai.history.deleted", { n: formatNumber(ids.length) }));
+      reloadChats();
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+  const dayOf = (iso) => (iso || "").slice(0, 10);
   let cards = $state([]);
   let messages = $state([]); // {role, content, steps, sources, error, busy}
   let question = $state("");
@@ -59,12 +111,13 @@
     const at = messages.length - 1;
     asking = true;
     await scroll();
-    stopAsk = ask({ question: q, history, context, lang: i18n.locale }, (ev) => {
+    stopAsk = ask({ question: q, history, context, lang: i18n.locale, chatId }, (ev) => {
       const m = messages[at];
-      if (ev.type === "step") m.steps.push(ev);
+      if (ev.type === "chat") { if (chatId !== ev.id) { chatId = ev.id; reloadChats(); } }
+      else if (ev.type === "step") m.steps.push(ev);
       else if (ev.type === "action") m.actions.push(ev.action);
       else if (ev.type === "token") m.content += ev.text;
-      else if (ev.type === "done") { m.sources = ev.sources || []; m.busy = false; asking = false; }
+      else if (ev.type === "done") { m.sources = ev.sources || []; m.busy = false; asking = false; reloadChats(); }
       else if (ev.type === "error") { m.error = ev.message; m.busy = false; asking = false; }
       scroll();
     });
@@ -141,8 +194,53 @@
     propose_move: "ai.step.propose", propose_rename: "ai.step.propose", propose_to_pending: "ai.step.propose", search_files: "ai.step.search", largest_folders: "ai.step.folders", drives_overview: "ai.step.drives", duplicates: "ai.step.dupes", read_document: "ai.step.read" };
 </script>
 
+<div class="page" bind:clientWidth={pageWidth}>
+{#if showHistory || pageWidth >= 900}
+<aside class="history" class:overlay={pageWidth < 900} aria-label={t("ai.history.title")}>
+  <div class="hhead">
+    <b class="mac-headline">{t("ai.history.title")}</b>
+    <span class="grow"></span>
+    {#if chats.length}
+      <Button size="small" variant="borderless" onclick={() => { selecting = !selecting; picked = new Set(); }}>{selecting ? t("common.done") : t("ai.history.select")}</Button>
+    {/if}
+    <Button size="small" variant="bordered" icon="compose" iconOnly aria-label={t("ai.history.new")} onclick={newChat} />
+  </div>
+  {#if selecting}
+    <div class="hbar mac-callout">
+      <Checkbox checked={allPicked} onchange={(on) => (picked = on ? new Set(chats.map((c) => c.id)) : new Set())} label={t("ai.history.all")} />
+      <span class="grow"></span>
+      <Button size="small" variant="borderless" role="destructive" disabled={!picked.size} onclick={() => (confirmDelete = true)}>
+        {t("ai.history.delete", { n: formatNumber(picked.size) })}</Button>
+    </div>
+  {/if}
+  {#if chats.length}
+    <ul class="hlist">
+      {#each chats as c (c.id)}
+        <li>
+          {#if selecting}
+            <label class="hrow mac-body" class:on={picked.has(c.id)}>
+              <Checkbox checked={picked.has(c.id)} onchange={(on) => togglePick(c.id, on)} aria-label={c.title} />
+              <span class="htext"><span class="ht">{c.title}</span><span class="hd mac-caption-1">{dayOf(c.updated_at)}</span></span>
+            </label>
+          {:else}
+            <button type="button" class="hrow mac-body" class:on={c.id === chatId} onclick={() => { openChat(c.id); if (pageWidth < 900) showHistory = false; }}>
+              <span class="htext"><span class="ht">{c.title}</span><span class="hd mac-caption-1">{dayOf(c.updated_at)}</span></span>
+            </button>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  {:else}
+    <p class="mac-callout hempty">{t("ai.history.empty")}</p>
+  {/if}
+  <p class="mac-caption-1 hnote">{t("ai.history.note")}</p>
+</aside>
+{/if}
 <div class="assistant">
   <div class="log" bind:this={log}>
+    {#if pageWidth < 900}
+      <Button size="small" variant="bordered" icon="list" onclick={() => (showHistory = !showHistory)}>{t("ai.history.title")}</Button>
+    {/if}
     <header class="intro">
       <span class="badge"><Icon name="sparkles" size={20} weight="medium" /></span>
       <div>
@@ -242,6 +340,16 @@
   <p class="privacy mac-caption-1">{st?.remote ? t("ai.privacyRemote", { service: st.service || hostOf(st.url) }) : t("ai.privacy")}</p>
 </div>
 
+</div>
+
+{#if confirmDelete}
+  <div class="backdrop">
+    <Alert title={t("ai.history.confirmTitle", { n: formatNumber(picked.size) })} message={t("ai.history.confirmMessage")} actions={[
+      { label: t("ai.history.deleteShort"), role: "destructive", onPress: removePicked },
+      { label: t("common.cancel"), role: "cancel", onPress: () => (confirmDelete = false) },
+    ]} />
+  </div>
+{/if}
 {#if confirmDownload}
   <div class="backdrop">
     <Alert title={t("ai.setup.confirmTitle", { model: st.model })} message={t("ai.setup.confirmMessage")} actions={[
@@ -252,7 +360,23 @@
 {/if}
 
 <style>
-  .assistant { height: 100%; min-height: 0; display: flex; flex-direction: column; max-width: 860px; margin: 0 auto; padding: 0 var(--space-5); box-sizing: border-box; }
+  .page { height: 100%; min-height: 0; display: flex; position: relative; }
+  .history { flex: none; width: 250px; min-height: 0; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) var(--space-3);
+    border-right: 1px solid var(--separator); box-sizing: border-box; }
+  .history.overlay { position: absolute; z-index: 30; inset: 0 auto 0 0; background: var(--bg-primary); box-shadow: var(--shadow-popover); }
+  .hhead, .hbar { display: flex; align-items: center; gap: var(--space-1); color: var(--label-primary); }
+  .grow { flex: 1; }
+  .hlist { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .hrow { width: 100%; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); border: 0; border-radius: var(--radius-sm);
+    background: none; color: var(--label-primary); font: inherit; text-align: left; cursor: pointer; box-sizing: border-box; }
+  .hrow:hover { background: var(--fill-quaternary); }
+  .hrow.on { background: var(--fill-tertiary); }
+  .htext { display: flex; flex-direction: column; min-width: 0; }
+  .ht { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hd, .hempty, .hnote { color: var(--label-secondary); }
+  .hempty, .hnote { margin: 0; }
+  .assistant { flex: 1; min-width: 0;
+    height: 100%; min-height: 0; display: flex; flex-direction: column; max-width: 860px; margin: 0 auto; padding: 0 var(--space-5); box-sizing: border-box; }
   .log { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-5) 0 var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
   .intro { display: flex; align-items: center; gap: var(--space-3); }
   .badge { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: var(--radius-md);

@@ -410,7 +410,7 @@ class DrivesApiTests(CatalogFixture):
 
         progress.wants_scan = True
         scan_all(self.conn, self.cfg, progress=progress)
-        self.assertIn({"root_id": self.root["id"], "files": 6}, seen)
+        self.assertTrue(any(x and x["root_id"] == self.root["id"] and x["files"] == 6 for x in seen))
         plain = []
         scan_all(self.conn, self.cfg, progress=plain.append)  # 只收文字的呼叫方式（指令列）照舊
         self.assertTrue(all(isinstance(m, str) for m in plain))
