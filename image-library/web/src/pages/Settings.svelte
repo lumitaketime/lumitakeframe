@@ -120,6 +120,14 @@
   const isMac = $derived(app.server?.platform === "darwin");
   const go = (id) => navigate(`/settings/${id}`);
   let spot = $state(null);
+  async function rebuildSpotlight() {
+    try {
+      await api("/api/spotlight/rebuild", { body: {} });
+      toast(t("set.spotlight.rebuilding"));
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
   $effect(() => {
     app.refreshKey;
     if (shown === "general" && isMac) api("/api/spotlight/status", { quiet: true }).then((d) => (spot = d)).catch(() => {});
@@ -174,6 +182,9 @@
               <ListRow title={!spot.report ? t("set.spotlight.noReport") : spot.report.ok ? t("set.spotlight.ok", { n: formatNumber(spot.report.count) }) : t("set.spotlight.failed")}
                 subtitle={spot.report && !spot.report.ok ? spot.report.error : !spot.report ? t("set.spotlight.noReportHint") : t("set.spotlight.okHint")}
                 icon={spot.report?.ok ? "checkmark" : "exclamation-triangle"} iconTint={spot.report?.ok ? "green" : "orange"} />
+              <ListRow title={t("set.spotlight.rebuild")} subtitle={t("set.spotlight.rebuildHint")}>
+                {#snippet trailing()}<Button size="small" variant="bordered" onclick={rebuildSpotlight}>{t("set.spotlight.rebuildButton")}</Button>{/snippet}
+              </ListRow>
             {/if}
           </List>
         {/if}

@@ -63,7 +63,7 @@ def build_id() -> str:
     return _BUILD
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
 LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/catalog/move", "/api/catalog/location/check", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export",
-                  "/api/assistant/actions/run", "/api/assistant/actions/undo", "/api/health/decide", "/api/health/check", "/api/spotlight/report"}
+                  "/api/assistant/actions/run", "/api/assistant/actions/undo", "/api/health/decide", "/api/health/check", "/api/spotlight/report", "/api/spotlight/ack", "/api/spotlight/rebuild"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
@@ -151,6 +151,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             threading.Thread(target=run, daemon=True).start()
 
         state["jobs"].on_finish.append(refresh_stats)
+        state["jobs"].on_finish.append(lambda _job: __import__("lumilib.spotlight", fromlist=["changed"]).changed())
         # 目錄搬好了：重新啟動，改用新位置
         state["jobs"].on_finish.append(
             lambda job: job.get("kind") == "move_catalog" and (job.get("result") or {}).get("moved") and app.state.restart_later(2.0))
@@ -1423,6 +1424,17 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    @app.get("/api/items/position")
+    def items_position(root: int, path: str = "", name: str = "", sort: str = "name", desc: bool = False, group: str | None = None):
+        """某個名稱的項目在這個資料夾清單上是第幾個（打開資料夾並選好它用）。"""
+        from .catalog import item_position
+
+        c = conn()
+        try:
+            return {"index": item_position(c, root, path, name, sort, desc, group)}
+        finally:
+            c.close()
+
     @app.get("/api/items")
     def items_api(root: int | None = None, path: str = "", kind: str | None = None, label: str | None = None,
                   offset: int = 0, limit: int = 200, sort: str = "name", desc: bool = False, group: str | None = None):
@@ -1553,13 +1565,43 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                                error=str(body.get("error") or "")[:300], at=db.now_iso())
         return {"ok": True}
 
-    @app.get("/api/spotlight/status")
-    def spotlight_status():
-        from .spotlight import items
+    @app.get("/api/spotlight/changes")
+    def spotlight_changes(cursor: str = "", limit: int = 500):
+        """Mac App 分批來拿：要放進 Spotlight（或拿掉）的項目，只有新增、改過、不在了的。"""
+        from . import spotlight
 
         c = conn()
         try:
-            n = len(items(c))
+            return spotlight.changes(c, cursor, max(50, min(limit, 2000)), bool(cfg.spotlight))
+        except ValueError as e:
+            raise HTTPException(400, "cursor 不對") from e
+        finally:
+            c.close()
+
+    @app.post("/api/spotlight/ack")
+    def spotlight_ack(body: dict = Body(...)):
+        """Mac App 放好了：記下來，之後只送有變動的。"""
+        from . import spotlight
+
+        c = conn()
+        try:
+            return {"saved": spotlight.ack(c, body.get("done") or [], body.get("deleted") or [])}
+        finally:
+            c.close()
+
+    @app.post("/api/spotlight/rebuild")
+    def spotlight_rebuild(body: dict = Body(default={})):
+        """重新建立 Spotlight 裡 Re'memor 的項目（清掉再全部放一次）。"""
+        from . import spotlight
+
+        spotlight.request_reset()
+        return {"ok": True}
+
+    @app.get("/api/spotlight/status")
+    def spotlight_status():
+        c = conn()
+        try:
+            n = c.execute("SELECT COUNT(*) FROM spotlight_sync").fetchone()[0]
         finally:
             c.close()
         return {"enabled": bool(cfg.spotlight), "items": n, "report": spotlight_state or None}
@@ -2638,6 +2680,10 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                     continue
             if key in SETTING_KEYS:
                 cfg.save_setting(key, value)
+        if "spotlight" in body:
+            from . import spotlight
+
+            spotlight.changed()  # 打開或關掉：下一次同步時放進去或全部拿掉
         return public_settings()
 
     def public_settings() -> dict:

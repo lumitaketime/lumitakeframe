@@ -3,7 +3,7 @@ name: Re'memor Mac App（測試用）
 # 只在 rememor 分支的 Mac App 外殼有變動時建置，產出一個可以下載的測試版 App。
 # 不會動到 Releases 上的「最新版」安裝檔（那是 apps.yml 在 main 與 Library 分支上做的事）。
 # App 裡包的是建置當下的引擎與介面；想要一份包含最新功能的測試版，改動這個檔案（例如下面這行日期）再推送即可。
-# 上次要求重新建置：2026-11-19（先建目錄、預估時間、對話紀錄、Spotlight 狀態回報）
+# 上次要求重新建置：2026-11-20（Spotlight 放進外接硬碟的資料夾與檔案）
 on:
   push:
     branches: [rememor]

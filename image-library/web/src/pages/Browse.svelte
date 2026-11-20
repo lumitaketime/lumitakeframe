@@ -27,7 +27,8 @@
   import { setFrame, frame, toggleInfo } from "../shell/frame.svelte.js";
   import { t, formatNumber, formatBytes, formatDate } from "../i18n/index.svelte.js";
   import { app, toast, openViewer, refresh } from "../lib/state.svelte.js";
-  import { navigate } from "../lib/router.svelte.js";
+  import { navigate, route } from "../lib/router.svelte.js";
+  import { api } from "../lib/api.js";
 
   let { scope } = $props();
 
@@ -35,6 +36,18 @@
     : scope.type === "label" ? `label:${scope.label}` : "roots");
   const view = $derived(viewFor(place));
   const sel = createSelection();
+  // 網址帶 select＝某個名稱（例如從 Spotlight、助理打開）：選好那一項並捲到它
+  let selected = "";
+  $effect(() => {
+    const name = route.query.select;
+    if (scope.type !== "folder" || !name) return;
+    const key = `${scope.root}:${scope.path}:${name}`;
+    if (selected === key) return;
+    selected = key;
+    api("/api/items/position", { params: { root: scope.root, path: scope.path, name, sort: prefs.sort, desc: prefs.desc ? "true" : undefined,
+      group: grouping || undefined }, quiet: true })
+      .then((d) => { if (d.index != null) sel.click(d.index); }).catch(() => {});
+  });
 
   // 「所有檔案」最上層：每個資料夾來源一項（硬碟沒接上也列出）
   const rootItems = $derived(catalog.drives.flatMap((d) => d.roots.map((r) => ({

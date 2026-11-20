@@ -46,3 +46,81 @@ class SpotlightReportTests(CatalogTestCase):
             c.post("/api/spotlight/report", json={"ok": False, "count": 0, "error": "測試錯誤"})
             r = c.get("/api/spotlight/status").json()["report"]
             self.assertEqual((r["ok"], r["error"]), (False, "測試錯誤"))
+
+
+class SpotlightSyncTests(CatalogTestCase):
+    """外接硬碟的資料夾與檔案：第一次全部交給 Spotlight，之後只交有變動的；不在了的拿掉；內建磁碟的不放。"""
+
+    def run_pass(self, enabled=True, limit=500):
+        from lumilib import spotlight
+
+        upsert, delete, cursor, reset = [], [], "", False
+        while True:
+            out = spotlight.changes(self.conn, cursor, limit, enabled)
+            reset = reset or out["reset"]
+            upsert += out["upsert"]
+            delete += out["delete"]
+            spotlight.ack(self.conn, [{"entity": u["entity"], "id": u["id"], "sig": u["sig"]} for u in out["upsert"]],
+                          [d["entity"] for d in out["delete"] if d["entity"]])
+            cursor = out["cursor"]
+            if not cursor:
+                return upsert, delete, reset
+
+    def test_delta_sync(self):
+        from unittest import mock
+
+        from lumilib import spotlight, textindex
+
+        ext = self.tmp / "外接" / "備份碟 3"
+        (ext / "國中").mkdir(parents=True)
+        (ext / "國中" / "寄居蟹報告.txt").write_text("觀察寄居蟹換殼", encoding="utf-8")
+        (ext / "a.txt").write_text("x", encoding="utf-8")
+        inside = self.tmp / "內建"
+        inside.mkdir()
+        (inside / "b.txt").write_text("y", encoding="utf-8")
+        db.add_root(self.conn, ext, "備份碟 3")
+        db.add_root(self.conn, inside, "內建")
+        scan_all(self.conn, self.cfg)
+        textindex.run_extract(self.conn)
+        # 測試裡沒有 /Volumes：把「外接」當成外接硬碟的位置
+        with mock.patch.object(spotlight, "EXTERNAL_PREFIX", str(self.tmp / "外接") + "/"):
+            spotlight.changed()
+            upsert, delete, _ = self.run_pass(limit=1)  # 每批只看一筆：分批也要正確
+            titles = {u["title"]: u for u in upsert}
+            self.assertIn("寄居蟹報告.txt", titles)
+            self.assertIn("國中", titles)
+            self.assertNotIn("b.txt", titles)  # 內建磁碟的不放
+            report = titles["寄居蟹報告.txt"]
+            self.assertIn("寄居蟹換殼", report["text"])  # 文件內容一起放
+            self.assertIn("select=", report["id"])
+            self.assertNotIn("'", report["id"])
+
+            self.assertEqual(self.run_pass(), ([], [], False))  # 沒有變動：什麼都不送
+            spotlight.changed()
+            self.assertEqual(self.run_pass()[:2], ([], []))  # 比對一輪，內容都一樣
+
+            (ext / "a.txt").unlink()
+            scan_all(self.conn, self.cfg)
+            spotlight.changed()
+            upsert, delete, _ = self.run_pass()
+            self.assertTrue(any(d["id"].endswith("select=a.txt") for d in delete))  # 不在了的拿掉
+
+            _, _, reset = self.run_pass(enabled=False)  # 關掉：全部拿掉
+            self.assertTrue(reset)
+            self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM spotlight_sync").fetchone()[0], 0)
+
+    def test_position_for_select(self):
+        from lumilib.catalog import item_position
+
+        d = self.tmp / "碟"
+        (d / "子資料夾").mkdir(parents=True)
+        for n in ("c.txt", "a.txt", "b.txt"):
+            (d / n).write_text(n, encoding="utf-8")
+        db.add_root(self.conn, d, "碟")
+        scan_all(self.conn, self.cfg)
+        rid = self.conn.execute("SELECT id FROM roots").fetchone()[0]
+        self.assertEqual(item_position(self.conn, rid, "", "子資料夾"), 0)  # 資料夾在前
+        self.assertEqual(item_position(self.conn, rid, "", "b.txt"), 2)
+        self.assertEqual(item_position(self.conn, rid, "", "b.txt", desc=True), 2)
+        self.assertEqual(item_position(self.conn, rid, "", "c.txt", desc=True), 1)
+        self.assertIsNone(item_position(self.conn, rid, "", "沒有這個"))

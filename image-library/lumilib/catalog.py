@@ -330,6 +330,29 @@ def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: st
     return {"total": n_folders + n_files, "folders": n_folders, "offset": offset, "items": annotate_copies(conn, items)}
 
 
+def item_position(conn: sqlite3.Connection, root_id: int, path: str, name: str, sort: str = "name", desc: bool = False,
+                  group: str | None = None) -> int | None:
+    """某個資料夾裡、某個名稱的項目在清單上是第幾個（和 items_page 的順序一樣：資料夾在前）。找不到回傳 None。
+    從 Spotlight、助理等地方打開「資料夾並選好某個檔案」時用。"""
+    sort = sort if sort in _FILE_ORDER else "name"
+    way = "DESC" if desc else "ASC"
+    file_order, folder_order = _FILE_ORDER[sort].format(w=way), _FOLDER_ORDER[sort].format(w=way)
+    grp = _group_expr(group)
+    if grp:
+        file_order = f"{grp}, {file_order}"
+    here = conn.execute("SELECT id FROM folders WHERE root_id = ? AND path = ?", (root_id, path.strip("/"))).fetchone()
+    if here is None:
+        return None
+    r = conn.execute(f"SELECT i FROM (SELECT d.name, ROW_NUMBER() OVER (ORDER BY {folder_order}, d.id) - 1 AS i FROM folders d "
+                     "WHERE d.parent_id = ? AND d.status = 'ok') WHERE name = ?", (here["id"], name)).fetchone()
+    if r is not None:
+        return r["i"]
+    n_folders = conn.execute("SELECT COUNT(*) FROM folders WHERE parent_id = ? AND status = 'ok'", (here["id"],)).fetchone()[0]
+    r = conn.execute(f"SELECT i FROM (SELECT f.name, ROW_NUMBER() OVER (ORDER BY {file_order}, f.id) - 1 AS i FROM files f "
+                     "WHERE f.folder_id = ? AND f.status = 'ok') WHERE name = ?", (here["id"], name)).fetchone()
+    return n_folders + r["i"] if r is not None else None
+
+
 def annotate_copies(conn: sqlite3.Connection, items: list[dict]) -> list[dict]:
     """替一頁項目標上「別的地方也有一模一樣的副本」：copies＝{n: 其他份數, drives: [其他硬碟名稱], other_drive: 有沒有在別顆硬碟}。
 

@@ -1,14 +1,15 @@
 //! Spotlight（只在 macOS）：把 Re'memor 的重要項目放進 App 專用的 Spotlight 索引（Core Spotlight）。
 //!
-//! - 放什麼由引擎決定（GET /api/spotlight/items）：試驗版是每顆硬碟（包括沒接上的）與智慧資料夾。
-//! - 索引只存在這台 Mac，不會上傳（核心原則二）。清單有變才重新放（version 不同）。
+//! - 放什麼由引擎決定：每顆硬碟、智慧資料夾、外接硬碟上的所有資料夾與檔案（含文件開頭的文字）。
+//!   引擎記得哪些已經放過，每次只給「新增、改過、不在了的」（GET /api/spotlight/changes，分批），放好後回報（ack）。
+//! - 索引只存在這台 Mac，不會上傳（核心原則二）。
 //! - 點 Spotlight 的結果：macOS 會叫 App 的「繼續活動」（application:continueUserActivity:restorationHandler:）。
 //!   Tauri 底下的 tao 只處理網頁連結，所以這裡在啟動時換掉那個方法：Spotlight 的項目自己處理（打開 Re'memor、
 //!   跳到那一頁），其他的照舊交給原本的處理方式。
 //! - 每一項的 id 就是「rememor:」加上 Re'memor 裡的頁面路徑，點下去直接照著打開，不用另外記對照表；
 //!   App 還沒準備好（例如從 Spotlight 啟動）時先記著，介面載入後再打開。
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -30,7 +31,7 @@ const PREFIX: &str = "rememor:";
 static APP: OnceLock<AppHandle> = OnceLock::new();
 static PENDING: Mutex<Option<String>> = Mutex::new(None);
 static READY: Mutex<bool> = Mutex::new(false);
-static LAST_VERSION: Mutex<String> = Mutex::new(String::new());
+static REPORTED: Mutex<bool> = Mutex::new(false); // 這次打開 App 之後回報過狀態了沒
 static ORIG_CONTINUE: OnceLock<Imp> = OnceLock::new();
 static ORIG_WILL_CONTINUE: OnceLock<Imp> = OnceLock::new();
 
@@ -143,34 +144,26 @@ pub fn ready(app: &AppHandle) {
 }
 
 struct Item {
+    entity: String,
     id: String,
+    sig: String,
     title: String,
     description: String,
     keywords: Vec<String>,
     content_type: String,
+    text: String,
 }
 
-/// 向引擎要清單；有變才重新放進 Spotlight。
-pub fn sync() {
-    let Some(raw) = crate::http_get("/api/spotlight/items") else { return };
-    let body = raw.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or(&raw);
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else { return };
-    let version = v["version"].as_str().unwrap_or("").to_string();
-    {
-        let mut last = LAST_VERSION.lock().unwrap();
-        if *last == version {
-            return;
-        }
-        *last = version;
-    }
-    let items: Vec<Item> = v["items"]
-        .as_array()
+fn parse_items(v: &serde_json::Value) -> Vec<Item> {
+    v.as_array()
         .cloned()
         .unwrap_or_default()
         .iter()
         .filter_map(|it| {
             Some(Item {
+                entity: it["entity"].as_str().unwrap_or("").to_string(),
                 id: it["id"].as_str()?.to_string(),
+                sig: it["sig"].as_str().unwrap_or("").to_string(),
                 title: it["title"].as_str().unwrap_or("").to_string(),
                 description: it["description"].as_str().unwrap_or("").to_string(),
                 keywords: it["keywords"]
@@ -178,14 +171,79 @@ pub fn sync() {
                     .map(|k| k.iter().filter_map(|x| x.as_str().map(String::from)).collect())
                     .unwrap_or_default(),
                 content_type: it["type"].as_str().unwrap_or("public.item").to_string(),
+                text: it["text"].as_str().unwrap_or("").to_string(),
             })
         })
-        .collect();
+        .collect()
+}
+
+fn body_of(raw: &str) -> &str {
+    raw.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or(raw)
+}
+
+/// 向引擎一批一批拿「有變動的項目」，放進 Spotlight（或拿掉），放好再告訴引擎。
+/// 第一次會把外接硬碟上的所有資料夾與檔案放進去（可能要一段時間）；之後只處理新增、改過、不在了的。
+pub fn sync() {
     if !unsafe { CSSearchableIndex::isIndexingAvailable() } {
         report(false, 0, "這台 Mac 的 Spotlight 目前不能讓 App 加入項目（可能 Spotlight 被關掉了）");
         return;
     }
-    unsafe { replace_all(&items) };
+    let mut cursor = String::new();
+    let mut changed = false;
+    loop {
+        let path = format!("/api/spotlight/changes?limit=500&cursor={}", cursor);
+        let Some(raw) = crate::http_get(&path) else { return };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(body_of(&raw)) else { return };
+        if v["reset"].as_bool().unwrap_or(false) {
+            if let Err(message) = unsafe { delete_domain() } {
+                report(false, 0, &format!("清掉舊的項目時出錯：{message}"));
+                return;
+            }
+            changed = true;
+        }
+        let items = parse_items(&v["upsert"]);
+        let gone: Vec<(String, String)> = v["delete"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|d| Some((d["entity"].as_str().unwrap_or("").to_string(), d["id"].as_str()?.to_string())))
+            .collect();
+        if !items.is_empty() {
+            if let Err(message) = unsafe { index_items(&items) } {
+                report(false, 0, &message);
+                return; // 下一分鐘再試（引擎沒收到「放好了」，會再送一次）
+            }
+            changed = true;
+        }
+        if !gone.is_empty() {
+            let ids: Vec<String> = gone.iter().map(|(_, id)| id.clone()).collect();
+            if let Err(message) = unsafe { delete_ids(&ids) } {
+                report(false, 0, &format!("拿掉不在的項目時出錯：{message}"));
+                return;
+            }
+            changed = true;
+        }
+        if !items.is_empty() || !gone.is_empty() {
+            let done: Vec<serde_json::Value> = items
+                .iter()
+                .map(|it| serde_json::json!({ "entity": it.entity, "id": it.id, "sig": it.sig }))
+                .collect();
+            let deleted: Vec<&str> = gone.iter().filter(|(e, _)| !e.is_empty()).map(|(e, _)| e.as_str()).collect();
+            let _ = crate::http_post("/api/spotlight/ack", &serde_json::json!({ "done": done, "deleted": deleted }).to_string());
+        }
+        match v["cursor"].as_str() {
+            Some(next) => cursor = next.to_string(),
+            None => {
+                let first = !*REPORTED.lock().unwrap();
+                if changed || first {
+                    *REPORTED.lock().unwrap() = true;
+                    report(true, v["synced"].as_u64().unwrap_or(0) as usize, "");
+                }
+                return;
+            }
+        }
+    }
 }
 
 /// 把結果告訴 Re'memor（設定頁顯示「放進 Spotlight 了沒、有沒有出錯」，方便本人知道狀況）
@@ -199,8 +257,39 @@ unsafe fn describe(err: *mut NSError) -> Option<String> {
     Some(format!("{}（{} {}）", err.localizedDescription(), err.domain(), err.code()))
 }
 
-/// 先清掉 Re'memor 放過的項目，再放入新的清單（清單是空的就只清掉，例如在設定裡關掉）。
-unsafe fn replace_all(items: &[Item]) {
+/// 等 Spotlight 做完（它的回呼在別的執行緒）：回傳錯誤訊息或成功
+fn wait(rx: mpsc::Receiver<Option<String>>) -> Result<(), String> {
+    match rx.recv_timeout(Duration::from_secs(120)) {
+        Ok(None) => Ok(()),
+        Ok(Some(message)) => Err(message),
+        Err(_) => Err("Spotlight 太久沒有回應".into()),
+    }
+}
+
+fn done_block(tx: mpsc::Sender<Option<String>>) -> RcBlock<dyn Fn(*mut NSError)> {
+    RcBlock::new(move |err: *mut NSError| {
+        let _ = tx.send(unsafe { describe(err) });
+    })
+}
+
+unsafe fn delete_domain() -> Result<(), String> {
+    let index = CSSearchableIndex::defaultSearchableIndex();
+    let domains = NSArray::from_retained_slice(&[NSString::from_str(DOMAIN)]);
+    let (tx, rx) = mpsc::channel();
+    index.deleteSearchableItemsWithDomainIdentifiers_completionHandler(&domains, Some(&done_block(tx)));
+    wait(rx)
+}
+
+unsafe fn delete_ids(ids: &[String]) -> Result<(), String> {
+    let index = CSSearchableIndex::defaultSearchableIndex();
+    let list: Vec<Retained<NSString>> = ids.iter().map(|i| NSString::from_str(i)).collect();
+    let (tx, rx) = mpsc::channel();
+    index.deleteSearchableItemsWithIdentifiers_completionHandler(&NSArray::from_retained_slice(&list), Some(&done_block(tx)));
+    wait(rx)
+}
+
+/// 放進（或更新）一批項目：同一個 id 會蓋掉舊的
+unsafe fn index_items(items: &[Item]) -> Result<(), String> {
     let index = CSSearchableIndex::defaultSearchableIndex();
     let domain = NSString::from_str(DOMAIN);
     let mut list: Vec<Retained<CSSearchableItem>> = Vec::with_capacity(items.len());
@@ -211,9 +300,13 @@ unsafe fn replace_all(items: &[Item]) {
             &NSString::from_str(&it.content_type),
         );
         attrs.setTitle(Some(&NSString::from_str(&it.title)));
+        attrs.setDisplayName(Some(&NSString::from_str(&it.title)));
         attrs.setContentDescription(Some(&NSString::from_str(&it.description)));
         let words: Vec<Retained<NSString>> = it.keywords.iter().map(|k| NSString::from_str(k)).collect();
         attrs.setKeywords(Some(&NSArray::from_retained_slice(&words)));
+        if !it.text.is_empty() {
+            attrs.setTextContent(Some(&NSString::from_str(&it.text))); // 文件裡的文字：在 Spotlight 也搜得到
+        }
         list.push(CSSearchableItem::initWithUniqueIdentifier_domainIdentifier_attributeSet(
             CSSearchableItem::alloc(),
             Some(&NSString::from_str(&it.id)),
@@ -221,28 +314,9 @@ unsafe fn replace_all(items: &[Item]) {
             &attrs,
         ));
     }
-    let array = NSArray::from_retained_slice(&list);
-    let domains = NSArray::from_retained_slice(&[domain]);
-    let target = index.clone();
-    let count = list.len();
-    let after = RcBlock::new(move |err: *mut NSError| {
-        if let Some(message) = describe(err) {
-            report(false, 0, &format!("清掉舊的項目時出錯：{message}"));
-        }
-        if array.count() == 0 {
-            report(true, 0, "");
-            return;
-        }
-        let done = RcBlock::new(move |err: *mut NSError| match describe(err) {
-            Some(message) => {
-                LAST_VERSION.lock().unwrap().clear(); // 下次再試一次
-                report(false, 0, &message);
-            }
-            None => report(true, count, ""),
-        });
-        target.indexSearchableItems_completionHandler(&array, Some(&done));
-    });
-    index.deleteSearchableItemsWithDomainIdentifiers_completionHandler(&domains, Some(&after));
+    let (tx, rx) = mpsc::channel();
+    index.indexSearchableItems_completionHandler(&NSArray::from_retained_slice(&list), Some(&done_block(tx)));
+    wait(rx)
 }
 
 /// 背景：一開始放一次，之後每分鐘看一下清單有沒有變（例如新增硬碟、改了智慧資料夾）。
