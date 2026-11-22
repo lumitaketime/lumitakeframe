@@ -7,6 +7,11 @@
   import Toasts from "./components/Toasts.svelte";
   import Dialogs from "./components/Dialogs.svelte";
   import Onboarding from "./components/Onboarding.svelte";
+  import ClassifyConsent from "./components/ClassifyConsent.svelte";
+  import CategoryPrompt from "./components/CategoryPrompt.svelte";
+  import CategoryReview from "./pages/CategoryReview.svelte";
+  import { catalog as catalogState, catalogTotals } from "./data/catalog.svelte.js";
+  import { categoryName } from "./data/category.svelte.js";
   import AiSetup from "./components/AiSetup.svelte";
   import Timeline from "./pages/Timeline.svelte";
   import Explore from "./pages/Explore.svelte";
@@ -81,6 +86,8 @@
         : page === "duplicates" ? t("nav.duplicates")
           : page === "kind" ? t(`kind.${seg[1]}`)
           : page === "label" ? t(`label.${seg[1]}`)
+          : page === "category" ? (seg[1] === "review" ? t("cat.review.title")
+            : categoryName(catalogState.categories.find((c) => c.key === seg[1]) || { key: seg[1] }, t))
           : page === "pending" ? t("nav.pending")
           : page === "activity" ? t("nav.scanProgress")
           : page === "drives" ? t("nav.drives")
@@ -164,6 +171,9 @@
 
   // 第一次在這台 Mac 上開啟時顯示設定引導（手機、平板不顯示）
   const welcome = $derived(page === "welcome" || (app.server?.local && app.server?.ui?.onboarded === 0 && page !== "settings"));
+  let consentDone = $state(false);
+  const askClassify = $derived(!welcome && !consentDone && !!app.server?.local && app.server?.ui?.classify_asked === 0
+    && catalogState.loaded && catalogTotals().files > 0 && !app.server?.jobs?.active?.some((j) => j.kind === "scan"));
 
   // 開啟 App 時先顯示的頁面（設定 → 一般）：只在一打開、網址是首頁時跳一次；之後按側邊欄的「照片」照常進入照片
   const START = { folders: "/folders", drives: "/drives", find: "/find" };
@@ -326,7 +336,7 @@
             <HealthBanner alerts={app.server.health_alerts} />
           {/if}
           {#key routeKey}
-            <div class="route" class:fill={page === "folders" || page === "kind" || page === "label" || page === "find" || page === "assistant"}>
+            <div class="route" class:fill={page === "folders" || page === "kind" || page === "label" || page === "category" || page === "find" || page === "assistant"}>
             {#if page === "" || page === "welcome"}
               <Timeline />
             {:else if page === "favorites"}
@@ -345,6 +355,10 @@
               <Browse scope={seg[1] ? { type: "folder", root: Number(seg[1]), path: route.query.path || "" } : { type: "roots" }} />
             {:else if page === "label" && seg[1]}
               <Browse scope={{ type: "label", label: seg[1] }} />
+            {:else if page === "category" && seg[1] === "review"}
+              <CategoryReview />
+            {:else if page === "category" && seg[1]}
+              <Browse scope={{ type: "category", category: seg[1] }} />
             {:else if page === "drives"}
               <Drives />
             {:else if page === "kind" && seg[1]}
@@ -401,6 +415,9 @@
   {#if welcome}
     {#if route.query.step === "ollama" || route.query.step === "model"}<AiSetup startStep={route.query.step} />{:else}<Onboarding />{/if}
   {/if}
+  <!-- 自動分類：第一次先問本人（目錄裡有檔案了、還沒決定過才問；不問就不自動跑） -->
+  {#if askClassify}<ClassifyConsent ondone={() => (consentDone = true)} />{/if}
+  <CategoryPrompt />
   {#if selection.size}<SelectionBar />{/if}
   {#if viewer.open}<Viewer />{/if}
   <Dialogs />

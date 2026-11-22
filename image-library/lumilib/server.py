@@ -70,7 +70,8 @@ SETTING_KEYS = {
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "doc_semantic", "doc_embed_model", "spotlight", "spotlight_internal", "scan_parallel", "backup_auto", "backup_keep", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "doc_semantic", "doc_embed_model", "spotlight", "spotlight_internal", "scan_parallel", "backup_auto", "backup_keep",
+    "classify_rules_auto", "classify_ai_auto", "classify_read_text", "classify_cloud", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 SECRET_KEYS = ("assistant_api_key", "assistant_claude_key", "assistant_gemini_key", "assistant_openai_key")
@@ -341,7 +342,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 "ui": {"viewer_rating_bar": cfg.viewer_rating_bar, "nav_hidden": cfg.nav_hidden, "pinned_tools": cfg.pinned_tools,
                        "grid_style": cfg.grid_style, "onboarded": cfg.onboarded,
                        "album_sort": cfg.album_sort, "folder_sort": cfg.folder_sort, "open_action": cfg.open_action,
-                       "start_page": cfg.start_page},
+                       "start_page": cfg.start_page, "classify_asked": cfg.classify_asked},
                 "favorites": favorites(c),
                 "local": request.state.local,
                 "platform": sys.platform,
@@ -1427,7 +1428,11 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             current = snap.get("current") or {}
             # 好幾顆硬碟同時在掃：每顆都顯示進度
             scanning = [j["scan"] for j in snap.get("active", []) if j.get("kind") in ("scan", "index") and j.get("scan")]
+            from .classify import overview as category_overview
+            from .classify import review_count
+
             out = {"drives": drives_overview(c, scanning, detail=detail), "kinds": kinds_overview(c),
+                   "categories": category_overview(c), "category_review": review_count(c),
                    "labels": labels_overview(c),
                    "pending": c.execute("SELECT COUNT(*) FROM delete_marks").fetchone()[0]}
             if detail:
@@ -1451,15 +1456,17 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
     @app.get("/api/items")
     def items_api(root: int | None = None, path: str = "", kind: str | None = None, label: str | None = None,
-                  offset: int = 0, limit: int = 200, sort: str = "name", desc: bool = False, group: str | None = None):
+                  offset: int = 0, limit: int = 200, sort: str = "name", desc: bool = False, group: str | None = None,
+                  category: str | None = None):
         """列表與圖像檢視：只回傳要求的那一段與總數。只讀資料庫，硬碟沒接上也能看。"""
         from .catalog import items_page
 
-        if root is None and kind is None and label is None:
-            raise HTTPException(400, "請指定要看的資料夾、類型或標籤")
+        if root is None and kind is None and label is None and category is None:
+            raise HTTPException(400, "請指定要看的資料夾、類型、標籤或分類")
         c = conn()
         try:
-            page = items_page(c, root_id=root, path=path, kind=kind, label=label, offset=offset, limit=limit, sort=sort, desc=desc, group=group)
+            page = items_page(c, root_id=root, path=path, kind=kind, label=label, offset=offset, limit=limit, sort=sort, desc=desc, group=group,
+                              category=category)
             if page is None:
                 raise HTTPException(404, "找不到這個位置")
             return page
@@ -2164,13 +2171,14 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             c.close()
 
     @app.get("/api/items/groups")
-    def items_groups_api(group: str, root: int | None = None, path: str = "", kind: str | None = None, label: str | None = None):
+    def items_groups_api(group: str, root: int | None = None, path: str = "", kind: str | None = None, label: str | None = None,
+                         category: str | None = None):
         """分組的標題與每組的數量（列表與圖像檢視用來畫出每一段的標題）。"""
         from .catalog import item_groups
 
         c = conn()
         try:
-            data = item_groups(c, group, root_id=root, path=path, kind=kind, label=label)
+            data = item_groups(c, group, root_id=root, path=path, kind=kind, label=label, category=category)
             if data is None:
                 raise HTTPException(404, "找不到這個位置或分組方式")
             return data
@@ -2859,6 +2867,124 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             old = stashed[-1] if stashed else None
         return {"home": str(cfg.home), "default": str(base), "moved": pointed(base) is not None, "bytes": size, "files": files,
                 "free": shutil.disk_usage(cfg.home).free, "old_copy": str(old) if old else None}
+
+    # ---- 自動分類 ----
+    @app.get("/api/categories")
+    def categories_api():
+        """分類清單（每類幾個資料夾、多少檔案）、有幾個要你確認、自動分類的設定、還有幾個資料夾等 AI 看。"""
+        from . import classify
+
+        c = conn()
+        try:
+            return {"categories": classify.overview(c), "review": classify.review_count(c),
+                    "ai_todo": classify.ai_todo(c), "asked": bool(cfg.classify_asked),
+                    "rules_auto": bool(cfg.classify_rules_auto), "ai_auto": bool(cfg.classify_ai_auto),
+                    "read_text": bool(cfg.classify_read_text), "cloud": bool(cfg.classify_cloud),
+                    "remote": __import__("lumilib.llm", fromlist=["is_remote"]).is_remote(cfg)}
+        finally:
+            c.close()
+
+    @app.post("/api/categories/edit")
+    def categories_edit(body: dict = Body(...)):
+        """新增、改名、刪除（只能刪自己加的）分類。"""
+        from . import classify
+
+        action = body.get("action")
+        c = conn()
+        try:
+            if action == "add":
+                key = classify.add_category(c, str(body.get("name") or ""))
+                return {"key": key, "categories": classify.overview(c)}
+            if action == "rename":
+                classify.rename_category(c, str(body.get("key") or ""), body.get("name"))
+            elif action == "delete":
+                classify.delete_category(c, str(body.get("key") or ""))
+            else:
+                raise HTTPException(400, "未知的動作")
+            return {"categories": classify.overview(c)}
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        finally:
+            c.close()
+
+    @app.post("/api/classify/consent")
+    def classify_consent(body: dict = Body(...)):
+        """第一次（或首次使用的教學裡）本人決定要不要自動分類。同意用規則的話，馬上先分一次。"""
+        for key, name in (("rules_auto", "classify_rules_auto"), ("ai_auto", "classify_ai_auto"), ("read_text", "classify_read_text")):
+            if key in body:
+                cfg.save_setting(name, 1 if body[key] else 0)
+        cfg.save_setting("classify_asked", 1)
+        if body.get("rules_auto"):
+            jobs().submit("classify")
+        return categories_api()
+
+    @app.post("/api/classify/run")
+    def classify_run(body: dict = Body(default={})):
+        """立即分類：只用規則（很快），或 now＝true 時連 AI 一起、不等夜間時段。"""
+        if body.get("ai"):
+            return jobs().submit("classify_ai", now=True)
+        return jobs().submit("classify", no_ai=True)
+
+    @app.get("/api/category/of")
+    def category_of(folder: int | None = None, file: int | None = None):
+        from . import classify
+
+        if folder is None and file is None:
+            raise HTTPException(400, "要指定一個資料夾或檔案")
+        c = conn()
+        try:
+            return classify.of(c, folder=folder, file=file)
+        finally:
+            c.close()
+
+    @app.post("/api/category/set")
+    def category_set(body: dict = Body(...)):
+        """本人設定分類（category：分類代號／null＝不分類／"auto"＝回到自動）。回傳名稱相近、可以一起改的資料夾。"""
+        from . import classify
+
+        c = conn()
+        try:
+            out = classify.set_user(c, folder=body.get("folder"), file=body.get("file"), category=body.get("category", "auto"))
+            return {"similar": len(out["similar"]), "sample": [s["name"] for s in out["similar"][:5]], "tokens": out["tokens"],
+                    "category": classify.of(c, folder=body.get("folder"), file=body.get("file"))}
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        finally:
+            c.close()
+
+    @app.post("/api/category/learn")
+    def category_learn(body: dict = Body(...)):
+        """本人同意「名稱相近的資料夾也照這樣分」。"""
+        from . import classify
+
+        c = conn()
+        try:
+            return {"folders": classify.learn(c, int(body.get("folder") or 0), str(body.get("category") or ""))}
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        finally:
+            c.close()
+
+    @app.get("/api/category/review")
+    def category_review():
+        """AI 沒把握、請本人確認的資料夾。"""
+        from . import classify
+
+        c = conn()
+        try:
+            return {"items": classify.review_list(c)}
+        finally:
+            c.close()
+
+    @app.post("/api/category/review/accept")
+    def category_accept(body: dict = Body(...)):
+        from . import classify
+
+        c = conn()
+        try:
+            return {"accepted": classify.accept(c, [int(x) for x in body.get("folders") or []][:MAX_IDS])}
+        finally:
+            c.close()
 
     # ---- 目錄檔管理：備份、還原、舊目錄、重新開始 ----
     def _roots() -> list[str]:

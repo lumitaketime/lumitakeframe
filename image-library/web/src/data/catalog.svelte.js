@@ -10,6 +10,8 @@ export const catalog = $state({
   labels: [], // 每個顏色標籤有幾個項目
   pending: 0, // 標記為待刪除的項目數
   smart: [], // 智慧資料夾（儲存起來的搜尋）
+  categories: [], // 自動分類：每類幾個資料夾、多少檔案
+  categoryReview: 0, // AI 沒把握、請本人確認的資料夾數
   loaded: false,
   error: "",
 });
@@ -24,6 +26,8 @@ export function loadCatalog() {
       catalog.kinds = data.kinds;
       catalog.labels = data.labels || [];
       catalog.pending = data.pending || 0;
+      catalog.categories = data.categories || [];
+      catalog.categoryReview = data.category_review || 0;
       catalog.error = "";
     })
     .catch((e) => {

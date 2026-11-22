@@ -275,7 +275,7 @@ def _folder_item(r: sqlite3.Row) -> dict:
 
 def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: str = "", kind: str | None = None,
                label: str | None = None, offset: int = 0, limit: int = 200, sort: str = "name", desc: bool = False,
-               group: str | None = None) -> dict | None:
+               group: str | None = None, category: str | None = None) -> dict | None:
     """一段項目（offset 起 limit 筆）與總數。排序、篩選都交給 SQLite，不把整個資料夾讀進來。
 
     三種範圍：root_id＋path＝一個資料夾的內容（資料夾排前面）；kind＝所有硬碟上這個類型的檔案；
@@ -303,6 +303,24 @@ def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: st
             f"ORDER BY {file_order} LIMIT ? OFFSET ?) p "
             "JOIN files f ON f.id = p.id JOIN folders d ON d.id = f.folder_id", (*kinds, limit, offset)).fetchall()
         return {"total": total, "folders": 0, "offset": offset, "items": annotate_copies(conn, [_file_item(r) for r in rows])}
+
+    if category is not None:
+        # 分類：這一類的「最上層」資料夾（裡面的資料夾跟著，不重複列）＋本人單獨設定成這一類的檔案
+        from .classify import scope_sql, valid_keys
+
+        if category not in valid_keys(conn):
+            return None
+        fsql, filesql = scope_sql(category)
+        filesql = filesql.format(cols=file_cols)
+        n_folders = conn.execute(f"SELECT COUNT(*) FROM ({fsql})", (category,)).fetchone()[0]
+        n_files = conn.execute(f"SELECT COUNT(*) FROM ({filesql})", (category,)).fetchone()[0]
+        items = []
+        if offset < n_folders:
+            items += [_folder_item(r) for r in conn.execute(f"{fsql} ORDER BY {folder_order}, d.id LIMIT ? OFFSET ?", (category, limit, offset))]
+        if len(items) < limit:
+            items += [_file_item(r) for r in conn.execute(f"{filesql} ORDER BY {file_order}, f.id LIMIT ? OFFSET ?",
+                                                          (category, limit - len(items), max(0, offset - n_folders)))]
+        return {"total": n_folders + n_files, "folders": n_folders, "offset": offset, "items": annotate_copies(conn, items)}
 
     if label is not None:
         if label not in LABELS:
@@ -542,7 +560,7 @@ def subtree_kinds(conn: sqlite3.Connection, root_id: int, path: str = "") -> lis
 
 
 def item_groups(conn: sqlite3.Connection, group: str, *, root_id: int | None = None, path: str = "", kind: str | None = None,
-                label: str | None = None) -> dict | None:
+                label: str | None = None, category: str | None = None) -> dict | None:
     """分組的標題與每組幾個檔案（依組別順序）。資料夾自成一組排在最前面，數量另外回傳。"""
     grp = _group_expr(group)
     if grp is None:
@@ -552,6 +570,12 @@ def item_groups(conn: sqlite3.Connection, group: str, *, root_id: int | None = N
         if not kinds:
             return None
         where, args, folders = f"f.status = 'ok' AND f.kind IN ({','.join('?' * len(kinds))})", list(kinds), 0
+    elif category is not None:
+        from .classify import scope_sql
+
+        fsql, _ = scope_sql(category)
+        folders = conn.execute(f"SELECT COUNT(*) FROM ({fsql})", (category,)).fetchone()[0]
+        where, args = "f.status = 'ok' AND 'file:' || f.id IN (SELECT target FROM category_user WHERE category = ?)", [category]
     elif label is not None:
         if label not in LABELS:
             return None

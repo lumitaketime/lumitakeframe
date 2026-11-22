@@ -29,9 +29,9 @@ LABELS = {
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
     "move_catalog": "搬移目錄", "embed_docs": "建立「用意思找」的索引",
-    "photos": "整理照片（拍攝資訊與縮圖）", "backup": "備份目錄",
+    "photos": "整理照片（拍攝資訊與縮圖）", "backup": "備份目錄", "classify": "自動分類", "classify_ai": "AI 分類",
 }
-LANES = {"analyze": "ai", "embed": "ai", "embed_docs": "ai", "pull": "download", "face_model": "download", "clip_model": "download",
+LANES = {"analyze": "ai", "embed": "ai", "embed_docs": "ai", "classify_ai": "ai", "pull": "download", "face_model": "download", "clip_model": "download",
          "scan": "scan", "backup": "catalog"}
 QUEUED_LANES = ("main", "ai", "scan")
 SCAN_WORKERS = 4  # 「同時掃描幾顆硬碟」最多 4 顆；實際同時跑幾個看設定
@@ -102,8 +102,8 @@ class JobRunner:
             t.start()
 
     # ---- 工作紀錄：寫進資料庫，關掉 App 再開仍然看得到；紀錄失敗不影響工作本身 ----
-    LOGGED = ("scan", "index", "compare", "extract", "ocr", "analyze", "embed_docs", "photos")
-    RESUMABLE = ("scan", "index", "compare", "extract", "ocr", "embed_docs", "photos")
+    LOGGED = ("scan", "index", "compare", "extract", "ocr", "analyze", "embed_docs", "photos", "classify_ai")
+    RESUMABLE = ("scan", "index", "compare", "extract", "ocr", "embed_docs", "photos", "classify_ai")
 
     def _log_sql(self, sql: str, args: tuple = ()) -> int | None:
         try:
@@ -444,6 +444,8 @@ class JobRunner:
                 st = db.stats(conn)
             finally:
                 conn.close()
+            if self.cfg.classify_rules_auto:
+                self.submit("classify")  # 自動分類（規則，很快；本人同意過才做）
             if self.cfg.auto_extract:
                 # 讀取文件文字、文字辨識：掃描完自動接著做（只讀取；排在掃描之後，可以停止，下次接著做）
                 from .ocr import available as ocr_available
@@ -641,6 +643,30 @@ class JobRunner:
                                  + (f"；舊的自動備份拿掉 {len(removed)} 份，保留最近 {int(self.cfg.backup_keep or 4)} 份" if removed else ""))
                 else:
                     parts.append("已停止備份")
+            if kind == "classify":
+                from .classify import ai_todo, describe_rules, run_rules
+
+                upd(message="依資料夾名稱與內容分類")
+                res = run_rules(conn)
+                parts.append(describe_rules(res))
+                if self.cfg.classify_ai_auto and not opts.get("no_ai") and ai_todo(conn):
+                    self.submit("classify_ai")
+            if kind == "classify_ai":
+                from . import llm as llm_mod
+                from .classify import describe_ai, run_ai
+
+                remote = llm_mod.is_remote(self.cfg)
+                if remote and not self.cfg.classify_cloud:
+                    raise RuntimeError("AI 分類只用這台電腦上的模型；要用雲端服務，請到「設定 → AI 助理 → 自動分類」打開")
+                model = llm_mod.make_llm(self.cfg, self.client_factory())
+                read_text = bool(self.cfg.classify_read_text) and not remote  # 用雲端時一律不讀文件內容
+                res = run_ai(conn, model, read_text=read_text, stop=stop,
+                             wait=None if opts.get("now") else (lambda: self._wait_schedule(job)),
+                             progress=lambda done, total, name: upd(done=done, total=total, message=name))
+                job["result"] = {"asked": res.asked, "classified": res.classified, "review": res.review, "stopped": res.stopped}
+                if res.error and not res.asked:
+                    raise RuntimeError(describe_ai(res))
+                parts.append(describe_ai(res))
             if kind == "extract":
                 from .textindex import describe as describe_extract
                 from .textindex import run_extract

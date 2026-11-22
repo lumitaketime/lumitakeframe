@@ -1,14 +1,17 @@
 <script>
   /**
-   * 首次使用（手冊「首次使用」）：三個畫面，每一步都可以略過。
+   * 首次使用（手冊「首次使用」）：四個畫面，每一步都可以略過。
    * 1. 歡迎與承諾（只讀不寫硬碟、永不自動刪除、資料不出家門）→「開始使用」
    * 2. 目錄放在哪裡（預設這台 Mac，可以選常接的 SSD）→「繼續」
-   * 3. 接上第一顆硬碟並加入目錄（不會自動掃描，要按「加入目錄」）→「完成」
+   * 3. 自動整理：要不要自動分類、要不要讓 AI 在夜間處理（本人決定；略過的話之後第一次有檔案時再問）→「繼續」
+   * 4. 接上第一顆硬碟並加入目錄（不會自動掃描，要按「加入目錄」）→「完成」
    * 之後可以在「設定 → 關於」重新執行。
    */
   import { Button, Icon, ProgressIndicator } from "../ui/index.js";
   import Wordmark from "./Wordmark.svelte";
   import CatalogLocation from "../views/CatalogLocation.svelte";
+  import ClassifyChoices from "../views/ClassifyChoices.svelte";
+  import { classifyConsent } from "../data/category.svelte.js";
   import { loadDrivesDetail, addRoot, pickFolder } from "../data/drives.js";
   import { loadCatalog } from "../data/catalog.svelte.js";
   import { saveSetting } from "../data/settings.js";
@@ -16,7 +19,8 @@
   import { app, toast, refresh } from "../lib/state.svelte.js";
   import { navigate } from "../lib/router.svelte.js";
 
-  const STEPS = ["welcome", "catalog", "drive"];
+  const STEPS = ["welcome", "catalog", "organize", "drive"];
+  let organize = $state({ rules_auto: true, ai_auto: true, read_text: true });
   let step = $state(0);
   let detail = $state(null);
   let busy = $state("");
@@ -27,7 +31,7 @@
     loadDrivesDetail().then((d) => (detail = d)).catch(() => {});
   }
   $effect(() => {
-    if (step !== 2) return;
+    if (step !== 3) return;
     loadDrives();
     const timer = setInterval(loadDrives, 3000);
     return () => clearInterval(timer);
@@ -74,8 +78,14 @@
     if (app.server?.ui) app.server.ui.onboarded = 1;
     navigate(detail?.drives?.length ? "/drives" : "/folders", { replace: true });
   }
-  const next = () => (step < STEPS.length - 1 ? (step += 1) : finish());
-  const PRIMARY = ["onb.start", "onb.continue", "onb.done"];
+  // 「自動整理」按「繼續」才記下本人的選擇；按「略過」就之後再問
+  async function next() {
+    if (STEPS[step] === "organize") classifyConsent(organize).catch(() => {});
+    if (step < STEPS.length - 1) step += 1;
+    else finish();
+  }
+  const skip = () => (step < STEPS.length - 1 ? (step += 1) : finish());
+  const PRIMARY = ["onb.start", "onb.continue", "onb.continue", "onb.done"];
   const PROMISES = [
     { icon: "external-drive-fill", key: "readOnly" },
     { icon: "trash", key: "noDelete" },
@@ -109,6 +119,11 @@
         <h1 id="onb-title" class="mac-title-2">{t("onb.catalog.title")}</h1>
         <p class="lead mac-body">{t("onb.catalog.lead")}</p>
         <CatalogLocation header={t("onb.catalog.header")} />
+      {:else if step === 2}
+        <h1 id="onb-title" class="mac-title-2">{t("onb.organize.title")}</h1>
+        <p class="lead mac-body">{t("onb.organize.lead")}</p>
+        <ClassifyChoices bind:value={organize} />
+        <p class="mac-callout sub">{t("cat.consent.promise")}</p>
       {:else}
         <h1 id="onb-title" class="mac-title-2">{t("onb.drive.title")}</h1>
         <p class="lead mac-body">{t("onb.drive.lead")}</p>
@@ -145,7 +160,7 @@
     <footer>
       {#if step > 0}<Button variant="bordered" onclick={() => (step -= 1)}>{t("common.back")}</Button>{/if}
       <span class="grow"></span>
-      <Button variant="borderless" onclick={step === 0 ? finish : next}>{t(step === 0 ? "onb.skipAll" : "onb.skip")}</Button>
+      <Button variant="borderless" onclick={step === 0 ? finish : skip}>{t(step === 0 ? "onb.skipAll" : "onb.skip")}</Button>
       <Button variant="borderedProminent" onclick={next}>{t(PRIMARY[step])}</Button>
     </footer>
   </div>

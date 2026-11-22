@@ -9,6 +9,7 @@
   import CatalogLocation from "../views/CatalogLocation.svelte";
   import CatalogBackup from "../views/CatalogBackup.svelte";
   import AssistantSettings from "../views/AssistantSettings.svelte";
+  import ClassifySettings from "../views/ClassifySettings.svelte";
   import { api } from "../lib/api.js";
   import SemanticSettings from "../views/SemanticSettings.svelte";
   import { loadSettings, saveSetting, loadStorage, resetText } from "../data/settings.js";
@@ -334,6 +335,7 @@
 
     {:else if shown === "assistant"}
       <AssistantSettings {settings} {set} />
+      <ClassifySettings {settings} {set} />
 
     {:else if shown === "photos"}
       <p class="lead mac-body">{t("set.photos.lead")}</p>

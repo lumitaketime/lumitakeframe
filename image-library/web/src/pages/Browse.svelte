@@ -22,6 +22,7 @@
   import { createItemSource, createStaticSource, loadGroups } from "../data/items.svelte.js";
   import { buildSections } from "../views/sections.js";
   import { catalog, driveOfRoot } from "../data/catalog.svelte.js";
+  import { setCategory, categoryName } from "../data/category.svelte.js";
   import { loadLocation, openItem, saveOpenAction, setLabel, pinFolder, pinLink, fileHref, DRAG_FOLDER, DRAG_LINK, loadUsageTree, loadKinds } from "../data/browse.js";
   import { loadCatalog } from "../data/catalog.svelte.js";
   import { setFrame, frame, toggleInfo } from "../shell/frame.svelte.js";
@@ -33,7 +34,7 @@
   let { scope } = $props();
 
   const place = $derived(scope.type === "folder" ? `folder:${scope.root}:${scope.path}` : scope.type === "kind" ? `kind:${scope.kind}`
-    : scope.type === "label" ? `label:${scope.label}` : "roots");
+    : scope.type === "label" ? `label:${scope.label}` : scope.type === "category" ? `category:${scope.category}` : "roots");
   const view = $derived(viewFor(place));
   const sel = createSelection();
   // 網址帶 select＝某個名稱（例如從 Spotlight、助理打開）：選好那一項並捲到它
@@ -55,8 +56,10 @@
     root_id: r.id, path: "", kindLabel: t("info.kind.drive"), note: r.online ? "" : t("drive.offline"),
   }))));
   let rev = $state(0); // 在標籤頁改了標籤：重新讀取，讓不再屬於這個標籤的項目消失
+  let catalogRev = $state(0); // 在分類頁改了分類：重新讀取
   // 引擎看的範圍；分組只用在圖像與列表，其他檢視不分組
   const engineScope = $derived(scope.type === "kind" ? { kind: scope.kind } : scope.type === "label" ? (rev, { label: scope.label })
+    : scope.type === "category" ? (rev, catalogRev, { category: scope.category })
     : scope.type === "folder" ? { root: scope.root, path: scope.path } : null);
   const grouping = $derived(engineScope && prefs.group !== "none" && (view === "icons" || view === "list") ? prefs.group : "");
   const source = $derived(
@@ -163,6 +166,7 @@
           [t("info.modified"), picked.mtime ? formatDate(picked.mtime) : ""],
           [t("info.drive"), driveName(picked)],
         ],
+        category: typeof picked.id === "number" && (picked.type === "folder" || picked.type === "file") ? { [picked.type]: picked.id } : null,
       };
     } else if (loc) {
       info = {
@@ -179,6 +183,7 @@
           [t("info.lastScan"), loc.root.last_scan ? formatDate(new Date(loc.root.last_scan)) : t("drive.neverScanned")],
         ],
         kinds: kinds || [],
+        category: loc.path && loc.folder_id ? { folder: loc.folder_id } : null,
       };
     }
     const driveLabel = loc?.drive?.name;
@@ -263,6 +268,19 @@
   }
   // ---- 標籤與喜好項目 ----
   const LABELS = ["red", "yellow", "green", "blue", "purple"];
+  // 分類：只改目錄裡的分類；一次設定好幾個時不問「名稱相近的要一起分嗎」，只設定一個資料夾時才問
+  async function categorize(items, key) {
+    try {
+      if (items.length === 1) await setCategory({ [items[0].type]: items[0].id }, key);
+      else for (const it of items) await api("/api/category/set", { body: { [it.type]: it.id, category: key } });
+      loadCatalog();
+      if (scope.type === "category") catalogRev++;
+      refresh();
+      toast(t("cat.changed", { n: formatNumber(items.length) }));
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
   const chosen = () => sel.indexes().map((i) => active.peek(i)).filter(Boolean);
   async function label(items, value) {
     try {
@@ -328,6 +346,10 @@
         ? { label: t("fav.remove"), onSelect: () => pinFile(item, false) }
         : { label: t("fav.add"), onSelect: () => pinFile(item, true) }] : []),
       ...(targets.length ? [
+        { separator: true }, { header: t("nav.categories") },
+        ...catalog.categories.map((c) => ({ label: categoryName(c, t), onSelect: () => categorize(targets, c.key) })),
+        { label: t("cat.none"), onSelect: () => categorize(targets, null) },
+        { label: t("cat.auto"), onSelect: () => categorize(targets, "auto") },
         { separator: true }, { header: t("nav.labels") },
         ...LABELS.map((key) => ({ label: t(`label.${key}`), checked: targets.every((it) => it.label === key), onSelect: () => label(targets, key) })),
         { label: t("label.none"), checked: false, disabled: !targets.some((it) => it.label), onSelect: () => label(targets, null) },
@@ -360,6 +382,9 @@
       {:else if scope.type === "label"}
         <h2 class="mac-title-3">{t("view.empty.label", { label: t(`label.${scope.label}`) })}</h2>
         <p class="mac-body">{t("view.empty.labelHint")}</p>
+      {:else if scope.type === "category"}
+        <h2 class="mac-title-3">{t("cat.empty", { name: categoryName(catalog.categories.find((c) => c.key === scope.category) || { key: scope.category }, t) })}</h2>
+        <p class="mac-body">{t("cat.emptyHint")}</p>
       {:else if scope.type === "kind"}
         <h2 class="mac-title-3">{t("view.empty.kind", { kind: t(`kind.${scope.kind}`) })}</h2>
         <p class="mac-body">{t("view.empty.kindHint")}</p>
@@ -386,7 +411,7 @@
   {:else if view === "icons"}
     <ItemGrid {source} {sel} sections={grouping ? sections : null} onopen={open} onpreview={preview} oncontext={itemMenu} ondragitem={dragItem} />
   {:else}
-    <ItemList {source} {sel} sections={grouping ? sections : null} totalBytes={scope.type === "folder" ? loc?.bytes || 0 : 0} showDrive={scope.type === "kind" || scope.type === "label"} ondragitem={dragItem} {driveName} onopen={open} onpreview={preview} oncontext={itemMenu} onheadercontext={headerMenu} />
+    <ItemList {source} {sel} sections={grouping ? sections : null} totalBytes={scope.type === "folder" ? loc?.bytes || 0 : 0} showDrive={scope.type === "kind" || scope.type === "label" || scope.type === "category"} ondragitem={dragItem} {driveName} onopen={open} onpreview={preview} oncontext={itemMenu} onheadercontext={headerMenu} />
   {/if}
 </div>
 

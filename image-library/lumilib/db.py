@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 32  # v32：側邊欄「喜好項目」裡釘選的檔案與捷徑；v31：已經交給 Spotlight 的項目；v30：助理的對話紀錄；v29：硬碟健康（自我檢測、讀取錯誤、本人的處理方式）；v28：文件的語意向量（用意思找文件）；v27：助理提出的動作（提案、執行、復原的紀錄）；v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 33  # v33：自動分類（分類清單、本人設定、AI 建議、學到的規則、每個資料夾目前的分類）；v32：側邊欄「喜好項目」裡釘選的檔案與捷徑；v31：已經交給 Spotlight 的項目；v30：助理的對話紀錄；v29：硬碟健康（自我檢測、讀取錯誤、本人的處理方式）；v28：文件的語意向量（用意思找文件）；v27：助理提出的動作（提案、執行、復原的紀錄）；v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -222,6 +222,44 @@ CREATE TABLE IF NOT EXISTS spotlight_sync (
     sig TEXT NOT NULL,
     synced_at TEXT NOT NULL
 );
+
+-- v33：自動分類（只記在目錄裡，不改硬碟上的檔名或位置）。本人設定的和規則、AI 的分開存，本人的永遠優先。
+CREATE TABLE IF NOT EXISTS categories (
+    key TEXT PRIMARY KEY,
+    name TEXT,
+    position INTEGER NOT NULL DEFAULT 0,
+    builtin INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS category_user (
+    target TEXT PRIMARY KEY,
+    category TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS category_ai (
+    folder_id INTEGER PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,
+    category TEXT,
+    confidence REAL NOT NULL DEFAULT 0,
+    reason TEXT,
+    sig TEXT,
+    model TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS category_learned (
+    token TEXT PRIMARY KEY,
+    category TEXT NOT NULL,
+    hits INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS folder_category (
+    folder_id INTEGER PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,
+    category TEXT,
+    source TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0,
+    reason TEXT,
+    review INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_folder_category ON folder_category(category);
+CREATE INDEX IF NOT EXISTS idx_folder_category_review ON folder_category(review) WHERE review = 1;
 
 -- v32：側邊欄「喜好項目」裡釘選的檔案與捷徑（資料夾仍記在 folder_prefs）。只影響顯示，不動硬碟上的檔案。
 -- kind：file＝檔案（href 會打開所在資料夾並選好它）／link＝側邊欄的其他項目（ref 是那一項的代號，例如 kind:photo、smart:3）

@@ -15,6 +15,7 @@
   import ContextMenu from "../views/ContextMenu.svelte";
   import { pinFolder, pinLink, orderFavorites, DRAG_FOLDER, DRAG_LINK, DRAG_FAV } from "../data/browse.js";
   import { findHref, deleteSmartFolder } from "../data/find.svelte.js";
+  import { categoryName, CATEGORY_ICONS } from "../data/category.svelte.js";
   import { toast, refresh } from "../lib/state.svelte.js";
 
   let { width = 240 } = $props();
@@ -91,8 +92,18 @@
     badge: l.count ? formatNumber(l.count) : undefined,
   })));
 
+  // 分類：自動分類的主題（有資料夾的才列）；有 AI 沒把握的，最後一項是「請你確認」
+  const categoryItems = $derived([
+    ...catalog.categories.filter((c) => c.top > 0).map((c) => ({
+      value: `category:${c.key}`, label: categoryName(c, t), icon: CATEGORY_ICONS[c.key] || "tag", href: `/category/${c.key}`, draggable: true,
+      badge: formatNumber(c.top),
+    })),
+    ...(catalog.categoryReview ? [{ value: "category:review", label: t("cat.review.title"), icon: "exclamation-triangle", href: "/category/review",
+      badge: formatNumber(catalog.categoryReview), draggable: true }] : []),
+  ]);
+
   // 喜好項目裡的捷徑：名稱與圖示跟著原本那一項（換語言、智慧資料夾改名都跟著變）
-  const linkSource = $derived(new Map([...libraryItems, ...kindItems, ...smartItems, ...labelItems].map((it) => [it.value, it])));
+  const linkSource = $derived(new Map([...libraryItems, ...kindItems, ...categoryItems, ...smartItems, ...labelItems].map((it) => [it.value, it])));
   const favorites = $derived(app.server?.favorites || []);
   const pins = $derived(favorites.filter((f) => f.kind !== "album")); // 可以排順序的：資料夾、檔案、捷徑
   const pinKey = (f) => f.href;
@@ -116,6 +127,7 @@
       note: dropping ? t("fav.dropHere") : !favorites.length ? t("fav.empty") : "" },
     { id: "library", title: t("nav.library"), collapsible: true, items: libraryItems },
     ...(catalog.drives.length ? [{ id: "kinds", title: t("nav.kinds"), collapsible: true, items: kindItems }] : []),
+    ...(categoryItems.length ? [{ id: "categories", title: t("nav.categories"), collapsible: true, items: categoryItems }] : []),
     { id: "drives", title: t("nav.drives"), collapsible: true, href: "/drives", current: page === "drives", items: catalog.drives.map(driveItem),
       note: catalog.loaded && !catalog.drives.length ? t("drive.noDrives") : "" },
     // 智慧資料夾：儲存起來的搜尋；按一下重新搜尋，按右鍵移除（只移除搜尋，不影響檔案）
@@ -226,6 +238,7 @@
     if (page === "activity") return "scan";
     if (page === "kind") return `kind:${route.path.split("/")[2]}`;
     if (page === "label") return `label:${route.path.split("/")[2]}`;
+    if (page === "category") return `category:${route.path.split("/")[2]}`;
     if (page === "folders" && rootId) {
       const d = catalog.drives.find((x) => x.roots.some((r) => r.id === rootId));
       if (d) return d.roots.length > 1 ? `root:${rootId}` : d.key;

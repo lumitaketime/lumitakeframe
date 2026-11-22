@@ -2,6 +2,7 @@
   /** 資訊欄：目前位置（硬碟或資料夾）的資訊；沒有特定位置時顯示整個資料庫的摘要。內容不透明，不用玻璃。 */
   import { t, formatNumber, formatBytes } from "../i18n/index.svelte.js";
   import { catalog, catalogTotals } from "../data/catalog.svelte.js";
+  import CategoryCard from "../views/CategoryCard.svelte";
 
   let { info = null } = $props();
   const totals = $derived(catalogTotals());
@@ -42,6 +43,7 @@
         <div><dt>{label}</dt><dd>{value}</dd></div>
       {/each}
     </dl>
+    {#if shown.category}<div class="catbox"><CategoryCard target={shown.category} /></div>{/if}
     {#if kinds.length}
       <h3 class="mac-subheadline">{t("info.byKind")}</h3>
       <div class="donut">
@@ -91,4 +93,5 @@
   .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .num { color: var(--label-secondary); font-feature-settings: "tnum"; flex: none; }
   .size { min-width: 64px; text-align: right; }
+  .catbox { margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--separator); }
 </style>

@@ -94,7 +94,13 @@ DEFAULTS = {
     "backup_auto": 1,
     "backup_dir": "",
     "backup_keep": 4,
-    "backup_last": "",  # 同時掃描幾顆硬碟（1–4）：不同硬碟同時掃；同一個 USB 集線器大約 3 顆就到頻寬上限  # 這台 Mac 內建磁碟上的檔案也放（和 Re'memor 的搜尋找得到的一樣；Mac 自己的 Spotlight 可能也列一次）
+    "backup_last": "",
+    # 自動分類：第一次先問本人（classify_asked），同意了才自動跑
+    "classify_asked": 0,
+    "classify_rules_auto": 0,  # 掃描完自動用規則分類
+    "classify_ai_auto": 0,  # 規則分不出來的，在「AI 分析排程」允許的時段（預設夜間、接著電源）交給 AI
+    "classify_read_text": 1,  # 用這台電腦上的模型時，可以讀文件開頭一小段（用雲端時一律不讀）
+    "classify_cloud": 0,  # 助理設成雲端服務時，可不可以用它來分類（會送出資料夾名稱與檔名）  # 同時掃描幾顆硬碟（1–4）：不同硬碟同時掃；同一個 USB 集線器大約 3 顆就到頻寬上限  # 這台 Mac 內建磁碟上的檔案也放（和 Re'memor 的搜尋找得到的一樣；Mac 自己的 Spotlight 可能也列一次）
     "doc_embed_model": "bge-m3",  # 掃描完自動接著讀取文件文字與文字辨識（在背景，可以暫停、隨時拔掉）
     "start_page": "folders",  # 開啟 App 時先看到的頁面：folders＝所有檔案／drives＝硬碟／find＝搜尋／photos＝照片
     "open_action": "",  # 按兩下照片以外的檔案：open＝用預設的 App 打開／reveal＝在 Finder 中顯示／空白＝第一次先問
@@ -180,6 +186,11 @@ class Config:
     backup_dir: str = DEFAULTS["backup_dir"]
     backup_keep: int = DEFAULTS["backup_keep"]
     backup_last: str = DEFAULTS["backup_last"]
+    classify_asked: int = DEFAULTS["classify_asked"]
+    classify_rules_auto: int = DEFAULTS["classify_rules_auto"]
+    classify_ai_auto: int = DEFAULTS["classify_ai_auto"]
+    classify_read_text: int = DEFAULTS["classify_read_text"]
+    classify_cloud: int = DEFAULTS["classify_cloud"]
     doc_embed_model: str = DEFAULTS["doc_embed_model"]
     assistant_permission: int = DEFAULTS["assistant_permission"]
     assistant_cloud_content: int = DEFAULTS["assistant_cloud_content"]
