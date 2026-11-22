@@ -53,7 +53,7 @@
       <div class="row" class:on class:trail id={sel ? `item-${i}` : undefined} role="option" aria-selected={on || trail} tabindex="-1" style:transform="translateY({i * ROW}px)"
         onclick={(e) => item && onpick?.(i, item, e)} ondblclick={() => item && onopen?.(i, item)}
         oncontextmenu={(e) => { if (!item) return; e.preventDefault(); oncontext?.(e, i, item); }}
-        draggable={item?.type === "folder" ? "true" : undefined} ondragstart={(e) => ondragitem?.(e, item)} title={item?.name}>
+        draggable={item?.type === "folder" || item?.type === "file" ? "true" : undefined} ondragstart={(e) => ondragitem?.(e, item)} title={item?.name}>
         {#if item}
           <KindIcon kind={item.icon || (item.type === "folder" ? "folder" : item.kind)} />
           <span class="text">{item.name}</span>{#if item.copies}<CopiesMark copies={item.copies} />{/if}

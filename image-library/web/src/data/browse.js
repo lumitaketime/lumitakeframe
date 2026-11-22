@@ -42,6 +42,23 @@ export const orderPins = (items) => api("/api/folders/order", { body: { items } 
 
 /** 拖曳資料夾時帶著的資料類型（拖到側邊欄就釘選） */
 export const DRAG_FOLDER = "application/x-rememor-folder";
+/** 拖曳檔案或側邊欄的項目：{kind: file／link, href, name, icon, ref} */
+export const DRAG_LINK = "application/x-rememor-link";
+/** 在「喜好項目」裡拖曳、排順序：{key} */
+export const DRAG_FAV = "application/x-rememor-favorite";
+
+/** 把檔案或側邊欄的項目釘到「喜好項目」（on＝false 拿掉）；只記在目錄裡 */
+export const pinLink = (link, on = true) => api("/api/favorites/link", { body: { ...link, on } });
+/** 「喜好項目」的順序：[{kind: folder, root_id, path} 或 {kind, href}] */
+export const orderFavorites = (items) => api("/api/favorites/order", { body: { items } });
+
+/** 檔案在 Re'memor 裡的頁面：打開所在資料夾並選好它 */
+export function fileHref(item) {
+  const q = new URLSearchParams();
+  if (item.folder) q.set("path", item.folder);
+  q.set("select", item.name);
+  return `/folders/${item.root_id}?${q.toString().replace(/\+/g, "%20")}`;
+}
 
 /** 佔比圖（方塊圖、環狀圖）：目前層與下一層的大小 */
 export const loadUsage = (root, path) => api("/api/usage", { params: { root, path }, quiet: true });

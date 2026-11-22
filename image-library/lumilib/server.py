@@ -69,7 +69,7 @@ SETTING_KEYS = {
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "doc_semantic", "doc_embed_model", "spotlight", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "doc_semantic", "doc_embed_model", "spotlight", "spotlight_internal", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 SECRET_KEYS = ("assistant_api_key", "assistant_claude_key", "assistant_gemini_key", "assistant_openai_key")
@@ -417,15 +417,19 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         return (bool(row["favorite"]), row["position"]) if row else (False, None)
 
     def favorites(c) -> list[dict]:
-        """側邊欄的「收藏」：收藏的相簿與資料夾。"""
+        """側邊欄的「喜好項目」：收藏的相簿，以及釘選的資料夾、檔案、側邊欄捷徑（後三種依拖曳排好的順序）。"""
         out = [{"kind": "album", "id": r["id"], "name": r["name"], "href": f"/albums/{r['id']}"}  # noqa: E501
                for r in c.execute("SELECT id, name FROM albums WHERE favorite = 1 ORDER BY position IS NULL, position, name")]
-        for r in c.execute("SELECT p.root_id, p.path, r.name AS root_name FROM folder_prefs p JOIN roots r ON r.id = p.root_id "
-                           "WHERE p.favorite = 1 ORDER BY p.position IS NULL, p.position, p.path"):
+        pins = []
+        for r in c.execute("SELECT p.root_id, p.path, p.position, r.name AS root_name FROM folder_prefs p JOIN roots r ON r.id = p.root_id "
+                           "WHERE p.favorite = 1"):
             name = r["path"].rsplit("/", 1)[-1] if r["path"] else r["root_name"]
             href = f"/folders/{r['root_id']}" + (f"?path={quote(r['path'], safe='')}" if r["path"] else "")
-            out.append({"kind": "folder", "name": name, "href": href, "root_id": r["root_id"], "path": r["path"]})
-        return out
+            pins.append({"kind": "folder", "name": name, "href": href, "root_id": r["root_id"], "path": r["path"], "position": r["position"]})
+        for r in c.execute("SELECT href, kind, ref, name, icon, position FROM sidebar_links"):
+            pins.append({"kind": r["kind"], "name": r["name"], "href": r["href"], "ref": r["ref"], "icon": r["icon"], "position": r["position"]})
+        pins.sort(key=lambda p: (p["position"] is None, p["position"] or 0, p["name"]))
+        return out + pins
 
     def _root_dict(c, r) -> dict:
         from .catalog import root_summary
@@ -1561,8 +1565,12 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     @app.post("/api/spotlight/report")
     def spotlight_report(body: dict = Body(...)):
         """Mac App 回報放進 Spotlight 的結果（設定頁顯示，方便知道狀況）。"""
+        probe = body.get("probe")
         spotlight_state.update(ok=bool(body.get("ok")), count=int(body.get("count") or 0),
-                               error=str(body.get("error") or "")[:300], at=db.now_iso())
+                               error=str(body.get("error") or "")[:300], at=db.now_iso(),
+                               # 自我檢查：Spotlight 自己找不找得到 Re'memor 放進去的項目（None＝沒有檢查）
+                               probe=int(probe) if isinstance(probe, (int, float)) else None,
+                               probe_error=str(body.get("probe_error") or "")[:300])
         return {"ok": True}
 
     @app.get("/api/spotlight/changes")
@@ -1572,7 +1580,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
         c = conn()
         try:
-            return spotlight.changes(c, cursor, max(50, min(limit, 2000)), bool(cfg.spotlight))
+            return spotlight.changes(c, cursor, max(50, min(limit, 2000)), bool(cfg.spotlight), bool(cfg.spotlight_internal))
         except ValueError as e:
             raise HTTPException(400, "cursor 不對") from e
         finally:
@@ -2281,6 +2289,49 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    @app.post("/api/favorites/link")
+    def set_favorite_link(body: dict = Body(...)):
+        """把檔案或側邊欄的項目釘到「喜好項目」（on＝false 就拿掉）。只記在目錄裡，不動硬碟上的檔案。"""
+        href = str(body.get("href") or "")
+        kind = str(body.get("kind") or "")
+        # 只接受 Re'memor 自己的頁面（不能是外部網址）
+        if not href.startswith("/") or href.startswith("//") or len(href) > 2000 or kind not in ("file", "link"):
+            raise HTTPException(400, "這個項目不能放進喜好項目")
+        c = conn()
+        try:
+            if body.get("on", True):
+                name = str(body.get("name") or "").strip()[:200] or href
+                top = c.execute("SELECT MAX(m) FROM (SELECT MAX(position) AS m FROM folder_prefs WHERE favorite = 1 "
+                                "UNION ALL SELECT MAX(position) FROM sidebar_links)").fetchone()[0]
+                c.execute("INSERT INTO sidebar_links (href, kind, ref, name, icon, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) "
+                          "ON CONFLICT(href) DO UPDATE SET name = excluded.name, ref = excluded.ref, icon = excluded.icon",
+                          (href, kind, str(body.get("ref") or "")[:200] or None, name, str(body.get("icon") or "")[:40] or None,
+                           (top if top is not None else -1) + 1, db.now_iso()))
+            else:
+                c.execute("DELETE FROM sidebar_links WHERE href = ?", (href,))
+            c.commit()
+            return {"ok": True}
+        finally:
+            c.close()
+
+    @app.post("/api/favorites/order")
+    def set_favorites_order(body: dict = Body(...)):
+        """拖曳排好的「喜好項目」順序：items 是 [{kind: folder, root_id, path} 或 {kind: file／link, href}]，依序存成 0、1、2…"""
+        c = conn()
+        try:
+            for pos, it in enumerate(body.get("items") or []):
+                if not isinstance(it, dict):
+                    continue
+                if it.get("kind") == "folder":
+                    root_id, path = int(it.get("root_id") or 0), str(it.get("path") or "").strip("/")
+                    c.execute("UPDATE folder_prefs SET position = ? WHERE root_id = ? AND path = ?", (pos, root_id, path))
+                else:
+                    c.execute("UPDATE sidebar_links SET position = ? WHERE href = ?", (pos, str(it.get("href") or "")))
+            c.commit()
+            return {"ok": True}
+        finally:
+            c.close()
+
     @app.post("/api/folders/cover")
     def set_folder_cover(body: dict = Body(...)):
         """資料夾（或資料夾來源本身，path 為空）的封面；image_id 為空＝改回自動（最新的照片）。"""
@@ -2680,7 +2731,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                     continue
             if key in SETTING_KEYS:
                 cfg.save_setting(key, value)
-        if "spotlight" in body:
+        if "spotlight" in body or "spotlight_internal" in body:
             from . import spotlight
 
             spotlight.changed()  # 打開或關掉：下一次同步時放進去或全部拿掉

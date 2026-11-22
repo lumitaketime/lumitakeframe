@@ -1,6 +1,6 @@
 //! Spotlight（只在 macOS）：把 Re'memor 的重要項目放進 App 專用的 Spotlight 索引（Core Spotlight）。
 //!
-//! - 放什麼由引擎決定：每顆硬碟、智慧資料夾、外接硬碟上的所有資料夾與檔案（含文件開頭的文字）。
+//! - 放什麼由引擎決定：每顆硬碟、智慧資料夾、目錄裡的所有資料夾與檔案（含文件的文字）。
 //!   引擎記得哪些已經放過，每次只給「新增、改過、不在了的」（GET /api/spotlight/changes，分批），放好後回報（ack）。
 //! - 索引只存在這台 Mac，不會上傳（核心原則二）。
 //! - 點 Spotlight 的結果：macOS 會叫 App 的「繼續活動」（application:continueUserActivity:restorationHandler:）。
@@ -9,6 +9,7 @@
 //! - 每一項的 id 就是「rememor:」加上 Re'memor 裡的頁面路徑，點下去直接照著打開，不用另外記對照表；
 //!   App 還沒準備好（例如從 Spotlight 啟動）時先記著，介面載入後再打開。
 
+use std::ptr::NonNull;
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -19,7 +20,7 @@ use objc2::runtime::{AnyObject, Bool, Imp, Sel};
 use objc2::{sel, AllocAnyThread, MainThreadMarker};
 use objc2_app_kit::NSApplication;
 use objc2_core_spotlight::{
-    CSSearchableIndex, CSSearchableItem, CSSearchableItemActionType, CSSearchableItemActivityIdentifier,
+    CSSearchQuery, CSSearchableIndex, CSSearchableItem, CSSearchableItemActionType, CSSearchableItemActivityIdentifier,
     CSSearchableItemAttributeSet,
 };
 use objc2_foundation::{NSArray, NSError, NSString, NSUserActivity};
@@ -182,7 +183,8 @@ fn body_of(raw: &str) -> &str {
 }
 
 /// 向引擎一批一批拿「有變動的項目」，放進 Spotlight（或拿掉），放好再告訴引擎。
-/// 第一次會把外接硬碟上的所有資料夾與檔案放進去（可能要一段時間）；之後只處理新增、改過、不在了的。
+/// 第一次會把目錄裡的所有資料夾與檔案放進去（可能要一段時間）；之後只處理新增、改過、不在了的。
+/// 放完會自我檢查一次（請 Spotlight 找找看），結果顯示在設定頁。
 pub fn sync() {
     if !unsafe { CSSearchableIndex::isIndexingAvailable() } {
         report(false, 0, "這台 Mac 的 Spotlight 目前不能讓 App 加入項目（可能 Spotlight 被關掉了）");
@@ -238,7 +240,10 @@ pub fn sync() {
                 let first = !*REPORTED.lock().unwrap();
                 if changed || first {
                     *REPORTED.lock().unwrap() = true;
-                    report(true, v["synced"].as_u64().unwrap_or(0) as usize, "");
+                    let synced = v["synced"].as_u64().unwrap_or(0) as usize;
+                    // 自我檢查：放好以後，請 Spotlight 用標題找找看 Re'memor 的項目，確定真的進去了
+                    let probe = if synced > 0 { Some(unsafe { probe() }) } else { None };
+                    report_probe(true, synced, "", probe);
                 }
                 return;
             }
@@ -248,8 +253,48 @@ pub fn sync() {
 
 /// 把結果告訴 Re'memor（設定頁顯示「放進 Spotlight 了沒、有沒有出錯」，方便本人知道狀況）
 fn report(ok: bool, count: usize, error: &str) {
-    let body = serde_json::json!({ "ok": ok, "count": count, "error": error }).to_string();
+    report_probe(ok, count, error, None);
+}
+
+/// probe：Some(Ok(找到幾項)) 或 Some(Err(錯誤訊息))；None＝沒有檢查
+fn report_probe(ok: bool, count: usize, error: &str, probe: Option<Result<usize, String>>) {
+    let (found, probe_error) = match probe {
+        Some(Ok(n)) => (serde_json::json!(n), String::new()),
+        Some(Err(e)) => (serde_json::Value::Null, e),
+        None => (serde_json::Value::Null, String::new()),
+    };
+    let body = serde_json::json!({ "ok": ok, "count": count, "error": error, "probe": found, "probe_error": probe_error }).to_string();
     let _ = crate::http_post("/api/spotlight/report", &body);
+}
+
+/// 請 Spotlight 在 Re'memor 自己的索引裡找任何標題（只找一批就停）：回傳找到幾項。
+/// 找得到但 Spotlight 視窗裡看不到，問題就在 macOS 的顯示設定（例如 App 沒放在「應用程式」資料夾、或 Spotlight 設定裡關掉了 Re'memor）。
+unsafe fn probe() -> Result<usize, String> {
+    let query = CSSearchQuery::initWithQueryString_queryContext(
+        CSSearchQuery::alloc(),
+        &NSString::from_str("title == \"*\""),
+        None,
+    );
+    let (tx, rx) = mpsc::channel::<Result<usize, String>>();
+    let found_tx = tx.clone();
+    let found = RcBlock::new(move |items: NonNull<NSArray<CSSearchableItem>>| {
+        let _ = found_tx.send(Ok(items.as_ref().count()));
+    });
+    query.setFoundItemsHandler(Some(&found));
+    let done = RcBlock::new(move |err: *mut NSError| {
+        let _ = tx.send(match describe(err) {
+            Some(message) => Err(message),
+            None => Ok(0),
+        });
+    });
+    query.setCompletionHandler(Some(&done));
+    query.start();
+    let out = match rx.recv_timeout(Duration::from_secs(20)) {
+        Ok(r) => r,
+        Err(_) => Err("Spotlight 太久沒有回應".into()),
+    };
+    query.cancel();
+    out
 }
 
 unsafe fn describe(err: *mut NSError) -> Option<String> {

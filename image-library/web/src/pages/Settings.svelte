@@ -182,6 +182,15 @@
               <ListRow title={!spot.report ? t("set.spotlight.noReport") : spot.report.ok ? t("set.spotlight.ok", { n: formatNumber(spot.report.count) }) : t("set.spotlight.failed")}
                 subtitle={spot.report && !spot.report.ok ? spot.report.error : !spot.report ? t("set.spotlight.noReportHint") : t("set.spotlight.okHint")}
                 icon={spot.report?.ok ? "checkmark" : "exclamation-triangle"} iconTint={spot.report?.ok ? "green" : "orange"} />
+              {#if spot.report?.ok && (spot.report.probe != null || spot.report.probe_error)}
+                <!-- 自我檢查：Spotlight 自己找不找得到 Re'memor 放進去的項目 -->
+                <ListRow title={spot.report.probe ? t("set.spotlight.probeOk") : t("set.spotlight.probeMissing")}
+                  subtitle={spot.report.probe ? t("set.spotlight.probeOkHint") : spot.report.probe_error || t("set.spotlight.probeMissingHint")}
+                  icon={spot.report.probe ? "checkmark" : "exclamation-triangle"} iconTint={spot.report.probe ? "green" : "orange"} />
+              {/if}
+              <ListRow title={t("set.spotlight.internal")} subtitle={t("set.spotlight.internalHint")}>
+                {#snippet trailing()}<Toggle checked={!!settings.spotlight_internal} onchange={(v) => set("spotlight_internal", v ? 1 : 0)} aria-label={t("set.spotlight.internal")} />{/snippet}
+              </ListRow>
               <ListRow title={t("set.spotlight.rebuild")} subtitle={t("set.spotlight.rebuildHint")}>
                 {#snippet trailing()}<Button size="small" variant="bordered" onclick={rebuildSpotlight}>{t("set.spotlight.rebuildButton")}</Button>{/snippet}
               </ListRow>

@@ -22,7 +22,7 @@
   import { createItemSource, createStaticSource, loadGroups } from "../data/items.svelte.js";
   import { buildSections } from "../views/sections.js";
   import { catalog, driveOfRoot } from "../data/catalog.svelte.js";
-  import { loadLocation, openItem, saveOpenAction, setLabel, pinFolder, DRAG_FOLDER, loadUsageTree, loadKinds } from "../data/browse.js";
+  import { loadLocation, openItem, saveOpenAction, setLabel, pinFolder, pinLink, fileHref, DRAG_FOLDER, DRAG_LINK, loadUsageTree, loadKinds } from "../data/browse.js";
   import { loadCatalog } from "../data/catalog.svelte.js";
   import { setFrame, frame, toggleInfo } from "../shell/frame.svelte.js";
   import { t, formatNumber, formatBytes, formatDate } from "../i18n/index.svelte.js";
@@ -285,10 +285,24 @@
       toast(e.message, "error");
     }
   }
+  // 拖到側邊欄的「喜好項目」就釘選：資料夾記在資料夾偏好；檔案記成「打開所在資料夾並選好它」的捷徑
+  const FILE_ICONS = { photo: "photo", raw: "photo", video: "video", audio: "music-note", document: "document", archive: "archive" };
+  const fileLink = (item) => ({ kind: "file", href: fileHref(item), name: item.name, icon: FILE_ICONS[item.kind] || "file" });
   function dragItem(e, item) {
-    if (item?.type !== "folder") return;
-    e.dataTransfer.setData(DRAG_FOLDER, JSON.stringify({ root_id: item.root_id, path: item.path, name: item.name }));
+    if (item?.type === "folder") e.dataTransfer.setData(DRAG_FOLDER, JSON.stringify({ root_id: item.root_id, path: item.path, name: item.name }));
+    else if (item?.type === "file") e.dataTransfer.setData(DRAG_LINK, JSON.stringify(fileLink(item)));
+    else return;
     e.dataTransfer.effectAllowed = "copyMove";
+  }
+  const isFilePinned = (item) => (app.server?.favorites || []).some((f) => f.kind === "file" && f.href === fileHref(item));
+  async function pinFile(item, on) {
+    try {
+      await pinLink(fileLink(item), on);
+      toast(on ? t("fav.added", { name: item.name }) : t("fav.removed", { name: item.name }));
+      refresh();
+    } catch (e) {
+      toast(e.message, "error");
+    }
   }
 
   function itemMenu(e, i) {
@@ -310,6 +324,9 @@
       { label: t("menu.copyPath"), onSelect: () => copyPath(item) },
       { label: t("menu.info"), shortcut: "⌘I", onSelect: () => { if (!frame.info) toggleInfo(); } },
       ...(item.type === "folder" ? [{ separator: true }, { label: pinned ? t("fav.remove") : t("fav.add"), onSelect: () => pin(item, !pinned) }] : []),
+      ...(item.type === "file" ? [{ separator: true }, isFilePinned(item)
+        ? { label: t("fav.remove"), onSelect: () => pinFile(item, false) }
+        : { label: t("fav.add"), onSelect: () => pinFile(item, true) }] : []),
       ...(targets.length ? [
         { separator: true }, { header: t("nav.labels") },
         ...LABELS.map((key) => ({ label: t(`label.${key}`), checked: targets.every((it) => it.label === key), onSelect: () => label(targets, key) })),

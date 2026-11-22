@@ -94,7 +94,7 @@
           aria-level={(node?.depth ?? 0) + 1} aria-expanded={isFolder ? opened : undefined} style:transform="translateY({i * ROW}px)"
           onclick={(e) => sel.click(i, e)} ondblclick={() => onopen?.(i)}
           oncontextmenu={(e) => { e.preventDefault(); sel.context(i); oncontext?.(e, i); }}
-          draggable={isFolder ? "true" : undefined} ondragstart={(e) => ondragitem?.(e, item)}>
+          draggable={isFolder || item?.type === "file" ? "true" : undefined} ondragstart={(e) => ondragitem?.(e, item)}>
           {#if item}
             <span class="name" style:padding-left="{(node?.depth ?? 0) * INDENT}px" title={item.name}>
               {#if isFolder}

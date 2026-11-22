@@ -3,9 +3,10 @@
 這裡只決定要放哪些項目；放進 Spotlight、點下去打開 Re'memor 跳到那裡，由 Mac App 外殼（desktop/src-tauri）處理。
 放什麼：
 - 每顆硬碟（包括沒接上的）與智慧資料夾。
-- 外接硬碟（/Volumes 底下）上的所有資料夾與檔案，硬碟拔掉以後 Spotlight 也找得到；文件連 Re'memor 已經讀好的文字一起放
-  （開頭一段），所以在 Spotlight 也能搜到「沒接上的硬碟裡、文件裡寫的字」。
-- 這台 Mac 內建磁碟上的檔案不放：Mac 自己的 Spotlight 本來就找得到，再放一次會出現兩次。
+- 目錄裡所有的資料夾與檔案，硬碟拔掉以後 Spotlight 也找得到；文件連 Re'memor 已經讀好的文字（含文字辨識、電子書）一起放
+  （開頭一段），所以在 Spotlight 也能搜到「沒接上的硬碟裡、文件裡寫的字」，和 Re'memor 的搜尋找得到的一樣。
+- 這台 Mac 內建磁碟上的檔案預設也放（設定 spotlight_internal）；關掉就只放外接硬碟（/Volumes 底下），
+  因為 Mac 自己的 Spotlight 也找得到內建磁碟的檔案，可能會列兩次。
 
 一百萬個項目不能每次都重送：spotlight_sync 記下已經交給 Spotlight 的每一項（和它的內容摘要），
 每次只交「新增或改過的」，拿掉「已經不在的」。Mac App 分批來拿（/api/spotlight/changes），放好之後回報（ack）。
@@ -70,7 +71,8 @@ def payload(conn: sqlite3.Connection, enabled: bool = True) -> dict:
 
 # ---- 外接硬碟的資料夾與檔案：只交有變動的 ----
 
-TEXT_CHARS = 2000  # 每份文件放進 Spotlight 的文字（開頭一段）
+TEXT_CHARS = 20000  # 每份文件放進 Spotlight 的文字（開頭一段；一般的文件整份都放得下）
+BATCH_CHARS = 2_000_000  # 一批最多帶多少字：文件很多時一批少放幾份，不讓一次傳太多
 EXTERNAL_PREFIX = "/Volumes/"
 _state = {"gen": 1, "clean": 0, "reset": False}  # gen：目錄有變動就加一；clean：上次整輪比對完時的 gen
 
@@ -86,9 +88,11 @@ def request_reset() -> None:
     _state["gen"] += 1
 
 
-def _external_roots(conn: sqlite3.Connection) -> str:
-    """外接硬碟上的資料夾來源編號（逗號分隔，可以直接放進 SQL 的 IN）；沒有就是空字串。"""
-    return ",".join(str(r[0]) for r in conn.execute("SELECT id, path FROM roots") if str(r[1]).startswith(EXTERNAL_PREFIX))
+def _synced_roots(conn: sqlite3.Connection, internal: bool = True) -> str:
+    """要放進 Spotlight 的資料夾來源編號（逗號分隔，可以直接放進 SQL 的 IN）；沒有就是空字串。
+    internal＝False：只放外接硬碟上的。"""
+    return ",".join(str(r[0]) for r in conn.execute("SELECT id, path FROM roots")
+                    if internal or str(r[1]).startswith(EXTERNAL_PREFIX))
 
 
 KIND_TYPE = {"photo": "public.image", "raw": "public.camera-raw-image", "video": "public.movie", "audio": "public.audio",
@@ -118,7 +122,7 @@ def _folder_item(r) -> dict:
             "keywords": ["Re'memor", r["drive"], r["root"], "資料夾", "folder"], "type": "public.folder", "text": ""}
 
 
-def changes(conn: sqlite3.Connection, cursor: str = "", limit: int = 500, enabled: bool = True) -> dict:
+def changes(conn: sqlite3.Connection, cursor: str = "", limit: int = 500, enabled: bool = True, internal: bool = True) -> dict:
     """下一批要交給 Spotlight 的變動：{"upsert": [項目＋entity、sig], "delete": [{entity, id}], "cursor": 下一批或 None, "reset"}。
     cursor 是「這一輪開始時的 gen.階段.上次看到的編號」；每批最多看 limit 筆，再多的檔案也不會一次讀太多。"""
     from . import textindex
@@ -164,7 +168,7 @@ def changes(conn: sqlite3.Connection, cursor: str = "", limit: int = 500, enable
                 out["delete"].append({"entity": entity, "id": r["spot_id"]})
         out["cursor"] = f"{gen}.folder.0"
     elif phase == "folder":
-        ext = _external_roots(conn)
+        ext = _synced_roots(conn, internal)
         ids = [r[0] for r in conn.execute(
             f"SELECT id FROM folders NOT INDEXED WHERE id > ? AND status = 'ok' AND path != '' AND root_id IN ({ext}) ORDER BY id LIMIT ?",
             (last, limit))] if ext else []
@@ -180,7 +184,7 @@ def changes(conn: sqlite3.Connection, cursor: str = "", limit: int = 500, enable
         out["cursor"] = f"{gen}.folder.{ids[-1]}" if len(ids) == limit else f"{gen}.file.0"
     elif phase == "file":
         # 先依編號（主鍵）挑出這一批，再讀細節：不讓 SQLite 先把整顆硬碟的檔案排序一遍
-        ext = _external_roots(conn)
+        ext = _synced_roots(conn, internal)
         ids = [r[0] for r in conn.execute(
             f"SELECT id FROM files NOT INDEXED WHERE id > ? AND status = 'ok' AND root_id IN ({ext}) ORDER BY id LIMIT ?",
             (last, limit))] if ext else []
@@ -190,16 +194,23 @@ def changes(conn: sqlite3.Connection, cursor: str = "", limit: int = 500, enable
             "LEFT JOIN drives v ON v.id = r.drive_id LEFT JOIN file_text t ON t.file_id = f.id "
             "LEFT JOIN spotlight_sync s ON s.entity = 'file:' || f.id "
             f"WHERE f.id IN ({','.join('?' * len(ids))}) ORDER BY f.id", ids).fetchall() if ids else []
+        chars, seen, full = 0, last, False
         for r in rows:
-            sig = f"{r['name']}|{r['folder']}|{r['size']}|{r['mtime']}|{r['chars'] or 0}|{r['drive']}"
+            if chars >= BATCH_CHARS:
+                full = True  # 這一批的字夠多了：剩下的下一批再放
+                break
+            seen = r["id"]
+            sig = f"{r['name']}|{r['folder']}|{r['size']}|{r['mtime']}|{r['chars'] or 0}|{r['drive']}|{TEXT_CHARS}"
             old = {"spot_id": r["spot_id"], "sig": r["sig"]} if r["spot_id"] else None
             if old is not None and old["sig"] == sig:
                 continue
-            text = textindex.body(conn, r["id"]) if r["tstatus"] == "ok" else ""
+            text = textindex.body(conn, r["id"])[:TEXT_CHARS] if r["tstatus"] == "ok" else ""
+            chars += len(text)
             want(f"file:{r['id']}", _file_item(r, text), sig, old)
-        out["cursor"] = f"{gen}.file.{ids[-1]}" if len(ids) == limit else f"{gen}.gone.0"
+        out["cursor"] = f"{gen}.file.{seen}" if full or len(ids) == limit else f"{gen}.gone.0"
     elif phase == "gone":
         # 已經交給 Spotlight、但現在不在了（刪掉、遺失、硬碟從目錄移除）的資料夾與檔案；一批一批交給 SQLite 判斷
+        ext = _synced_roots(conn, internal)
         page = conn.execute("SELECT MAX(rowid), COUNT(*) FROM (SELECT rowid FROM spotlight_sync WHERE rowid > ? ORDER BY rowid LIMIT ?)",
                             (last, limit * 4)).fetchone()
         top, n = page[0], page[1]
@@ -207,9 +218,9 @@ def changes(conn: sqlite3.Connection, cursor: str = "", limit: int = 500, enable
             rows = conn.execute(
                 "SELECT s.entity, s.spot_id FROM spotlight_sync s WHERE s.rowid > ? AND s.rowid <= ? AND ("
                 f"(s.entity LIKE 'file:%' AND NOT EXISTS (SELECT 1 FROM files f "
-                f"WHERE f.id = CAST(substr(s.entity, 6) AS INTEGER) AND f.status = 'ok' AND f.root_id IN ({_external_roots(conn) or 'NULL'}))) OR "
+                f"WHERE f.id = CAST(substr(s.entity, 6) AS INTEGER) AND f.status = 'ok' AND f.root_id IN ({ext or 'NULL'}))) OR "
                 f"(s.entity LIKE 'folder:%' AND NOT EXISTS (SELECT 1 FROM folders d "
-                f"WHERE d.id = CAST(substr(s.entity, 8) AS INTEGER) AND d.status = 'ok' AND d.root_id IN ({_external_roots(conn) or 'NULL'}))))",
+                f"WHERE d.id = CAST(substr(s.entity, 8) AS INTEGER) AND d.status = 'ok' AND d.root_id IN ({ext or 'NULL'}))))",
                 (last, top)).fetchall()
             out["delete"] += [{"entity": r["entity"], "id": r["spot_id"]} for r in rows]
         if n == limit * 4:

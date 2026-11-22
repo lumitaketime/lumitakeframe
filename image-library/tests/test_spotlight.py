@@ -46,17 +46,21 @@ class SpotlightReportTests(CatalogTestCase):
             c.post("/api/spotlight/report", json={"ok": False, "count": 0, "error": "測試錯誤"})
             r = c.get("/api/spotlight/status").json()["report"]
             self.assertEqual((r["ok"], r["error"]), (False, "測試錯誤"))
+            self.assertIsNone(r["probe"])
+            c.post("/api/spotlight/report", json={"ok": True, "count": 12, "error": "", "probe": 5, "probe_error": ""})
+            r = c.get("/api/spotlight/status").json()["report"]
+            self.assertEqual((r["ok"], r["count"], r["probe"]), (True, 12, 5))  # 自我檢查：Spotlight 自己找得到
 
 
 class SpotlightSyncTests(CatalogTestCase):
     """外接硬碟的資料夾與檔案：第一次全部交給 Spotlight，之後只交有變動的；不在了的拿掉；內建磁碟的不放。"""
 
-    def run_pass(self, enabled=True, limit=500):
+    def run_pass(self, enabled=True, limit=500, internal=True):
         from lumilib import spotlight
 
         upsert, delete, cursor, reset = [], [], "", False
         while True:
-            out = spotlight.changes(self.conn, cursor, limit, enabled)
+            out = spotlight.changes(self.conn, cursor, limit, enabled, internal)
             reset = reset or out["reset"]
             upsert += out["upsert"]
             delete += out["delete"]
@@ -85,24 +89,32 @@ class SpotlightSyncTests(CatalogTestCase):
         # 測試裡沒有 /Volumes：把「外接」當成外接硬碟的位置
         with mock.patch.object(spotlight, "EXTERNAL_PREFIX", str(self.tmp / "外接") + "/"):
             spotlight.changed()
-            upsert, delete, _ = self.run_pass(limit=1)  # 每批只看一筆：分批也要正確
+            upsert, delete, _ = self.run_pass(limit=1, internal=False)  # 每批只看一筆：分批也要正確
             titles = {u["title"]: u for u in upsert}
             self.assertIn("寄居蟹報告.txt", titles)
             self.assertIn("國中", titles)
-            self.assertNotIn("b.txt", titles)  # 內建磁碟的不放
+            self.assertNotIn("b.txt", titles)  # 設定成只放外接硬碟：內建磁碟的不放
+            spotlight.changed()
+            upsert, delete, _ = self.run_pass()  # 預設：內建磁碟的也放（和 Re'memor 的搜尋找得到的一樣）
+            self.assertEqual([u["title"] for u in upsert], ["b.txt"])
+            self.assertEqual(delete, [])
+            spotlight.changed()
+            upsert, delete, _ = self.run_pass(internal=False)  # 再關掉：內建磁碟的拿掉
+            self.assertEqual(upsert, [])
+            self.assertTrue(any(d["id"].endswith("select=b.txt") for d in delete))
             report = titles["寄居蟹報告.txt"]
             self.assertIn("寄居蟹換殼", report["text"])  # 文件內容一起放
             self.assertIn("select=", report["id"])
             self.assertNotIn("'", report["id"])
 
-            self.assertEqual(self.run_pass(), ([], [], False))  # 沒有變動：什麼都不送
+            self.assertEqual(self.run_pass(internal=False), ([], [], False))  # 沒有變動：什麼都不送
             spotlight.changed()
-            self.assertEqual(self.run_pass()[:2], ([], []))  # 比對一輪，內容都一樣
+            self.assertEqual(self.run_pass(internal=False)[:2], ([], []))  # 比對一輪，內容都一樣
 
             (ext / "a.txt").unlink()
             scan_all(self.conn, self.cfg)
             spotlight.changed()
-            upsert, delete, _ = self.run_pass()
+            upsert, delete, _ = self.run_pass(internal=False)
             self.assertTrue(any(d["id"].endswith("select=a.txt") for d in delete))  # 不在了的拿掉
 
             _, _, reset = self.run_pass(enabled=False)  # 關掉：全部拿掉

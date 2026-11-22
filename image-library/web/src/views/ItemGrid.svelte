@@ -98,7 +98,7 @@
       <div class="cell" class:on={sel.has(i)} id="item-{i}" role="option" aria-selected={sel.has(i)} aria-setsize={total} aria-posinset={i + 1} tabindex="-1"
         style:transform="translate({x}px, {y}px)"
         onclick={(e) => sel.click(i, e)} ondblclick={() => onopen?.(i)}
-          draggable={item?.type === "folder" ? "true" : undefined} ondragstart={(e) => ondragitem?.(e, item)}
+          draggable={item?.type === "folder" || item?.type === "file" ? "true" : undefined} ondragstart={(e) => ondragitem?.(e, item)}
         oncontextmenu={(e) => { e.preventDefault(); sel.context(i); oncontext?.(e, i); }} title={item?.name}>
         <span class="pic">
           {#if !item}
