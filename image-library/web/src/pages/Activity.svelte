@@ -4,7 +4,7 @@
    * 硬碟被拔掉顯示「已中斷，接上後可繼續」，不當成錯誤。紀錄存在資料庫裡，關掉 App 再開仍然在。
    */
   import { Button, Icon, ProgressIndicator } from "../ui/index.js";
-  import { loadActivity, stopJob, resumeJob } from "../data/activity.js";
+  import { loadActivity, stopJob, resumeJob, pauseJob } from "../data/activity.js";
   import { setFrame } from "../shell/frame.svelte.js";
   import { t, formatNumber, formatBytes, formatDuration, formatDateTime } from "../i18n/index.svelte.js";
   import { app, toast, refresh } from "../lib/state.svelte.js";
@@ -48,13 +48,17 @@
     }
   }
   const STAGE = { scan: "activity.stage.scan", index: "activity.stage.scan", compare: "activity.stage.compare", analyze: "activity.stage.analyze" };
-  const stage = (kind, label) => (STAGE[kind] ? t(STAGE[kind]) : label);
+  const stageOnly = (kind, label) => (STAGE[kind] ? t(STAGE[kind]) : label);
+  // 好幾顆硬碟同時掃：每列寫上是哪一顆
+  const stage = (kind, label, target) => (target ? t("activity.onDrive", { stage: stageOnly(kind, label), drive: target }) : stageOnly(kind, label));
+  const PAUSABLE = new Set(["scan", "index", "compare", "extract", "ocr", "embed_docs", "photos"]);
   const amount = (j) => (!j.total ? ((j.kind === "scan" || j.kind === "index") ? t("activity.firstScan") : "")
     : j.unit === "folders" ? t("activity.folders", { done: formatNumber(j.done), total: formatNumber(j.total) })
     : j.unit === "bytes" || j.kind === "compare"
     ? t("activity.amount", { done: formatBytes(j.done) || "0 KB", total: formatBytes(j.total) })
     : t("activity.amount", { done: formatNumber(j.done), total: formatNumber(j.total) }));
-  const STATE_ICON = { done: "checkmark", stopped: "minus", interrupted: "exclamation-triangle", error: "exclamation-triangle", replaced: "minus" };
+  const STATE_ICON = { done: "checkmark", stopped: "minus", interrupted: "exclamation-triangle", error: "exclamation-triangle", replaced: "minus", paused: "pause" };
+  const idle = $derived(!data?.active.length && !data?.queued.length && !data?.paused?.length);
 </script>
 
 <div class="activity">
@@ -64,21 +68,22 @@
     <div class="state"><ProgressIndicator kind="spinner" label={t("view.loading")} /></div>
   {:else}
     <h2 class="mac-headline section">{t("activity.now")}</h2>
-    {#if !data.active.length && !data.queued.length}
+    {#if idle}
       <p class="mac-body sub idle">{t("activity.idle")}</p>
     {:else}
       <ul class="jobs" aria-live="polite">
         {#each data.active as j (j.id)}
           <li class="job">
             <div class="head">
-              <ProgressIndicator kind="circular" size="small" value={j.total ? j.done / j.total : undefined} label={stage(j.kind, j.label)} />
+              <ProgressIndicator kind="circular" size="small" value={j.total ? j.done / j.total : undefined} label={stage(j.kind, j.label, j.target)} />
               <div class="titles">
-                <b class="mac-body">{stage(j.kind, j.label)}</b>
+                <b class="mac-body">{stage(j.kind, j.label, j.target)}</b>
                 <p class="mac-callout sub">{[amount(j), j.eta ? t("activity.eta", { time: formatDuration(j.eta) }) : ""].filter(Boolean).join(" · ") || t("activity.working")}</p>
               </div>
+              {#if PAUSABLE.has(j.kind)}<Button variant="bordered" disabled={!!busy} onclick={() => act(j.id, () => pauseJob(j.id))}>{t("activity.pause")}</Button>{/if}
               <Button variant="bordered" loading={busy === j.id} disabled={!!busy} onclick={() => act(j.id, () => stopJob(j.id))}>{t("drives.stop")}</Button>
             </div>
-            {#if j.total}<ProgressIndicator value={j.done / j.total} label={stage(j.kind, j.label)} />{/if}
+            {#if j.total}<ProgressIndicator value={j.done / j.total} label={stage(j.kind, j.label, j.target)} />{/if}
             {#if j.message}<p class="mac-callout sub msg" title={j.message}>{j.message}</p>{/if}
           </li>
         {/each}
@@ -86,8 +91,19 @@
           <li class="job">
             <div class="head">
               <Icon name="clock" size={16} weight="medium" class="wait" />
-              <div class="titles"><b class="mac-body">{stage(j.kind, j.label)}</b><p class="mac-callout sub">{t("activity.queued")}</p></div>
+              <div class="titles"><b class="mac-body">{stage(j.kind, j.label, j.target)}</b><p class="mac-callout sub">{j.kind === "scan" ? t("activity.queuedScan", { n: data.scan_parallel }) : t("activity.queued")}</p></div>
               <Button variant="borderless" disabled={!!busy} onclick={() => act(j.id, () => stopJob(j.id))}>{t("common.cancel")}</Button>
+            </div>
+          </li>
+        {/each}
+        <!-- 暫停中：停在原來的位置，按「繼續」從這裡接著做（關掉 App 再開也一樣） -->
+        {#each data.paused || [] as h (h.id)}
+          <li class="job">
+            <div class="head">
+              <Icon name="pause" size={16} weight="medium" class="wait" />
+              <div class="titles"><b class="mac-body">{stage(h.kind, h.label, h.target)} <span class="tag mac-callout">{t("activity.state.paused")}</span></b>
+                <p class="mac-callout sub">{t("activity.pausedHint")}</p></div>
+              <Button variant="borderedProminent" loading={busy === -h.id} disabled={!!busy} onclick={() => act(-h.id, () => resumeJob(h.id))}>{t("activity.resume")}</Button>
             </div>
           </li>
         {/each}
@@ -105,7 +121,7 @@
             <div class="head">
               <Icon name={STATE_ICON[h.state] || "clock"} size={15} weight="bold" class="st-{h.state}" />
               <div class="titles">
-                <b class="mac-body">{stage(h.kind, h.label)} <span class="tag mac-callout" class:warn={h.state === "error"}>{t(`activity.state.${h.state}`)}</span></b>
+                <b class="mac-body">{stage(h.kind, h.label, h.target)} <span class="tag mac-callout" class:warn={h.state === "error"}>{t(`activity.state.${h.state}`)}</span></b>
                 <p class="mac-callout sub">{h.finished_at ? formatDateTime(new Date(h.finished_at)) : ""}</p>
               </div>
               {#if h.resumable}<Button variant="bordered" loading={busy === -h.id} disabled={!!busy} onclick={() => act(-h.id, () => resumeJob(h.id))}>{t("activity.resume")}</Button>{/if}

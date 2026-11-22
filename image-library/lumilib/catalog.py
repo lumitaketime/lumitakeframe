@@ -120,10 +120,11 @@ def folder_listing(conn: sqlite3.Connection, root_id: int, path: str = "") -> di
     }
 
 
-def drives_overview(conn: sqlite3.Connection, scanning: dict | None = None, detail: bool = False) -> list[dict]:
+def drives_overview(conn: sqlite3.Connection, scanning: dict | list | None = None, detail: bool = False) -> list[dict]:
     """側邊欄的硬碟清單：每顆硬碟（不論有沒有接上）的容量、已編目的檔案數與大小、連線與掃描狀態。
 
-    scanning 是正在執行的掃描工作回報的 {"root_id", "files"}。只讀資料庫，另外用「資料夾還在不在」判斷有沒有接上。
+    scanning 是正在執行的掃描工作回報的 {"root_id", "files"}（好幾顆同時掃就是一個清單）。
+    只讀資料庫，另外用「資料夾還在不在」判斷有沒有接上。
     還沒用新版掃描過的資料夾來源沒有硬碟資料，各自列成一項（drive_id 為 None）。
     """
     rows = conn.execute(
@@ -132,6 +133,7 @@ def drives_overview(conn: sqlite3.Connection, scanning: dict | None = None, deta
            FROM roots r LEFT JOIN folders f ON f.root_id = r.id AND f.path = ''
            ORDER BY r.name COLLATE NOCASE""").fetchall()
     drives = {d["id"]: d for d in conn.execute("SELECT * FROM drives")}
+    scans = {x.get("root_id"): x for x in ([scanning] if isinstance(scanning, dict) else scanning or []) if x}
     out: dict = {}
     for r in rows:
         d = drives.get(r["drive_id"])
@@ -154,7 +156,8 @@ def drives_overview(conn: sqlite3.Connection, scanning: dict | None = None, deta
             item["last_scan"] = r["last_scan"]
         if r["scan_state"] != "done":
             item["complete"] = False
-        if scanning and scanning.get("root_id") == r["id"]:
+        scanning = scans.get(r["id"])
+        if scanning:
             item["scanning"] = True
             # 以前完整掃過才估得出百分比（用上次的檔案數當總數）；第一次掃描只知道「正在掃」
             if r["last_scan"] and r["files"]:

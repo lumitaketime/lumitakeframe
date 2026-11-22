@@ -88,7 +88,13 @@ DEFAULTS = {
     # 用意思找文件（跨語言、同義詞）：在這台電腦上用向量模型（預設 bge-m3，要先下載）替文件建立索引
     "doc_semantic": 0,
     "spotlight": 1,  # Mac App：把目錄放進 Spotlight（索引只在這台 Mac）
-    "spotlight_internal": 1,  # 這台 Mac 內建磁碟上的檔案也放（和 Re'memor 的搜尋找得到的一樣；Mac 自己的 Spotlight 可能也列一次）
+    "spotlight_internal": 1,
+    "scan_parallel": 2,
+    # 目錄備份：每週自動做一份（要先選存放位置），只保留最近幾份自動備份；本人按的「立即備份」不會被拿掉
+    "backup_auto": 1,
+    "backup_dir": "",
+    "backup_keep": 4,
+    "backup_last": "",  # 同時掃描幾顆硬碟（1–4）：不同硬碟同時掃；同一個 USB 集線器大約 3 顆就到頻寬上限  # 這台 Mac 內建磁碟上的檔案也放（和 Re'memor 的搜尋找得到的一樣；Mac 自己的 Spotlight 可能也列一次）
     "doc_embed_model": "bge-m3",  # 掃描完自動接著讀取文件文字與文字辨識（在背景，可以暫停、隨時拔掉）
     "start_page": "folders",  # 開啟 App 時先看到的頁面：folders＝所有檔案／drives＝硬碟／find＝搜尋／photos＝照片
     "open_action": "",  # 按兩下照片以外的檔案：open＝用預設的 App 打開／reveal＝在 Finder 中顯示／空白＝第一次先問
@@ -169,6 +175,11 @@ class Config:
     doc_semantic: int = DEFAULTS["doc_semantic"]
     spotlight: int = DEFAULTS["spotlight"]
     spotlight_internal: int = DEFAULTS["spotlight_internal"]
+    scan_parallel: int = DEFAULTS["scan_parallel"]
+    backup_auto: int = DEFAULTS["backup_auto"]
+    backup_dir: str = DEFAULTS["backup_dir"]
+    backup_keep: int = DEFAULTS["backup_keep"]
+    backup_last: str = DEFAULTS["backup_last"]
     doc_embed_model: str = DEFAULTS["doc_embed_model"]
     assistant_permission: int = DEFAULTS["assistant_permission"]
     assistant_cloud_content: int = DEFAULTS["assistant_cloud_content"]

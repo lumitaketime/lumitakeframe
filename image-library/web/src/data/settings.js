@@ -30,6 +30,23 @@ export const moveCatalog = (path) => api("/api/catalog/move", { body: { path } }
 /** 在 Finder 中顯示某個資料夾（例如搬走前的舊目錄） */
 export const revealFolder = (path) => api("/api/reveal-path", { body: { path } });
 
+// ---- 目錄備份與管理（只動 Re'memor 自己的目錄，不碰硬碟上的檔案） ----
+/** 備份存放位置、已有的備份、搬移後留下的舊目錄 */
+export const loadBackups = () => api("/api/catalog/backups", { quiet: true });
+/** 選存放備份的資料夾（Mac 的選擇視窗） */
+export const pickBackupFolder = () => api("/api/pick-folder", { body: { purpose: "backup" } }).then((d) => d.path || null);
+export const setBackupFolder = (path) => api("/api/catalog/backup/dir", { body: { path } });
+/** 立即備份一份（背景工作） */
+export const backupNow = () => api("/api/catalog/backup", { body: {} });
+/** 改用某一份備份：Re'memor 會重新開啟；目前那份收進「還原前的目錄」 */
+export const restoreBackup = (path) => api("/api/catalog/restore", { body: { path } });
+/** 把搬移、還原後留下的舊目錄移到垃圾桶 */
+export const trashOldCopy = (path) => api("/api/catalog/old/trash", { body: { path } });
+/** 刪除整份目錄、從頭開始（移到垃圾桶；設定與模型保留）；Re'memor 會重新開啟 */
+export const resetCatalog = () => api("/api/catalog/reset", { body: { confirm: true } });
+/** 清掉用不到的縮圖、整理資料庫 */
+export const cleanCatalog = () => api("/api/storage/clean", { body: {} });
+
 // ---- AI 助理用哪個模型 ----
 /** Ollama 已下載的模型、推薦清單（含大小與建議的記憶體） */
 export const loadModels = () => api("/api/models", { quiet: true });

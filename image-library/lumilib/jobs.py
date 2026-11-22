@@ -1,6 +1,8 @@
-"""背景工作：分成三個通道同時進行，彼此不會互相卡住。
+"""背景工作：分成四個通道同時進行，彼此不會互相卡住。
 
-- main：掃描、人臉、圖像索引、疊放、找重複（依序執行）
+- scan：建目錄（掃描）。每顆硬碟一個工作，不同硬碟同時掃（最多「同時掃描幾顆硬碟」顆，預設 2）；
+  同一顆硬碟裡的資料夾依序掃，讀寫頭才不會來回跳。
+- main：讀文件文字、文字辨識、比對內容、照片縮圖、人臉、圖像索引、疊放、找重複（依序執行）
 - ai：AI 分析、語意向量（依序執行；可設定只在接電源或夜間進行）
 - download：下載模型，每個下載各自進行，可以同時下載好幾個
 """
@@ -27,11 +29,22 @@ LABELS = {
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
     "move_catalog": "搬移目錄", "embed_docs": "建立「用意思找」的索引",
-    "photos": "整理照片（拍攝資訊與縮圖）",
+    "photos": "整理照片（拍攝資訊與縮圖）", "backup": "備份目錄",
 }
-LANES = {"analyze": "ai", "embed": "ai", "embed_docs": "ai", "pull": "download", "face_model": "download", "clip_model": "download"}
-QUEUED_LANES = ("main", "ai")
+LANES = {"analyze": "ai", "embed": "ai", "embed_docs": "ai", "pull": "download", "face_model": "download", "clip_model": "download",
+         "scan": "scan", "backup": "catalog"}
+QUEUED_LANES = ("main", "ai", "scan")
+SCAN_WORKERS = 4  # 「同時掃描幾顆硬碟」最多 4 顆；實際同時跑幾個看設定
+DISK_LANES = ("main", "scan")  # 會讀硬碟的通道
 _ids = itertools.count(1)
+
+
+def _target(options: str | None) -> str | None:
+    """工作紀錄裡記的「哪一顆硬碟」"""
+    try:
+        return (json.loads(options or "{}") or {}).get("target")
+    except ValueError:
+        return None
 
 
 def lane_of(kind: str) -> str:
@@ -83,8 +96,8 @@ class JobRunner:
         # 上次關掉 App 時還沒做完的工作：標成「已中斷」，使用者可以按「繼續」
         self._log_sql("UPDATE job_log SET state = 'interrupted', message = ?, finished_at = ? WHERE state IN ('queued', 'running')",
                       ("上次關閉 Re'memor 時還沒做完，可以繼續。", db.now_iso()))
-        self.threads = [threading.Thread(target=self._worker, args=(lane,), daemon=True, name=f"lumilib-{lane}")
-                        for lane in QUEUED_LANES]
+        self.threads = [threading.Thread(target=self._worker, args=(lane,), daemon=True, name=f"lumilib-{lane}-{i}")
+                        for lane in QUEUED_LANES for i in range(SCAN_WORKERS if lane == "scan" else 1)]
         for t in self.threads:
             t.start()
 
@@ -119,7 +132,7 @@ class JobRunner:
             # 這次開始做或做完了：更早之前中斷的同一種工作（範圍相同或這次是全部）會從沒做完的地方接著做，
             # 紀錄裡不再顯示「繼續」，避免一堆重複的待辦
             opts = json.dumps(job["options"], ensure_ascii=False, default=str)
-            self._log_sql("UPDATE job_log SET state = 'replaced' WHERE kind = ? AND id < ? AND state IN ('interrupted', 'stopped') "
+            self._log_sql("UPDATE job_log SET state = 'replaced' WHERE kind = ? AND id < ? AND state IN ('interrupted', 'stopped', 'paused') "
                           "AND (options = ? OR ? = '{}' OR ? = '{\"roots\": null}')", (job["kind"], job["_log"], opts, opts, opts))
         self._log_sql(f"UPDATE job_log SET state = ?, message = COALESCE(?, message), done = ?, total = ?, {stamp} = ? WHERE id = ?",
                       (state, message, int(job.get("done") or 0), int(job.get("total") or 0), db.now_iso(), job["_log"]))
@@ -135,7 +148,8 @@ class JobRunner:
             return []
         return [{"id": r["id"], "kind": r["kind"], "label": r["label"], "state": r["state"], "message": r["message"],
                  "done": r["done"], "total": r["total"], "started_at": r["started_at"], "finished_at": r["finished_at"],
-                 "resumable": r["state"] in ("interrupted", "stopped") and r["kind"] in self.RESUMABLE} for r in rows]
+                 "target": _target(r["options"]),
+                 "resumable": r["state"] in ("interrupted", "stopped", "paused") and r["kind"] in self.RESUMABLE} for r in rows]
 
     def resume(self, log_id: int) -> dict:
         """把中斷或停止的掃描、比對重新排進去（它們本來就會從沒做完的地方接著做）。"""
@@ -149,18 +163,60 @@ class JobRunner:
         return self.submit(r["kind"], **(json.loads(r["options"] or "{}")))
 
     # ---- public ----
+    def _scan_groups(self, roots) -> list[tuple[str, list[int]]]:
+        return [(name, ids) for _key, name, ids in self._scan_groups_keyed(roots)]
+
+    def _scan_groups_keyed(self, roots) -> list[tuple[str, str, list[int]]]:
+        """要掃的資料夾來源依「實體硬碟」分組：[(硬碟名稱, [資料夾來源編號…])]。同一顆硬碟的放在同一組（依序掃）。"""
+        import os
+
+        conn = db.connect(self.cfg.db_path)
+        try:
+            rows = conn.execute("SELECT r.id, r.name, r.path, r.drive_id, v.name AS drive FROM roots r "
+                                "LEFT JOIN drives v ON v.id = r.drive_id ORDER BY r.id").fetchall()
+        finally:
+            conn.close()
+        if roots:
+            wanted = {str(n) for n in roots}
+            rows = [r for r in rows if r["name"] in wanted or str(r["id"]) in wanted]
+        groups: dict = {}
+        for r in rows:
+            key = ("drive", r["drive_id"]) if r["drive_id"] is not None else None
+            if key is None:
+                try:
+                    key = ("dev", os.stat(r["path"]).st_dev)  # 還沒記下是哪顆硬碟：用掛載的裝置分
+                except OSError:
+                    key = ("root", r["id"])
+            name, ids = groups.setdefault(key, (r["drive"] or r["name"], []))
+            ids.append(r["id"])
+        return [(f"{k[0]}:{k[1]}", name, ids) for k, (name, ids) in groups.items()]
+
     def submit(self, kind: str, **options) -> dict:
         if kind not in LABELS:
             raise ValueError(f"未知的工作：{kind}")
+        if kind == "scan" and not options.get("_split"):
+            # 掃描：每顆硬碟一個工作，不同硬碟可以同時掃
+            try:
+                groups = self._scan_groups_keyed(options.get("roots"))
+            except Exception:  # noqa: BLE001  分不出來就照舊一起掃
+                traceback.print_exc()
+                groups = []
+            if groups:
+                snap = None
+                for key, name, ids in groups:
+                    snap = self.submit("scan", roots=ids, target=name, _split=True, _drive=key)
+                return snap
+        options.pop("_split", None)
+        drive_key = options.pop("_drive", None)
         lane = lane_of(kind)
         job = {"id": next(_ids), "kind": kind, "label": LABELS[kind], "lane": lane, "options": options,
-               "model": options.get("model"), "message": "排隊中…", "done": 0, "total": 0, "error": None,
-               "started_at": None, "stop": threading.Event()}
+               "model": options.get("model"), "target": options.get("target"), "message": "排隊中…", "done": 0, "total": 0, "error": None,
+               "started_at": None, "stop": threading.Event(), "_drive": drive_key}
         with self.wake:
             if self.closed:
                 return self.snapshot_locked()
             same = lambda j: j["kind"] == kind and j["options"] == options  # noqa: E731
-            if lane == "download":
+            if lane in ("download", "catalog"):  # 下載、備份：馬上開始，不排在掃描後面
                 # 同一個模型已經在下載就不重複
                 if any(same(j) for j in self.active.values()):
                     return self.snapshot_locked()
@@ -200,6 +256,16 @@ class JobRunner:
                     job["message"] = "停止中…"
             return self.snapshot_locked()
 
+    def pause(self, job_id: int) -> dict:
+        """暫停：停在目前的位置，記成「已暫停」，之後按「繼續」從這裡接著做（關掉 App 再開也一樣）；不接著做後續工作。"""
+        with self.lock:
+            job = self.active.get(job_id)
+            if job and job["kind"] in self.RESUMABLE:
+                job["_paused"] = True
+                job["stop"].set()
+                job["message"] = "暫停中…"
+            return self.snapshot_locked()
+
     def snapshot(self) -> dict:
         with self.lock:
             return self.snapshot_locked()
@@ -207,13 +273,13 @@ class JobRunner:
     def snapshot_locked(self) -> dict:
         active = sorted(self.active.values(), key=lambda j: j["id"])
         # 頂端顯示：優先顯示下載與掃描這類較快結束的工作
-        order = {"download": 0, "main": 1, "ai": 2}
+        order = {"download": 0, "catalog": 0, "scan": 1, "main": 1, "ai": 2}
         current = min(active, key=lambda j: (order[j["lane"]], j["id"])) if active else None
         return {
             "running": bool(active),
             "current": _public(current) if current else None,
             "active": [_public(j) for j in active],
-            "queued": [{"id": j["id"], "kind": j["kind"], "label": j["label"], "lane": j["lane"]}
+            "queued": [{"id": j["id"], "kind": j["kind"], "label": j["label"], "lane": j["lane"], "target": j["options"].get("target")}
                        for lane in QUEUED_LANES for j in self.queues[lane]],
             "last": self.last,
             "recent": list(self.recent),
@@ -235,16 +301,16 @@ class JobRunner:
         import time
 
         with self.lock:
-            if "main" in self.queues:
-                self.queues["main"].clear()
+            for lane in DISK_LANES:
+                self.queues[lane].clear()
             for job in self.active.values():
-                if job.get("lane") == "main":
+                if job.get("lane") in DISK_LANES:
                     job["stop"].set()
                     job["message"] = "停止中…"
         end = time.monotonic() + timeout
         while time.monotonic() < end:
             with self.lock:
-                if not any(j.get("lane") == "main" for j in self.active.values()):
+                if not any(j.get("lane") in DISK_LANES for j in self.active.values()):
                     return True
             time.sleep(0.1)
         return False
@@ -268,14 +334,38 @@ class JobRunner:
             if "done" in kw or "total" in kw:
                 _estimate(job)
 
+    def scan_limit(self) -> int:
+        try:
+            return max(1, min(SCAN_WORKERS, int(self.cfg.scan_parallel)))
+        except (TypeError, ValueError, AttributeError):
+            return 2
+
+    def _next_index(self, lane: str) -> int | None:
+        """排隊中下一個可以開始的工作是第幾個；現在不能開始就回傳 None。"""
+        if not self.queues[lane]:
+            return None
+        if lane != "scan":
+            return 0
+        running = [j for j in self.active.values() if j["lane"] == "scan"]
+        # 同時掃描的硬碟數不超過設定（設定改了立刻生效）
+        if len(running) >= self.scan_limit():
+            return None
+        # 同一顆硬碟已經在掃：先讓別顆硬碟的工作開始（同一顆硬碟同時讀兩個地方反而更慢）
+        busy = {j.get("_drive") for j in running if j.get("_drive")}
+        for i, j in enumerate(self.queues[lane]):
+            if not j.get("_drive") or j["_drive"] not in busy:
+                return i
+        return None
+
     def _worker(self, lane: str) -> None:
         while True:
             with self.wake:
-                while not self.queues[lane] and not self.closed:
-                    self.wake.wait()
+                while (index := self._next_index(lane)) is None and not self.closed:
+                    self.wake.wait(2)
                 if self.closed:
                     return
-                job = self.queues[lane].popleft()
+                job = self.queues[lane][index]
+                del self.queues[lane][index]
                 job["started_at"] = datetime.now().isoformat(timespec="seconds")
                 job["message"] = "準備中…"
                 self.active[job["id"]] = job
@@ -294,14 +384,18 @@ class JobRunner:
 
             message, error = f"發生錯誤：{describe_error(exc)}", describe_error(exc)
         stopped = job["stop"].is_set()
-        if stopped and not error:
+        paused = stopped and job.get("_paused")
+        if paused and not error:
+            message = f"已暫停，按「繼續」會從這裡接著做。{message}"
+        elif stopped and not error:
             message = f"已停止。{message}"
         elif job["kind"] in ("scan", "photos") and not error:
             message = self._follow_up(message, after=job["kind"])
         elif job["kind"] == "pull" and not error:
             message = self._after_pull(job["options"].get("model"), message)
         result = job.get("result") or {}
-        self._log_state(job, "error" if error else "interrupted" if result.get("interrupted") else "stopped" if stopped else "done", message)
+        self._log_state(job, "error" if error else "interrupted" if result.get("interrupted") else "paused" if paused
+                        else "stopped" if stopped else "done", message)
         for fn in list(self.on_finish):
             try:
                 fn(job)
@@ -315,6 +409,7 @@ class JobRunner:
             }
             self.recent.appendleft(self.last)
             self.active.pop(job["id"], None)
+            self.wake.notify_all()  # 有空位了：排隊中的掃描可以開始
 
     def answer_confirm(self, start: bool) -> dict | None:
         """使用者回答「要不要開始分析」：開始就排入分析；稍後就先不問，下次掃描到新照片再問。"""
@@ -529,6 +624,23 @@ class JobRunner:
                     use_home(anchor(), target)
                 job["result"] = {"moved": moved, "stopped": res.stopped, "home": str(target)}
                 parts.append(describe_move(res, target, self.cfg.home))
+            if kind == "backup":
+                from pathlib import Path as _Path
+
+                from . import __version__
+                from . import backup as bk
+
+                dest = _Path(opts["dest"])
+                res = bk.create(self.cfg.db_path, self.cfg.home, dest, auto=bool(opts.get("auto")), version=__version__, stop=stop,
+                                progress=lambda done, total, name: upd(done=done, total=total, message=name, unit="bytes"))
+                if res.path:
+                    self.cfg.save_setting("backup_last", datetime.now().isoformat(timespec="seconds"))
+                    removed = bk.prune(dest, int(self.cfg.backup_keep or 4)) if opts.get("auto") else []
+                    job["result"] = {"path": str(res.path), "bytes": res.bytes}
+                    parts.append(f"已備份到「{res.path.name}」（{res.bytes / 1e6:.0f} MB）"
+                                 + (f"；舊的自動備份拿掉 {len(removed)} 份，保留最近 {int(self.cfg.backup_keep or 4)} 份" if removed else ""))
+                else:
+                    parts.append("已停止備份")
             if kind == "extract":
                 from .textindex import describe as describe_extract
                 from .textindex import run_extract

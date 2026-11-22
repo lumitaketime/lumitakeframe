@@ -5,6 +5,7 @@
 import { ICONS as BASE } from "../../design-system/components/src/icons.js";
 
 const EXTRA = {
+  "pause": '<rect x="7" y="5" width="3.5" height="14" rx="1.2"/><rect x="13.5" y="5" width="3.5" height="14" rx="1.2"/>',
   "video": '<rect x="3" y="6" width="13" height="12" rx="2.5"/><path d="M16 10.5l5-3v9l-5-3"/>',
   "document": '<path d="M6.5 3.5h7l4 4V19a1.5 1.5 0 0 1-1.5 1.5h-9.5A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1.5-1.5z"/><path d="M13.5 3.5v4h4M8.5 12.5h7M8.5 16h5"/>',
   "archive": '<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M12 3.5v2M12 7.5v2M12 11.5v1.5"/><rect x="10.5" y="13" width="3" height="4" rx="1"/>',

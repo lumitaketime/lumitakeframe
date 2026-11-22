@@ -108,7 +108,8 @@ def reveal(path: Path, select: bool = True) -> None:
         subprocess.Popen(["xdg-open", str(path.parent if select else path)])
 
 
-PICK_PROMPTS = {"add": "選擇要加入的資料夾", "catalog": "選擇要放目錄的位置（建議選常接的磁碟）"}
+PICK_PROMPTS = {"add": "選擇要加入的資料夾", "catalog": "選擇要放目錄的位置（建議選常接的磁碟）",
+                "backup": "選擇存放目錄備份的位置（建議選另一顆磁碟）"}
 
 
 def pick_folder(purpose: str = "add") -> str | None:

@@ -6,6 +6,7 @@
   import { Alert, Button, Icon, ProgressIndicator } from "../ui/index.js";
   import { catalog, loadCatalog } from "../data/catalog.svelte.js";
   import { loadDrivesDetail, scanRoots, stopJob, addRoot, pickFolder, removeRoot } from "../data/drives.js";
+  import { pauseJob } from "../data/activity.js";
   import { setFrame } from "../shell/frame.svelte.js";
   import { t, formatNumber, formatBytes, formatDate, formatDuration } from "../i18n/index.svelte.js";
   import { app, toast, refresh } from "../lib/state.svelte.js";
@@ -54,10 +55,9 @@
   });
   const live = (d) => catalog.drives.find((x) => x.key === d.key) || d;
   // 正在掃這顆硬碟的工作估計還要多久（依上次掃描時的資料夾數；第一次掃描不估）
-  const etaOf = (d) => {
-    const j = app.server?.jobs?.active?.find((x) => (x.kind === "scan" || x.kind === "index") && x.scan && d.roots.some((r) => r.id === x.scan.root_id));
-    return j?.eta || null;
-  };
+  // 正在掃這顆硬碟的工作（好幾顆同時掃時，每顆各一個）
+  const jobOf = (d) => app.server?.jobs?.active?.find((x) => (x.kind === "scan" || x.kind === "index") && x.scan && d.roots.some((r) => r.id === x.scan.root_id)) || null;
+  const etaOf = (d) => jobOf(d)?.eta || null;
   $effect(() => {
     setFrame({ crumbs: [], status: "", location: null, info: null });
   });
@@ -83,7 +83,8 @@
     }
   }
   const scan = (d) => act(d.key, () => scanRoots(d.roots.map((r) => r.name)), t("drives.scanStarted", { name: d.name }));
-  const stop = (d) => act(d.key, () => stopJob(detail?.scan_job), t("drives.stopped"));
+  const stop = (d) => act(d.key, () => stopJob(jobOf(d)?.id ?? detail?.scan_job), t("drives.stopped"));
+  const pause = (d) => act(d.key, () => pauseJob(jobOf(d)?.id), t("activity.pausedToast"));
   const add = (v) => act(v.path, () => addRoot(v.path, v.name), t("drives.added", { name: v.name }));
   async function addFolder(key) {
     busy = key;
@@ -197,6 +198,7 @@
 
           <div class="actions">
             {#if d.scanning}
+              {#if jobOf(d)}<Button variant="bordered" disabled={!!busy} onclick={() => pause(d)}>{t("activity.pause")}</Button>{/if}
               <Button variant="bordered" loading={busy === d.key} disabled={!!busy} onclick={() => stop(d)}>{t("drives.stop")}</Button>
             {:else}
               <Button variant="bordered" loading={busy === d.key} disabled={!!busy || !d.online} onclick={() => scan(d)}>{d.last_scan ? t("drives.rescan") : t("drives.scan")}</Button>

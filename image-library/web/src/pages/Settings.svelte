@@ -7,6 +7,7 @@
   import { Alert, Button, Checkbox, Icon, List, ListRow, PopUpButton, ProgressIndicator, RadioGroup, SegmentedControl, Toggle } from "../ui/index.js";
   import PhotoSettings from "./PhotoSettings.svelte";
   import CatalogLocation from "../views/CatalogLocation.svelte";
+  import CatalogBackup from "../views/CatalogBackup.svelte";
   import AssistantSettings from "../views/AssistantSettings.svelte";
   import { api } from "../lib/api.js";
   import SemanticSettings from "../views/SemanticSettings.svelte";
@@ -217,6 +218,7 @@
 
     {:else if shown === "catalog"}
       <CatalogLocation showSize={false} />
+      <CatalogBackup size={storage?.database?.bytes || 0} />
       <List header={t("set.catalog.size")} footer={t("set.catalog.sizeHint")}>
         {#if storage}
           <ListRow title={t("set.catalog.db")} subtitle={t("set.catalog.dbHint")} detail={formatBytes(storage.database.bytes)} />
@@ -246,6 +248,10 @@
         <List header={t("set.scan.when")}>
           <ListRow title={t("set.scan.onStart")} subtitle={t("set.scan.onStartHint")}>
             {#snippet trailing()}<Toggle checked={!!settings.scan_on_start} aria-label={t("set.scan.onStart")} onchange={(v) => set("scan_on_start", v ? 1 : 0)} />{/snippet}
+          </ListRow>
+          <ListRow title={t("set.scan.parallel")} subtitle={t("set.scan.parallelHint")}>
+            {#snippet trailing()}<PopUpButton value={String(settings.scan_parallel || 2)} onchange={(v) => set("scan_parallel", Number(v))}
+              options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: t("set.scan.parallelN", { n }) }))} />{/snippet}
           </ListRow>
           <ListRow title={t("set.scan.autoText")} subtitle={t("set.scan.autoTextHint")}>
             {#snippet trailing()}<Toggle checked={!!settings.auto_extract} aria-label={t("set.scan.autoText")} onchange={(v) => set("auto_extract", v ? 1 : 0)} />{/snippet}

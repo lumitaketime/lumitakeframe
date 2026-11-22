@@ -63,13 +63,14 @@ def build_id() -> str:
     return _BUILD
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
 LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/catalog/move", "/api/catalog/location/check", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export",
-                  "/api/assistant/actions/run", "/api/assistant/actions/undo", "/api/health/decide", "/api/health/check", "/api/spotlight/report", "/api/spotlight/ack", "/api/spotlight/rebuild"}
+                  "/api/assistant/actions/run", "/api/assistant/actions/undo", "/api/catalog/backup", "/api/catalog/backup/dir", "/api/catalog/restore",
+                  "/api/catalog/reset", "/api/catalog/old/trash", "/api/health/decide", "/api/health/check", "/api/spotlight/report", "/api/spotlight/ack", "/api/spotlight/rebuild"}
 SETTING_KEYS = {
     "vision_model", "embed_model", "language", "analyze_max_side", "scan_on_start", "ollama_url",
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "doc_semantic", "doc_embed_model", "spotlight", "spotlight_internal", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "doc_semantic", "doc_embed_model", "spotlight", "spotlight_internal", "scan_parallel", "backup_auto", "backup_keep", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
 SECRET_KEYS = ("assistant_api_key", "assistant_claude_key", "assistant_gemini_key", "assistant_openai_key")
@@ -116,6 +117,11 @@ def qr_svg(text: str) -> str:
 
 def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, start_jobs_on_boot: bool = True,
                trash=None, warm_background: bool | None = None) -> FastAPI:
+    from .backup import apply_pending
+
+    restored = apply_pending(cfg.home)  # 上次記下的還原或重新開始：在連上資料庫之前做
+    if restored:
+        print(restored)
     auth = Auth(cfg.auth_file)
     client_factory = client_factory or (lambda: OllamaClient(cfg.ollama_url, cfg.request_timeout))
     state: dict = {}
@@ -158,6 +164,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         refresh_stats()
         if start_jobs_on_boot and cfg.scan_on_start and has_roots:
             state["jobs"].submit("scan")
+        if start_jobs_on_boot:
+            start_backup_timer()
         app.state.schedule_warm(4.0)  # 開機後在背景先把探索、整理工具等統計算好
         yield
         app.state.stop_warm()
@@ -1417,7 +1425,9 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         try:
             snap = jobs().snapshot()
             current = snap.get("current") or {}
-            out = {"drives": drives_overview(c, current.get("scan"), detail=detail), "kinds": kinds_overview(c),
+            # 好幾顆硬碟同時在掃：每顆都顯示進度
+            scanning = [j["scan"] for j in snap.get("active", []) if j.get("kind") in ("scan", "index") and j.get("scan")]
+            out = {"drives": drives_overview(c, scanning, detail=detail), "kinds": kinds_overview(c),
                    "labels": labels_overview(c),
                    "pending": c.execute("SELECT COUNT(*) FROM delete_marks").fetchone()[0]}
             if detail:
@@ -1777,8 +1787,12 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     @app.get("/api/activity")
     def activity():
         snap = jobs().snapshot()
+        history = jobs().history()
+        # 暫停中的工作放在「現在」那一區（按「繼續」接著做）；同一顆硬碟之後又掃過的就不再列
+        paused = [h for h in history if h["state"] == "paused"]
         return {"active": [j for j in [snap.get("current"), *[a for a in snap.get("active", []) if a.get("id") != (snap.get("current") or {}).get("id")]] if j],
-                "queued": snap.get("queued", []), "history": jobs().history()}
+                "queued": snap.get("queued", []), "paused": paused, "history": [h for h in history if h["state"] != "paused"],
+                "scan_parallel": jobs().scan_limit()}
 
     @app.post("/api/activity/resume")
     def activity_resume(body: dict = Body(...)):
@@ -2678,6 +2692,11 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         job_id = body.get("id")
         return jobs().stop(int(job_id) if job_id is not None else None)
 
+    @app.post("/api/jobs/pause")
+    def pause_job(body: dict = Body(...)):
+        """暫停一個工作（掃描、讀文字、比對…）：停在目前的位置，之後按「繼續」接著做。"""
+        return jobs().pause(int(body.get("id") or 0))
+
     # ---- 模型與設定 ----
     @app.get("/api/models")
     def models():
@@ -2727,13 +2746,21 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         for key, value in body.items():
             if key in SECRET_KEYS and not value and not body.get("clear_" + key):
                 continue  # 空白＝沒有改金鑰（介面不會拿到原本的金鑰）
-            if key == "assistant_permission":
+            if key in ("assistant_permission", "scan_parallel"):
                 try:
                     value = max(1, min(4, int(value)))
                 except (TypeError, ValueError):
                     continue
+            if key == "backup_keep":
+                try:
+                    value = max(1, min(52, int(value)))
+                except (TypeError, ValueError):
+                    continue
             if key in SETTING_KEYS:
                 cfg.save_setting(key, value)
+        if "scan_parallel" in body:
+            with jobs().wake:
+                jobs().wake.notify_all()  # 可以多掃幾顆了：排隊中的掃描馬上開始
         if "spotlight" in body or "spotlight_internal" in body:
             from . import spotlight
 
@@ -2832,6 +2859,120 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             old = stashed[-1] if stashed else None
         return {"home": str(cfg.home), "default": str(base), "moved": pointed(base) is not None, "bytes": size, "files": files,
                 "free": shutil.disk_usage(cfg.home).free, "old_copy": str(old) if old else None}
+
+    # ---- 目錄檔管理：備份、還原、舊目錄、重新開始 ----
+    def _roots() -> list[str]:
+        c = conn()
+        try:
+            return [r["path"] for r in db.list_roots(c)]
+        finally:
+            c.close()
+
+    def start_backup_timer():
+        """每週自動備份：每半小時看一下該不該做（存放位置沒接上就等下次）。"""
+        from .backup import check_dest, due
+
+        def loop():
+            import time
+
+            time.sleep(60)
+            while True:
+                try:
+                    if cfg.backup_auto and cfg.backup_dir and due(cfg.backup_last):
+                        dest, error = check_dest(cfg.backup_dir, cfg.home, _roots())
+                        busy = any(j["kind"] in ("backup", "move_catalog") for j in jobs().snapshot()["active"])
+                        if dest and not error and not busy:
+                            jobs().submit("backup", dest=str(dest), auto=True)
+                except Exception:  # noqa: BLE001  自動備份失敗不影響其他功能，下次再試
+                    import traceback
+
+                    traceback.print_exc()
+                time.sleep(1800)
+
+        threading.Thread(target=loop, daemon=True, name="rememor-backup").start()
+
+    def _backup_state() -> dict:
+        from .backup import PENDING, check_dest, list_backups, old_copies
+        from .location import anchor
+
+        dest, error = check_dest(cfg.backup_dir, cfg.home, _roots()) if cfg.backup_dir else (None, "")
+        pending = None
+        try:
+            pending = json.loads((cfg.home / PENDING).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        return {"dir": cfg.backup_dir or None, "dir_ok": bool(dest), "dir_error": error, "auto": bool(cfg.backup_auto),
+                "keep": int(cfg.backup_keep or 4), "last": cfg.backup_last or None,
+                "backups": list_backups(dest) if dest else [], "old_copies": old_copies(anchor(), cfg.home), "pending": pending}
+
+    @app.get("/api/catalog/backups")
+    def catalog_backups():
+        """備份的存放位置、已有的備份、搬移後留下的舊目錄。"""
+        return _backup_state()
+
+    @app.post("/api/catalog/backup/dir")
+    def catalog_backup_dir(body: dict = Body(...)):
+        """選存放備份的位置（不能在被掃描的資料夾裡）。"""
+        from .backup import check_dest
+
+        dest, error = check_dest(str(body.get("path") or ""), cfg.home, _roots())
+        if error:
+            raise HTTPException(400, error)
+        cfg.save_setting("backup_dir", str(dest))
+        return _backup_state()
+
+    @app.post("/api/catalog/backup")
+    def catalog_backup(body: dict = Body(default={})):
+        """立即備份一份到存放位置。"""
+        from .backup import check_dest
+
+        if not cfg.backup_dir:
+            raise HTTPException(400, "請先選存放備份的位置。")
+        dest, error = check_dest(cfg.backup_dir, cfg.home, _roots())
+        if error:
+            raise HTTPException(400, error)
+        return jobs().submit("backup", dest=str(dest), auto=False)
+
+    @app.post("/api/catalog/restore")
+    def catalog_restore(body: dict = Body(...)):
+        """還原：先檢查備份、解出來，重新開啟時改用它（目前這份收進「還原前的目錄」，不刪除）。"""
+        from .backup import BackupError, check_dest, list_backups, prepare_restore
+
+        dest, _ = check_dest(cfg.backup_dir, cfg.home, _roots()) if cfg.backup_dir else (None, "")
+        path = str(body.get("path") or "")
+        if path not in {b["path"] for b in list_backups(dest)}:
+            raise HTTPException(400, "找不到這份備份。")
+        try:
+            m = prepare_restore(cfg.home, Path(path))
+        except BackupError as e:
+            raise HTTPException(400, str(e)) from e
+        jobs().stop_disk_work(timeout=30)
+        app.state.restart_later(1.0)
+        return {"ok": True, "manifest": m}
+
+    @app.post("/api/catalog/reset")
+    def catalog_reset(body: dict = Body(...)):
+        """刪除整份目錄、從頭開始：重新開啟時把資料庫與縮圖移到垃圾桶（設定與模型保留）。要帶 confirm。"""
+        from .backup import prepare_reset
+
+        if body.get("confirm") is not True:
+            raise HTTPException(400, "需要確認")
+        jobs().stop_disk_work(timeout=30)
+        prepare_reset(cfg.home)
+        app.state.restart_later(1.0)
+        return {"ok": True}
+
+    @app.post("/api/catalog/old/trash")
+    def catalog_old_trash(body: dict = Body(...)):
+        """把搬移、還原後留下的舊目錄移到垃圾桶（只接受 Re'memor 自己留下的那幾份）。"""
+        from .backup import BackupError, trash_old_copy
+        from .location import anchor
+
+        try:
+            freed = trash_old_copy(anchor(), cfg.home, str(body.get("path") or ""))
+        except BackupError as e:
+            raise HTTPException(400, str(e)) from e
+        return {"ok": True, "freed": freed}
 
     def _move_target(path: str):
         from .location import check_target

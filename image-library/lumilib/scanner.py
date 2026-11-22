@@ -281,9 +281,11 @@ def _attach_drive(conn: sqlite3.Connection, root: sqlite3.Row, root_path: Path, 
         conn.execute("UPDATE drives SET uuid = ?, name = ?, fs_type = ?, capacity = ?, read_only = ?, mount_path = ?, "
                      "last_seen = ? WHERE id = ?", (*values, drive_id))
     else:
-        drive_id = conn.execute(
-            "INSERT INTO drives (key, uuid, name, fs_type, capacity, read_only, mount_path, last_seen, first_seen) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (key, *values, now)).lastrowid
+        # 同一顆硬碟上的兩個資料夾可能同時在掃：另一個工作剛好先建了這顆硬碟的紀錄就沿用它
+        conn.execute(
+            "INSERT OR IGNORE INTO drives (key, uuid, name, fs_type, capacity, read_only, mount_path, last_seen, first_seen) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (key, *values, now))
+        drive_id = conn.execute("SELECT id FROM drives WHERE key = ?", (key,)).fetchone()["id"]
     try:
         rel = root_path.resolve().relative_to(Path(info["mount"]).resolve()).as_posix()
     except (ValueError, OSError, KeyError, TypeError):
