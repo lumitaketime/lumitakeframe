@@ -22,7 +22,7 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
-const PORT: u16 = 8766;
+pub(crate) const PORT: u16 = 8766;
 /// App 與內建伺服器的版本一致（Cargo.toml 與 lumilib/__init__.py 一起更新）
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15 LumitakeApp/0.4";
@@ -398,6 +398,9 @@ fn main() {
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(380.0, 560.0)
                 .user_agent(USER_AGENT)
+                // 關掉外殼自己的「把檔案拖進視窗」處理：它會把所有拖放都攔下來，網頁裡的拖放（例如拖進「喜好項目」）就失效了。
+                // Re'memor 沒有用到外殼的檔案拖放。
+                .disable_drag_drop_handler()
                 // 看圖的「全螢幕」按鈕：網頁要求前往 lumitake://fullscreen 時，改成切換視窗的系統全螢幕
                 .on_navigation(move |url| {
                     if url.scheme() == "lumitake" {

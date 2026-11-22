@@ -50,6 +50,7 @@ class SpotlightReportTests(CatalogTestCase):
             c.post("/api/spotlight/report", json={"ok": True, "count": 12, "error": "", "probe": 5, "probe_error": ""})
             r = c.get("/api/spotlight/status").json()["report"]
             self.assertEqual((r["ok"], r["count"], r["probe"]), (True, 12, 5))  # 自我檢查：Spotlight 自己找得到
+            self.assertIn("total", c.get("/api/spotlight/status").json())
 
 
 class SpotlightSyncTests(CatalogTestCase):
@@ -97,6 +98,7 @@ class SpotlightSyncTests(CatalogTestCase):
             spotlight.changed()
             upsert, delete, _ = self.run_pass()  # 預設：內建磁碟的也放（和 Re'memor 的搜尋找得到的一樣）
             self.assertEqual([u["title"] for u in upsert], ["b.txt"])
+            self.assertEqual(spotlight.total(self.conn), self.conn.execute("SELECT COUNT(*) FROM spotlight_sync").fetchone()[0])  # 全部放好了
             self.assertEqual(delete, [])
             spotlight.changed()
             upsert, delete, _ = self.run_pass(internal=False)  # 再關掉：內建磁碟的拿掉
@@ -105,6 +107,7 @@ class SpotlightSyncTests(CatalogTestCase):
             report = titles["寄居蟹報告.txt"]
             self.assertIn("寄居蟹換殼", report["text"])  # 文件內容一起放
             self.assertIn("select=", report["id"])
+            self.assertEqual(report["type"], "public.plain-text")  # 確切的類型：Spotlight 才會歸到「文件」
             self.assertNotIn("'", report["id"])
 
             self.assertEqual(self.run_pass(internal=False), ([], [], False))  # 沒有變動：什麼都不送

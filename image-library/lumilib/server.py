@@ -1570,7 +1570,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                                error=str(body.get("error") or "")[:300], at=db.now_iso(),
                                # 自我檢查：Spotlight 自己找不找得到 Re'memor 放進去的項目（None＝沒有檢查）
                                probe=int(probe) if isinstance(probe, (int, float)) else None,
-                               probe_error=str(body.get("probe_error") or "")[:300])
+                               probe_error=str(body.get("probe_error") or "")[:300], running=bool(body.get("running")))
         return {"ok": True}
 
     @app.get("/api/spotlight/changes")
@@ -1609,10 +1609,13 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     def spotlight_status():
         c = conn()
         try:
+            from . import spotlight
+
             n = c.execute("SELECT COUNT(*) FROM spotlight_sync").fetchone()[0]
+            total = spotlight.total(c, bool(cfg.spotlight_internal)) if cfg.spotlight else 0
         finally:
             c.close()
-        return {"enabled": bool(cfg.spotlight), "items": n, "report": spotlight_state or None}
+        return {"enabled": bool(cfg.spotlight), "items": n, "total": total, "report": spotlight_state or None}
 
     @app.get("/api/music")
     def music_info(file: int):

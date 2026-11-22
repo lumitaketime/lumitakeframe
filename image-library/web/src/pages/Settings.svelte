@@ -130,7 +130,11 @@
   }
   $effect(() => {
     app.refreshKey;
-    if (shown === "general" && isMac) api("/api/spotlight/status", { quiet: true }).then((d) => (spot = d)).catch(() => {});
+    if (!(shown === "general" && isMac)) return;
+    const load = () => api("/api/spotlight/status", { quiet: true }).then((d) => (spot = d)).catch(() => {});
+    load();
+    const timer = setInterval(load, 5000); // 第一次放進 Spotlight 時看得到進度
+    return () => clearInterval(timer);
   });
   const FORMATS = ["pdf", "office", "text", "ebook", "mac", "archive", "music"];
 </script>
@@ -179,14 +183,17 @@
               {#snippet trailing()}<Toggle checked={!!settings.spotlight} onchange={(v) => set("spotlight", v ? 1 : 0)} aria-label={t("set.spotlight.toggle")} />{/snippet}
             </ListRow>
             {#if settings.spotlight && spot}
-              <ListRow title={!spot.report ? t("set.spotlight.noReport") : spot.report.ok ? t("set.spotlight.ok", { n: formatNumber(spot.report.count) }) : t("set.spotlight.failed")}
-                subtitle={spot.report && !spot.report.ok ? spot.report.error : !spot.report ? t("set.spotlight.noReportHint") : t("set.spotlight.okHint")}
-                icon={spot.report?.ok ? "checkmark" : "exclamation-triangle"} iconTint={spot.report?.ok ? "green" : "orange"} />
-              {#if spot.report?.ok && (spot.report.probe != null || spot.report.probe_error)}
-                <!-- 自我檢查：Spotlight 自己找不找得到 Re'memor 放進去的項目 -->
-                <ListRow title={spot.report.probe ? t("set.spotlight.probeOk") : t("set.spotlight.probeMissing")}
-                  subtitle={spot.report.probe ? t("set.spotlight.probeOkHint") : spot.report.probe_error || t("set.spotlight.probeMissingHint")}
-                  icon={spot.report.probe ? "checkmark" : "exclamation-triangle"} iconTint={spot.report.probe ? "green" : "orange"} />
+              {@const r = spot.report}
+              {@const counts = { n: formatNumber(spot.items), total: formatNumber(spot.total || spot.items) }}
+              <ListRow title={!r ? t("set.spotlight.noReport") : !r.ok ? t("set.spotlight.failed") : r.running ? t("set.spotlight.running", counts) : t("set.spotlight.ok", counts)}
+                subtitle={r && !r.ok ? r.error : !r ? t("set.spotlight.noReportHint") : r.running ? t("set.spotlight.runningHint") : t("set.spotlight.okHint")}
+                icon={!r?.ok ? "exclamation-triangle" : r.running ? "clock" : "checkmark"} iconTint={!r?.ok ? "orange" : r.running ? "blue" : "green"} />
+              {#if r?.ok && !r.running && (r.probe != null || r.probe_error)}
+                <!-- 自我檢查：數一數 Spotlight 裡真的有幾項 Re'memor 的項目 -->
+                {@const enough = r.probe != null && r.probe >= Math.floor(spot.items * 0.95)}
+                <ListRow title={r.probe != null ? t("set.spotlight.probeCount", { n: formatNumber(r.probe) }) : t("set.spotlight.probeMissing")}
+                  subtitle={r.probe_error || (enough ? t("set.spotlight.probeOkHint") : t("set.spotlight.probeMissingHint"))}
+                  icon={enough ? "checkmark" : "exclamation-triangle"} iconTint={enough ? "green" : "orange"} />
               {/if}
               <ListRow title={t("set.spotlight.internal")} subtitle={t("set.spotlight.internalHint")}>
                 {#snippet trailing()}<Toggle checked={!!settings.spotlight_internal} onchange={(v) => set("spotlight_internal", v ? 1 : 0)} aria-label={t("set.spotlight.internal")} />{/snippet}

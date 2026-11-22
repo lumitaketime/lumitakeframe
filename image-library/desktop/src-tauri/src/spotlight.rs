@@ -9,8 +9,11 @@
 //! - 每一項的 id 就是「rememor:」加上 Re'memor 裡的頁面路徑，點下去直接照著打開，不用另外記對照表；
 //!   App 還沒準備好（例如從 Spotlight 啟動）時先記著，介面載入後再打開。
 
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::ptr::NonNull;
-use std::sync::{mpsc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -178,13 +181,53 @@ fn parse_items(v: &serde_json::Value) -> Vec<Item> {
         .collect()
 }
 
-fn body_of(raw: &str) -> &str {
-    raw.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or(raw)
+/// 跟引擎要資料／回報（只連這台電腦上的 Re'memor）。
+/// 一批裡有文件的文字時，引擎可能要好幾秒才回應，所以這裡最多等 5 分鐘（一般的 http_get 只等 3 秒，
+/// 之前就是因為等不到就放棄，Spotlight 只放進去一點點）。
+fn engine(method: &str, path: &str, json: &str) -> Result<serde_json::Value, String> {
+    let addr = SocketAddr::from(([127, 0, 0, 1], crate::PORT));
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(2)).map_err(|e| format!("連不上 Re'memor：{e}"))?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(300)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(60)));
+    let request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{json}",
+        crate::PORT,
+        json.len()
+    );
+    stream.write_all(request.as_bytes()).map_err(|e| format!("送不出去：{e}"))?;
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).map_err(|e| format!("Re'memor 太久沒有回應：{e}"))?;
+    let split = raw.windows(4).position(|w| w == b"\r\n\r\n").ok_or("Re'memor 的回應不完整")?;
+    let head = String::from_utf8_lossy(&raw[..split]).to_ascii_lowercase();
+    let mut body = raw[split + 4..].to_vec();
+    if !head.starts_with("http/1.1 200") {
+        return Err(format!("Re'memor 回應錯誤：{}", head.lines().next().unwrap_or("")));
+    }
+    if head.contains("transfer-encoding: chunked") {
+        body = unchunk(&body);
+    }
+    serde_json::from_slice(&body).map_err(|e| format!("讀不懂 Re'memor 的回應：{e}"))
+}
+
+/// 把「分段傳送」的回應接回來
+fn unchunk(mut data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    while let Some(end) = data.windows(2).position(|w| w == b"\r\n") {
+        let size_text = String::from_utf8_lossy(&data[..end]);
+        let size = usize::from_str_radix(size_text.split(';').next().unwrap_or("0").trim(), 16).unwrap_or(0);
+        data = &data[end + 2..];
+        if size == 0 || data.len() < size {
+            break;
+        }
+        out.extend_from_slice(&data[..size]);
+        data = &data[(size + 2).min(data.len())..];
+    }
+    out
 }
 
 /// 向引擎一批一批拿「有變動的項目」，放進 Spotlight（或拿掉），放好再告訴引擎。
-/// 第一次會把目錄裡的所有資料夾與檔案放進去（可能要一段時間）；之後只處理新增、改過、不在了的。
-/// 放完會自我檢查一次（請 Spotlight 找找看），結果顯示在設定頁。
+/// 第一次會把目錄裡的所有資料夾與檔案放進去（可能要一段時間，設定頁會顯示進度）；之後只處理新增、改過、不在了的。
+/// 放完會數一數 Spotlight 裡真的有幾項 Re'memor 的項目，結果顯示在設定頁。
 pub fn sync() {
     if !unsafe { CSSearchableIndex::isIndexingAvailable() } {
         report(false, 0, "這台 Mac 的 Spotlight 目前不能讓 App 加入項目（可能 Spotlight 被關掉了）");
@@ -192,10 +235,16 @@ pub fn sync() {
     }
     let mut cursor = String::new();
     let mut changed = false;
+    let mut batches = 0usize;
     loop {
-        let path = format!("/api/spotlight/changes?limit=500&cursor={}", cursor);
-        let Some(raw) = crate::http_get(&path) else { return };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(body_of(&raw)) else { return };
+        let path = format!("/api/spotlight/changes?limit=200&cursor={}", cursor);
+        let v = match engine("GET", &path, "") {
+            Ok(v) => v,
+            Err(message) => {
+                report(false, 0, &format!("沒能從 Re'memor 拿到要放進 Spotlight 的項目：{message}"));
+                return; // 下一分鐘再試
+            }
+        };
         if v["reset"].as_bool().unwrap_or(false) {
             if let Err(message) = unsafe { delete_domain() } {
                 report(false, 0, &format!("清掉舊的項目時出錯：{message}"));
@@ -226,13 +275,23 @@ pub fn sync() {
             }
             changed = true;
         }
+        let mut synced = v["synced"].as_u64().unwrap_or(0) as usize;
         if !items.is_empty() || !gone.is_empty() {
             let done: Vec<serde_json::Value> = items
                 .iter()
                 .map(|it| serde_json::json!({ "entity": it.entity, "id": it.id, "sig": it.sig }))
                 .collect();
             let deleted: Vec<&str> = gone.iter().filter(|(e, _)| !e.is_empty()).map(|(e, _)| e.as_str()).collect();
-            let _ = crate::http_post("/api/spotlight/ack", &serde_json::json!({ "done": done, "deleted": deleted }).to_string());
+            let body = serde_json::json!({ "done": done, "deleted": deleted }).to_string();
+            if let Err(message) = engine("POST", "/api/spotlight/ack", &body) {
+                report(false, 0, &format!("沒能告訴 Re'memor 哪些已經放好：{message}"));
+                return;
+            }
+            synced = synced + done.len() - deleted.len().min(synced + done.len());
+            batches += 1;
+            if batches % 5 == 0 {
+                report_full(true, synced, "", None, true); // 第一次放很多時：設定頁看得到進度
+            }
         }
         match v["cursor"].as_str() {
             Some(next) => cursor = next.to_string(),
@@ -240,10 +299,9 @@ pub fn sync() {
                 let first = !*REPORTED.lock().unwrap();
                 if changed || first {
                     *REPORTED.lock().unwrap() = true;
-                    let synced = v["synced"].as_u64().unwrap_or(0) as usize;
-                    // 自我檢查：放好以後，請 Spotlight 用標題找找看 Re'memor 的項目，確定真的進去了
+                    // 自我檢查：數一數 Spotlight 裡真的有幾項 Re'memor 的項目
                     let probe = if synced > 0 { Some(unsafe { probe() }) } else { None };
-                    report_probe(true, synced, "", probe);
+                    report_full(true, synced, "", probe, false);
                 }
                 return;
             }
@@ -253,45 +311,45 @@ pub fn sync() {
 
 /// 把結果告訴 Re'memor（設定頁顯示「放進 Spotlight 了沒、有沒有出錯」，方便本人知道狀況）
 fn report(ok: bool, count: usize, error: &str) {
-    report_probe(ok, count, error, None);
+    report_full(ok, count, error, None, false);
 }
 
-/// probe：Some(Ok(找到幾項)) 或 Some(Err(錯誤訊息))；None＝沒有檢查
-fn report_probe(ok: bool, count: usize, error: &str, probe: Option<Result<usize, String>>) {
+/// probe：Some(Ok(Spotlight 裡有幾項)) 或 Some(Err(錯誤訊息))；None＝沒有檢查。running：還在放
+fn report_full(ok: bool, count: usize, error: &str, probe: Option<Result<usize, String>>, running: bool) {
     let (found, probe_error) = match probe {
         Some(Ok(n)) => (serde_json::json!(n), String::new()),
         Some(Err(e)) => (serde_json::Value::Null, e),
         None => (serde_json::Value::Null, String::new()),
     };
-    let body = serde_json::json!({ "ok": ok, "count": count, "error": error, "probe": found, "probe_error": probe_error }).to_string();
-    let _ = crate::http_post("/api/spotlight/report", &body);
+    let body = serde_json::json!({ "ok": ok, "count": count, "error": error, "probe": found, "probe_error": probe_error, "running": running })
+        .to_string();
+    let _ = engine("POST", "/api/spotlight/report", &body);
 }
 
-/// 請 Spotlight 在 Re'memor 自己的索引裡找任何標題（只找一批就停）：回傳找到幾項。
-/// 找得到但 Spotlight 視窗裡看不到，問題就在 macOS 的顯示設定（例如 App 沒放在「應用程式」資料夾、或 Spotlight 設定裡關掉了 Re'memor）。
+/// 請 Spotlight 在 Re'memor 自己的索引裡把所有項目找一遍，數一數有幾項（最多等 60 秒）。
+/// 這個數字和「放進去的項目數」差不多，就代表都進去了；Spotlight 視窗裡看不看得到、排第幾，是 macOS 決定的。
 unsafe fn probe() -> Result<usize, String> {
     let query = CSSearchQuery::initWithQueryString_queryContext(
         CSSearchQuery::alloc(),
         &NSString::from_str("title == \"*\""),
         None,
     );
-    let (tx, rx) = mpsc::channel::<Result<usize, String>>();
-    let found_tx = tx.clone();
+    let count = Arc::new(AtomicUsize::new(0));
+    let (tx, rx) = mpsc::channel::<Option<String>>();
+    let counter = count.clone();
     let found = RcBlock::new(move |items: NonNull<NSArray<CSSearchableItem>>| {
-        let _ = found_tx.send(Ok(items.as_ref().count()));
+        counter.fetch_add(items.as_ref().count(), Ordering::Relaxed);
     });
     query.setFoundItemsHandler(Some(&found));
     let done = RcBlock::new(move |err: *mut NSError| {
-        let _ = tx.send(match describe(err) {
-            Some(message) => Err(message),
-            None => Ok(0),
-        });
+        let _ = tx.send(describe(err));
     });
     query.setCompletionHandler(Some(&done));
     query.start();
-    let out = match rx.recv_timeout(Duration::from_secs(20)) {
-        Ok(r) => r,
-        Err(_) => Err("Spotlight 太久沒有回應".into()),
+    let out = match rx.recv_timeout(Duration::from_secs(60)) {
+        Ok(None) => Ok(count.load(Ordering::Relaxed)),
+        Ok(Some(message)) => Err(message),
+        Err(_) => Ok(count.load(Ordering::Relaxed)), // 太多了數不完：回報目前數到的
     };
     query.cancel();
     out

@@ -4,7 +4,7 @@ name: Re'memor Mac App（測試用）
 # 不會動到 Releases 上的「最新版」安裝檔（那是 apps.yml 在 main 與 Library 分支上做的事）。
 # App 裡包的是建置當下的引擎與介面；想要一份包含最新功能的測試版，改動這個檔案（例如下面這行日期）再推送即可。
 # 下載的是 .dmg（不再是 zip 裡面包 zip）。
-# 上次要求重新建置：2026-11-22（Spotlight 加入內建磁碟與自我檢查、側邊欄喜好項目）
+# 上次要求重新建置：2026-11-22（拖放修正、Spotlight 同步改寫與實際數量自我檢查）
 on:
   push:
     branches: [rememor]

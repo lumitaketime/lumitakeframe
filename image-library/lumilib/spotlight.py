@@ -72,7 +72,7 @@ def payload(conn: sqlite3.Connection, enabled: bool = True) -> dict:
 # ---- 外接硬碟的資料夾與檔案：只交有變動的 ----
 
 TEXT_CHARS = 20000  # 每份文件放進 Spotlight 的文字（開頭一段；一般的文件整份都放得下）
-BATCH_CHARS = 2_000_000  # 一批最多帶多少字：文件很多時一批少放幾份，不讓一次傳太多
+BATCH_CHARS = 1_000_000  # 一批最多帶多少字：文件很多時一批少放幾份，不讓一次傳太多
 EXTERNAL_PREFIX = "/Volumes/"
 _state = {"gen": 1, "clean": 0, "reset": False}  # gen：目錄有變動就加一；clean：上次整輪比對完時的 gen
 
@@ -96,7 +96,26 @@ def _synced_roots(conn: sqlite3.Connection, internal: bool = True) -> str:
 
 
 KIND_TYPE = {"photo": "public.image", "raw": "public.camera-raw-image", "video": "public.movie", "audio": "public.audio",
-             "document": "public.content", "archive": "public.archive", "package": "com.apple.package"}
+             "document": "public.text", "archive": "public.archive", "package": "com.apple.package"}
+# 常見副檔名的確切類型：Spotlight 依類型把結果分組（影像、文件、PDF…），類型太籠統可能被歸到看不到的組
+EXT_TYPE = {
+    "png": "public.png", "jpg": "public.jpeg", "jpeg": "public.jpeg", "heic": "public.heic", "heif": "public.heif", "gif": "com.compuserve.gif",
+    "tif": "public.tiff", "tiff": "public.tiff", "bmp": "com.microsoft.bmp", "webp": "org.webmproject.webp",
+    "mp4": "public.mpeg-4", "m4v": "com.apple.m4v-video", "mov": "com.apple.quicktime-movie", "avi": "public.avi", "mkv": "org.matroska.mkv",
+    "mp3": "public.mp3", "m4a": "com.apple.m4a-audio", "wav": "com.microsoft.waveform-audio", "aiff": "public.aiff-audio", "flac": "org.xiph.flac",
+    "pdf": "com.adobe.pdf", "epub": "org.idpf.epub-container", "txt": "public.plain-text", "md": "net.daringfireball.markdown",
+    "rtf": "public.rtf", "html": "public.html", "htm": "public.html", "csv": "public.comma-separated-values-text", "json": "public.json",
+    "doc": "com.microsoft.word.doc", "docx": "org.openxmlformats.wordprocessingml.document",
+    "xls": "com.microsoft.excel.xls", "xlsx": "org.openxmlformats.spreadsheetml.sheet",
+    "ppt": "com.microsoft.powerpoint.ppt", "pptx": "org.openxmlformats.presentationml.presentation",
+    "pages": "com.apple.iwork.pages.sffpages", "numbers": "com.apple.iwork.numbers.sffnumbers", "key": "com.apple.iwork.keynote.sffkey",
+    "zip": "public.zip-archive", "rar": "com.rarlab.rar-archive", "7z": "org.7-zip.7-zip-archive",
+}
+
+
+def content_type(name: str, kind: str) -> str:
+    ext = name.rpartition(".")[2].lower() if "." in name else ""
+    return EXT_TYPE.get(ext) or KIND_TYPE.get(kind, "public.data")
 
 
 def _folder_page(path: str) -> str:
@@ -111,7 +130,7 @@ def _file_item(r, text: str = "") -> dict:
     where = f"在「{r['drive']}」" + (f" › {folder}" if folder else "")
     when = time.strftime("%Y-%m-%d", time.localtime(r["mtime"])) if r["mtime"] else ""
     return {"id": "rememor:" + page, "path": page, "title": r["name"], "description": " · ".join(x for x in (where, _size(r["size"]), when) if x),
-            "keywords": ["Re'memor", r["drive"], r["root"]], "type": KIND_TYPE.get(r["kind"], "public.data"), "text": text[:TEXT_CHARS]}
+            "keywords": ["Re'memor", r["drive"], r["root"]], "type": content_type(r["name"], r["kind"]), "text": text[:TEXT_CHARS]}
 
 
 def _folder_item(r) -> dict:
@@ -200,7 +219,7 @@ def changes(conn: sqlite3.Connection, cursor: str = "", limit: int = 500, enable
                 full = True  # 這一批的字夠多了：剩下的下一批再放
                 break
             seen = r["id"]
-            sig = f"{r['name']}|{r['folder']}|{r['size']}|{r['mtime']}|{r['chars'] or 0}|{r['drive']}|{TEXT_CHARS}"
+            sig = f"{r['name']}|{r['folder']}|{r['size']}|{r['mtime']}|{r['chars'] or 0}|{r['drive']}|{TEXT_CHARS}|t2"
             old = {"spot_id": r["spot_id"], "sig": r["sig"]} if r["spot_id"] else None
             if old is not None and old["sig"] == sig:
                 continue
@@ -231,6 +250,16 @@ def changes(conn: sqlite3.Connection, cursor: str = "", limit: int = 500, enable
                 _state["clean"] = gen  # 這一輪比對完了，中間也沒有新的變動
     out["synced"] = conn.execute("SELECT COUNT(*) FROM spotlight_sync").fetchone()[0]
     return out
+
+
+def total(conn: sqlite3.Connection, internal: bool = True) -> int:
+    """要放進 Spotlight 的項目共有幾項（硬碟、智慧資料夾、資料夾、檔案）：設定頁顯示「已放進幾項／共幾項」。"""
+    ext = _synced_roots(conn, internal)
+    n = len(items(conn))
+    if ext:
+        n += conn.execute(f"SELECT COUNT(*) FROM folders WHERE status = 'ok' AND path != '' AND root_id IN ({ext})").fetchone()[0]
+        n += conn.execute(f"SELECT COUNT(*) FROM files WHERE status = 'ok' AND root_id IN ({ext})").fetchone()[0]
+    return n
 
 
 def ack(conn: sqlite3.Connection, done: list, deleted: list) -> int:
