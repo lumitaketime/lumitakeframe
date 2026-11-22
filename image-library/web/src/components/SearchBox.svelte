@@ -1,4 +1,5 @@
 <script>
+  import { composing } from "../lib/ime.js";
   /**
    * 頂欄搜尋框＋建議面板（參考 Google 相簿）：
    * - 還沒輸入：最近的搜尋、我的最愛／影片捷徑、常出現的人物頭像
@@ -135,6 +136,10 @@
   }
 
   function onkey(e) {
+    if (e.key === "Enter" && composing(e)) {  // 注音等輸入法選字時的 Enter：只是確認選字，不搜尋
+      e.preventDefault();
+      return;
+    }
     if (e.isComposing) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();

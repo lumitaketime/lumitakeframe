@@ -29,7 +29,7 @@ LABELS = {
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
     "move_catalog": "搬移目錄", "embed_docs": "建立「用意思找」的索引",
-    "photos": "整理照片（拍攝資訊與縮圖）", "backup": "備份目錄", "classify": "自動分類", "classify_ai": "AI 分類",
+    "photos": "整理照片（拍攝資訊與縮圖）", "backup": "備份目錄", "classify": "自動分類", "classify_ai": "AI 分類", "keywords": "找出常見的詞",
 }
 LANES = {"analyze": "ai", "embed": "ai", "embed_docs": "ai", "classify_ai": "ai", "pull": "download", "face_model": "download", "clip_model": "download",
          "scan": "scan", "backup": "catalog"}
@@ -446,6 +446,7 @@ class JobRunner:
                 conn.close()
             if self.cfg.classify_rules_auto:
                 self.submit("classify")  # 自動分類（規則，很快；本人同意過才做）
+            self.submit("keywords")  # 檔案分析的關鍵字雲（只讀目錄）
             if self.cfg.auto_extract:
                 # 讀取文件文字、文字辨識：掃描完自動接著做（只讀取；排在掃描之後，可以停止，下次接著做）
                 from .ocr import available as ocr_available
@@ -651,6 +652,11 @@ class JobRunner:
                 parts.append(describe_rules(res))
                 if self.cfg.classify_ai_auto and not opts.get("no_ai") and ai_todo(conn):
                     self.submit("classify_ai")
+            if kind == "keywords":
+                from .analysis import build_keywords, describe as describe_keywords
+
+                res = build_keywords(conn, stop=stop, progress=lambda done, total, name: upd(done=done, total=total, message=name))
+                parts.append(describe_keywords(res))
             if kind == "classify_ai":
                 from . import llm as llm_mod
                 from .classify import describe_ai, run_ai

@@ -1,4 +1,5 @@
 <script>
+  import { composing, submitEnter } from "../lib/ime.js";
   import Icon from "./Icon.svelte";
   import { api } from "../lib/api.js";
   import { navigate, link } from "../lib/router.svelte.js";
@@ -90,7 +91,7 @@
     setTags([...myKeywords, t], `已加上 #${t}`);
   }
   function tagKey(e) {
-    if (e.key === "Enter" && !e.isComposing) {
+    if (e.key === "Enter" && !composing(e)) {
       e.preventDefault();
       addTag();
     } else if (e.key === "Escape") {

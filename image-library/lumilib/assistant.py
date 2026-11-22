@@ -35,6 +35,15 @@ TOOLS = {
     "drives_overview": (1, "所有硬碟的容量、檔案數、上次掃描時間、各類型佔多少。args: {}"),
     "duplicates": (1, "重複的檔案與資料夾，以及可以釋出多少空間。args: {}"),
     "read_document": (2, "讀一份文件的內容（Re'memor 已經讀好的文字）。args: {\"file_id\": 檔案編號（先用 search_files 找到）}"),
+    "catalog_analysis": (1, "檔案分析：類型、年份分布、最常出現的詞（每個詞在幾個資料夾、大多在哪一類），目前的分類清單、規則、使用者的身分。討論分類時先用這個。args: {}"),
+    "keyword_folders": (1, "某個詞出現在哪些資料夾（含年份、目前的分類）。args: {\"word\": 詞}"),
+    "save_profile": (1, "記下使用者說的身分與習慣、開始工作（例如教書）的年份。args: {\"identity\": 一兩句身分與習慣, \"teach_start_year\": 西元年（可省略）}"),
+    "plan_categories": (3, "提出或修改分類的整理計畫（累積在同一張計畫卡上，使用者確認才套用，可以復原）。args: {\"ops\": [步驟]}。"
+                           "步驟：{op: add_category, name, description}｜{op: rename, category, name}｜{op: describe, category, description}｜"
+                           "{op: merge, from: [分類…], into: 分類}｜{op: split, from: 分類, into: [分類…]}｜"
+                           "{op: rule, pattern: 關鍵字, category: 分類, year_from?: 西元年, year_to?: 西元年}｜"
+                           "{op: set_folder, pattern: 名稱包含的字（或 folders: [編號]）, category: 分類}｜{op: remove_rule, pattern}｜"
+                           "{op: delete_category, category}。分類可以直接寫名稱；新分類先 add_category。"),
     "propose_label": (3, "提出：替檔案或資料夾加上顏色標籤。args: {\"file_ids\": [編號], \"folder_ids\": [編號], \"color\": red/yellow/green/blue/purple/none}"),
     "propose_smart_folder": (3, "提出：把一個搜尋存成智慧資料夾。args: {\"name\": 名稱, \"query\": 搜尋關鍵字, \"kind\": 可省略, \"year\": 可省略}"),
     "propose_mark_delete": (3, "提出：把已確認重複的多餘副本標記為待刪除（只是標記）。args: {\"file_ids\": [編號]}"),
@@ -42,6 +51,7 @@ TOOLS = {
     "propose_rename": (4, "提出：替檔案改名（副檔名不變）。args: {\"renames\": [{\"file_id\": 編號, \"new_name\": 新檔名}]}"),
     "propose_to_pending": (4, "提出：把檔案移到該來源的「Re'memor 待刪除」資料夾（不刪除，隨時可以搬回來）。args: {\"file_ids\": [編號]}"),
 }
+PLAN_TOOLS = ("catalog_analysis", "keyword_folders", "save_profile", "plan_categories")
 PROPOSE = {"propose_label": "label", "propose_smart_folder": "smart_folder", "propose_mark_delete": "mark_delete",
            "propose_move": "move", "propose_rename": "rename", "propose_to_pending": "to_pending"}
 
@@ -70,7 +80,8 @@ PLAN_SCHEMA = _plan_schema(list(TOOLS))
 class Ctx:
     """這一次問答的狀態：來源、建立的提案、權限、能不能看文件內容。"""
 
-    def __init__(self, level: int = 2, content: bool = True, question: str = ""):
+    def __init__(self, level: int = 2, content: bool = True, question: str = "", chat_id: int | None = None):
+        self.chat_id = chat_id
         self.level = max(1, min(4, int(level or 2)))
         self.content = content and self.level >= 2
         self.question = question
@@ -224,8 +235,82 @@ def _proposer(kind: str):
     return tool
 
 
+def tool_catalog_analysis(conn: sqlite3.Connection, args: dict, ctx) -> str:
+    from . import analysis, classify
+
+    st = analysis.file_stats(conn)
+    kw = analysis.keywords(conn, 40)["words"]
+    names = {c["key"]: classify.display_name(c) for c in classify.categories(conn, include_merged=True)}
+    lines = ["類型：" + "、".join(f"{k['kind']} {k['files']:,} 個 {_fmt_bytes(k['bytes'])}" for k in st["kinds"][:8])]
+    years = st["years"]
+    if years:
+        lines.append("年份（檔案修改日期）：" + "、".join(f"{y['year']}:{y['files']:,}" for y in years[-25:]))
+    if kw:
+        lines.append("最常出現的詞（資料夾數／檔案數／目前大多在哪一類）：" + "、".join(
+            f"{w['word']}({w['folders']}/{w['files']}/{names.get(w['category'], '未分類')})" for w in kw))
+    else:
+        lines.append("（還沒有找出常見的詞）")
+    cats = classify.overview(conn)
+    lines.append("目前的分類：" + "；".join(f"{classify.display_name(c)}（代號 {c['key']}，{c['folders']} 個資料夾）"
+                                          + (f"：{c['description']}" if c["description"] else "") for c in cats))
+    rs = classify.rules(conn)
+    if rs:
+        lines.append("已經有的關鍵字規則：" + "；".join(f"{classify.rule_text(r)}→{names.get(r['category'], r['category'])}" for r in rs[:30]))
+    prof = classify.profile(conn)
+    if prof:
+        lines.append(f"使用者說過的身分：{prof.get('identity') or '（無）'}；開始工作的年份：{prof.get('teach_start_year') or '（還沒問）'}")
+    return "\n".join(lines)
+
+
+def tool_keyword_folders(conn: sqlite3.Connection, args: dict, ctx) -> str:
+    from . import analysis, classify
+
+    word = str(args.get("word") or "").strip()[:40]
+    if not word:
+        return "（沒有指定詞）"
+    d = analysis.word_detail(conn, word, limit=25)
+    names = {c["key"]: classify.display_name(c) for c in classify.categories(conn, include_merged=True)}
+    lines = [f"「{word}」出現在 {d['folders']:,} 個資料夾、{d['files']:,} 個檔案。目前的分類：" + "、".join(
+        f"{names.get(x['category'], '未分類')} {x['count']}" for x in d["categories"])]
+    for f in d["folder_list"]:
+        lines.append(f"- [資料夾 {f['id']}] {f['root']}/{f['path']}（年份 {f['year'] or '不明'}，目前：{names.get(f['category'], '未分類')}）")
+    return "\n".join(lines)
+
+
+def tool_save_profile(conn: sqlite3.Connection, args: dict, ctx) -> str:
+    from . import classify
+
+    p = classify.save_profile(conn, args.get("identity"), args.get("teach_start_year"))
+    return f"已記下：身分「{p.get('identity') or ''}」，開始工作的年份 {p.get('teach_start_year') or '（未說）'}。"
+
+
+def tool_plan_categories(conn: sqlite3.Connection, args: dict, ctx) -> str:
+    from .actions import ActionError, propose
+
+    ctx = _ctx(ctx)
+    ops = args.get("ops") if isinstance(args.get("ops"), list) else []
+    try:
+        action = propose(conn, "category_plan", {"ops": ops, "chat_id": ctx.chat_id, "replace": bool(args.get("replace"))},
+                         ctx.level, ctx.question)
+    except ActionError as exc:
+        return f"（沒有更新計畫：{exc}）"
+    if not any(a["id"] == action["id"] for a in ctx.actions):
+        ctx.actions.append(action)
+    else:
+        ctx.actions = [action if a["id"] == action["id"] else a for a in ctx.actions]
+    prev = action.get("preview") or {}
+    bad = [it for it in action["items"] if it.get("ok") is False]
+    cats = "、".join(f"{c['name']} {c['folders']}" for c in prev.get("categories") or [])
+    return (f"計畫卡 #{action['id']} 已更新（共 {len(action['items'])} 步），套用後會改變 {prev.get('changed', 0):,} 個資料夾，"
+            f"{prev.get('review', 0)} 個要使用者確認。各類資料夾數：{cats}。"
+            + (f"有 {len(bad)} 步做不到：" + "；".join(f"{b['name']}（{b['reason']}）" for b in bad) if bad else "")
+            + "這還只是計畫，要使用者在畫面上勾選、按確認才會套用。")
+
+
 RUN = {"search_files": tool_search_files, "largest_folders": tool_largest_folders, "drives_overview": tool_drives_overview,
        "duplicates": tool_duplicates, "read_document": tool_read_document,
+       "catalog_analysis": tool_catalog_analysis, "keyword_folders": tool_keyword_folders, "save_profile": tool_save_profile,
+       "plan_categories": tool_plan_categories,
        **{name: _proposer(kind) for name, kind in PROPOSE.items()}}
 
 
@@ -258,7 +343,11 @@ def plan(llm, question: str, history: list[dict], context: str, ctx: Ctx | None 
               + "只輸出 JSON：{\"calls\": [{\"tool\": 工具名稱, \"args\": {...}}]}。打招呼或不需要查資料的問題就給空陣列。"
               "搜尋關鍵字要用檔名或文件裡可能出現的詞，短一點（例如「預算」而不是整句話）。"
               + ("只有使用者要求整理（例如歸類、改名、搬移、標記）時才用 propose_ 開頭的工具；檔案編號一定要來自查到的資料，不要猜。"
-                 if can_act else ""))
+                 if can_act else "")
+              + "\n使用者在談自己的身分、習慣，或想怎麼分類時：先用 catalog_analysis 看資料；他說了身分或開始工作的年份就用 save_profile 記下來；"
+              + ("要新增、改名、合併、拆分分類，或加關鍵字規則、替資料夾改分類，就用 plan_categories（一次只放這次要改的步驟）。"
+                 "同一個詞可能屬於兩類（例如學校名稱可能是讀過也教過）時，年份能分就用有 year_from／year_to 的規則；"
+                 "還不知道他哪一年開始工作，就先不要猜，在回答裡問他。" if can_act else "需要改分類時，請使用者到設定 → AI 助理把權限調到「可以幫你整理」。"))
     try:
         data = llm.plan_json(prompt, _plan_schema(names))
     except Exception:  # noqa: BLE001  規劃失敗就直接回答（不查資料）
@@ -268,13 +357,13 @@ def plan(llm, question: str, history: list[dict], context: str, ctx: Ctx | None 
 
 
 def ask(conn: sqlite3.Connection, llm, question: str, history: list[dict] | None = None, context: str = "", lang: str = "zh-Hant",
-        level: int = 2, cloud_content: bool = False):
+        level: int = 2, cloud_content: bool = False, chat_id: int | None = None):
     """回答一個問題，逐步產生事件（給介面即時顯示）：
     {"type": "step", "tool", "args"}、{"type": "action", "action"}（提案）、{"type": "token", "text"}、
     {"type": "done", "sources": [...]}、{"type": "error", "message"}。"""
     history = history or []
     remote = bool(getattr(llm, "remote", False))
-    ctx = Ctx(level, content=(not remote) or bool(cloud_content), question=question)
+    ctx = Ctx(level, content=(not remote) or bool(cloud_content), question=question, chat_id=chat_id)
     results: list[str] = []
     done_calls: set[str] = set()
     rounds = 3 if ctx.level >= 3 else 2
@@ -298,6 +387,10 @@ def ask(conn: sqlite3.Connection, llm, question: str, history: list[dict] | None
                 results.append(f"### {call['tool']}\n（查詢失敗：{exc}）")
             for action in ctx.actions[before:]:
                 yield {"type": "action", "action": action}
+            if call["tool"] == "plan_categories" and len(ctx.actions) == before:  # 同一張計畫卡更新了：再送一次給介面
+                for action in ctx.actions:
+                    if action["kind"] == "category_plan":
+                        yield {"type": "action", "action": action}
     language = LANG_NAMES.get(lang, "繁體中文")
     where = "透過使用者自己選擇的服務執行" if remote else "在使用者自己的電腦上離線執行"
     system = (f"你是 Re'memor 的檔案管理助理，{where}。用{language}回答，語氣親切、白話、簡潔。\n"
@@ -305,7 +398,8 @@ def ask(conn: sqlite3.Connection, llm, question: str, history: list[dict] | None
               "規則：\n- 只根據「查到的資料」回答；資料裡沒有的，就說查不到，並建議可以怎麼找，不要編造檔名或路徑。\n"
               "- 提到檔案或資料夾時，在後面標上來源編號，例如 [1]。\n"
               "- 你自己不能刪除、搬移或修改任何檔案。"
-              + ("你建立的整理提案會列在回答下面，要等使用者檢查後按「執行」才會做；不要說已經做好了。"
+              + ("你建立的整理提案（或分類的計畫卡）會列在回答下面，要等使用者檢查後勾選、按確認才會做；不要說已經做好了。"
+                 "回答時用一兩句話說明這次改了什麼，以及還有什麼需要使用者決定（例如哪一年開始工作）。"
                  if ctx.actions else
                  "需要整理時，提出具體建議，並說明要在 Re'memor 的哪個頁面由使用者自己確認（例如「重複項目」頁、「待刪除」頁）"
                  + ("；或請使用者到設定 → AI 助理提高權限，讓你直接提出整理動作。" if ctx.level < 3 else "。"))

@@ -5,6 +5,7 @@
 import { ICONS as BASE } from "../../design-system/components/src/icons.js";
 
 const EXTRA = {
+  "chart": '<path d="M4 20.5h16"/><rect x="5.5" y="12" width="3" height="6" rx="1"/><rect x="10.5" y="7" width="3" height="11" rx="1"/><rect x="15.5" y="4" width="3" height="14" rx="1"/>',
   "book": '<path d="M12 6.5C10.3 5.2 7.8 4.5 4.5 4.5v13c3.3 0 5.8.7 7.5 2 1.7-1.3 4.2-2 7.5-2v-13c-3.3 0-5.8.7-7.5 2z"/><path d="M12 6.5v13"/>',
   "briefcase": '<rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5.5v2M3.5 12.5h17"/>',
   "airplane": '<path d="M10.5 13.5 4 11l1.5-1.5 6 1L16 6a2 2 0 0 1 2.8 2.8l-4.5 4.5 1 6L13.8 21l-2.5-6.5-3.3 3.3.4 2.2-1.4 1.4-1.6-3.4-3.4-1.6 1.4-1.4 2.2.4z"/>',

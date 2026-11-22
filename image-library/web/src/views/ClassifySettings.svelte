@@ -5,6 +5,7 @@
    */
   import { Alert, Button, List, ListRow, Toggle, TextField } from "../ui/index.js";
   import { loadCategories, runClassify, editCategory, categoryName, CATEGORY_ICONS } from "../data/category.svelte.js";
+  import { loadRules, deleteRule, loadProfile, saveProfile } from "../data/analysis.js";
   import { loadCatalog } from "../data/catalog.svelte.js";
   import { navigate } from "../lib/router.svelte.js";
   import { t, formatNumber } from "../i18n/index.svelte.js";
@@ -15,8 +16,35 @@
   let busy = $state("");
   let editing = $state(null); // {key, name} 或 {add: true, name}
   let removing = $state(null);
+  let ruleList = $state([]);
+  let prof = $state(null);
+  let removingRule = $state(null);
   function load() {
     loadCategories().then((d) => (st = d)).catch(() => {});
+    loadRules().then((d) => (ruleList = d.rules)).catch(() => {});
+    loadProfile().then((d) => (prof = { identity: d.identity || "", teach_start_year: d.teach_start_year ? String(d.teach_start_year) : "" })).catch(() => {});
+  }
+  const nameOfKey = (k) => categoryName((st?.categories || []).find((c) => c.key === k) || { key: k }, t);
+  const ruleYears = (r) => (r.year_from && r.year_to ? t("rule.between", { a: r.year_from, b: r.year_to })
+    : r.year_from ? t("rule.after", { y: r.year_from }) : r.year_to ? t("rule.before", { y: r.year_to }) : "");
+  async function dropRule() {
+    const r = removingRule;
+    removingRule = null;
+    try {
+      await deleteRule(r.id);
+      toast(t("rule.deleted", { word: r.pattern }));
+      await loadCatalog();
+      load();
+      refresh();
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+  let profTimer;
+  function editProfile(key, v) {
+    prof = { ...prof, [key]: v };
+    clearTimeout(profTimer);
+    profTimer = setTimeout(() => saveProfile({ identity: prof.identity, teach_start_year: Number(prof.teach_start_year) || null }).catch(() => {}), 600);
   }
   $effect(() => {
     app.refreshKey;
@@ -98,6 +126,27 @@
     {/if}
   </List>
 
+  <List header={t("rule.title")} footer={t("rule.footer")}>
+    {#each ruleList as r (r.id)}
+      <ListRow title={`「${r.pattern}」 → ${nameOfKey(r.category)}`} icon="tag"
+        subtitle={[ruleYears(r), r.source === "user" ? t("rule.byYou") : t("rule.byAssistant"), t("rule.folders", { n: formatNumber(r.folders) })].filter(Boolean).join(" · ")}>
+        {#snippet trailing()}<Button size="small" variant="borderless" role="destructive" onclick={() => (removingRule = r)}>{t("cat.set.delete")}</Button>{/snippet}
+      </ListRow>
+    {:else}
+      <ListRow title={t("rule.none")} subtitle={t("rule.noneHint")} accessory="disclosure" onclick={() => navigate("/insights")} />
+    {/each}
+  </List>
+
+  {#if prof}
+    <List header={t("prof.title")} footer={t("prof.footer")}>
+      <div class="pad">
+        <TextField label={t("prof.identity")} value={prof.identity} placeholder={t("prof.identityPlaceholder")} onchange={(v) => editProfile("identity", v)} />
+        <TextField label={t("prof.startYear")} type="number" value={prof.teach_start_year} placeholder={t("prof.startYearPlaceholder")}
+          onchange={(v) => editProfile("teach_start_year", v)} />
+      </div>
+    </List>
+  {/if}
+
   <List header={t("cat.set.list")} footer={t("cat.set.listHint")}>
     {#each st.categories as c (c.key)}
       <ListRow title={categoryName(c, t)} icon={CATEGORY_ICONS[c.key] || "tag"} subtitle={t("cat.set.stats", { folders: formatNumber(c.folders), files: formatNumber(c.files) })}>
@@ -120,6 +169,14 @@
       ]} />
   </div>
 {/if}
+{#if removingRule}
+  <div class="backdrop">
+    <Alert title={t("rule.deleteTitle", { word: removingRule.pattern })} message={t("rule.deleteMessage")} actions={[
+      { label: t("cat.set.delete"), role: "destructive", onPress: dropRule },
+      { label: t("common.cancel"), role: "cancel", onPress: () => (removingRule = null) },
+    ]} />
+  </div>
+{/if}
 {#if removing}
   <div class="backdrop">
     <Alert title={t("cat.set.deleteTitle", { name: categoryName(removing, t) })} message={t("cat.set.deleteMessage")} actions={[
@@ -131,5 +188,6 @@
 
 <style>
   .acts { display: inline-flex; align-items: center; gap: var(--space-1); }
+  .pad { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3); }
   .backdrop { position: fixed; inset: 0; z-index: 320; display: flex; align-items: center; justify-content: center; background: var(--media-scrim-light); }
 </style>

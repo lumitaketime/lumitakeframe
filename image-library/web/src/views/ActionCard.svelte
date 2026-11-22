@@ -10,13 +10,18 @@
 
   let { action = $bindable(), compact = false } = $props();
 
-  const ICON = { label: "star", smart_folder: "magnifyingglass", mark_delete: "trash", move: "folder", rename: "compose", to_pending: "trash" };
+  import CategoryPlanPreview from "./CategoryPlanPreview.svelte";
+
+  const ICON = { label: "star", smart_folder: "magnifyingglass", mark_delete: "trash", move: "folder", rename: "compose", to_pending: "trash",
+    category_rule: "tag", category_plan: "tag" };
+  // 分類的整理計畫：看不懂的那一步預設不勾
+  const isPlan = $derived(action.kind === "category_plan" || action.kind === "category_rule");
   const SHOW = 6;
   let expanded = $state(false);
   // svelte-ignore state_referenced_locally（一開始全部勾選；項目數變了才重來）
-  let checked = $state(action.items.map(() => true));
+  let checked = $state(action.items.map((it) => it.ok !== false));
   $effect(() => {
-    if (checked.length !== action.items.length) checked = action.items.map(() => true);
+    if (checked.length !== action.items.length) checked = action.items.map((it) => it.ok !== false);
   });
   const chosen = $derived(checked.map((c, i) => (c ? i : -1)).filter((i) => i >= 0));
   const visible = $derived(expanded ? action.items : action.items.slice(0, SHOW));
@@ -65,6 +70,10 @@
     </div>
   </header>
 
+  {#if isPlan && action.preview}
+    <CategoryPlanPreview preview={action.preview} done={!proposed} />
+    {#if action.items.length}<h4 class="mac-caption-1 steps">{t("plan.steps")}</h4>{/if}
+  {/if}
   {#if action.kind === "smart_folder"}
     <p class="mac-callout sub">{t("act.smart", { q: action.query?.q || "" })}</p>
   {:else if action.items.length}
@@ -97,7 +106,7 @@
 
   {#if proposed}
     <div class="acts">
-      <Button size="small" variant="borderedProminent" loading={busy} disabled={!chosen.length} onclick={pressRun}>{t("act.run")}</Button>
+      <Button size="small" variant="borderedProminent" loading={busy} disabled={!chosen.length} onclick={pressRun}>{isPlan ? t("plan.apply") : t("act.run")}</Button>
       <Button size="small" variant="bordered" disabled={busy} onclick={dismiss}>{t("act.dismiss")}</Button>
     </div>
   {:else if canUndo}
@@ -145,5 +154,6 @@
   .st-skipped { color: var(--system-orange); }
   .more { align-self: flex-start; border: 0; padding: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
   .acts { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+  .steps { margin: var(--space-1) 0 0; color: var(--label-secondary); font-weight: 600; }
   .backdrop { position: fixed; inset: 0; z-index: 320; display: flex; align-items: center; justify-content: center; background: var(--media-scrim-light); }
 </style>

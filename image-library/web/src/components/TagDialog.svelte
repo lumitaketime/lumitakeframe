@@ -1,4 +1,5 @@
 <script>
+  import { composing, submitEnter } from "../lib/ime.js";
   import { slider } from "../lib/slider.js";
   /**
    * 批次加上（或移除）我的標籤，例如 #嘉義車站。
@@ -38,7 +39,7 @@
   }
 
   function onkey(e) {
-    if ((e.key === "Enter" || e.key === "," || e.key === "，") && !e.isComposing) {
+    if ((e.key === "Enter" || e.key === "," || e.key === "，") && !composing(e)) {
       e.preventDefault();
       if (text.trim()) add(text);
       else if (e.key === "Enter" && tags.length) submit();

@@ -68,37 +68,68 @@ _WORD = re.compile(r"[a-z]+")
 
 # ---- 分類清單 ----
 
-def ensure_categories(conn: sqlite3.Connection) -> None:
+def ensure_categories(conn: sqlite3.Connection, commit: bool = True) -> None:
     if conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]:
         return
     conn.executemany("INSERT OR IGNORE INTO categories (key, name, position, builtin) VALUES (?, NULL, ?, 1)",
                      [(k, i) for i, k in enumerate(BUILTIN)])
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
-def categories(conn: sqlite3.Connection) -> list[dict]:
-    """[{key, name（本人改過才有）, builtin}]，依順序。"""
+def categories(conn: sqlite3.Connection, include_merged: bool = False) -> list[dict]:
+    """[{key, name（本人改過才有）, builtin, description, examples, merged_into}]，依順序。
+    合併掉的分類（merged_into 有值）預設不列。"""
     ensure_categories(conn)
-    return [{"key": r["key"], "name": r["name"], "builtin": bool(r["builtin"])}
-            for r in conn.execute("SELECT * FROM categories ORDER BY position, key")]
+    out = []
+    for r in conn.execute("SELECT * FROM categories ORDER BY position, key"):
+        if r["merged_into"] and not include_merged:
+            continue
+        try:
+            examples = json.loads(r["examples"]) if r["examples"] else []
+        except ValueError:
+            examples = []
+        out.append({"key": r["key"], "name": r["name"], "builtin": bool(r["builtin"]), "description": r["description"] or "",
+                    "examples": examples, "merged_into": r["merged_into"]})
+    return out
 
 
 def valid_keys(conn: sqlite3.Connection) -> set[str]:
     return {c["key"] for c in categories(conn)}
 
 
-def add_category(conn: sqlite3.Connection, name: str) -> str:
+def display_name(c: dict) -> str:
+    return c.get("name") or NAMES.get(c["key"], c["key"])
+
+
+def _resolver(conn: sqlite3.Connection):
+    """合併掉的分類 → 合併後的那一類（最多追五層）。"""
+    merged = {r["key"]: r["merged_into"] for r in conn.execute("SELECT key, merged_into FROM categories")}
+
+    def resolve(key):
+        for _ in range(5):
+            nxt = merged.get(key)
+            if not nxt:
+                return key if key in merged else None
+            key = nxt
+        return key
+    return resolve
+
+
+def add_category(conn: sqlite3.Connection, name: str, description: str = "", commit: bool = True) -> str:
     name = (name or "").strip()[:40]
     if not name:
         raise ValueError("請輸入分類名稱")
     key = "c" + str(int(conn.execute("SELECT COALESCE(MAX(rowid), 0) + 1 FROM categories").fetchone()[0]))
     pos = conn.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM categories").fetchone()[0]
-    conn.execute("INSERT INTO categories (key, name, position, builtin) VALUES (?, ?, ?, 0)", (key, name, pos))
-    conn.commit()
+    conn.execute("INSERT INTO categories (key, name, position, builtin, description) VALUES (?, ?, ?, 0, ?)",
+                 (key, name, pos, (description or "").strip()[:300] or None))
+    if commit:
+        conn.commit()
     return key
 
 
-def rename_category(conn: sqlite3.Connection, key: str, name: str | None) -> None:
+def rename_category(conn: sqlite3.Connection, key: str, name: str | None, commit: bool = True) -> None:
     """改名；內建的分類給空白＝改回預設名稱。"""
     row = conn.execute("SELECT builtin FROM categories WHERE key = ?", (key,)).fetchone()
     if row is None:
@@ -107,19 +138,102 @@ def rename_category(conn: sqlite3.Connection, key: str, name: str | None) -> Non
     if name is None and not row["builtin"]:
         raise ValueError("請輸入分類名稱")
     conn.execute("UPDATE categories SET name = ? WHERE key = ?", (name, key))
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
-def delete_category(conn: sqlite3.Connection, key: str) -> None:
-    """只能刪自己加的分類：用到它的資料夾改回「自動」（本人的設定拿掉、學到的規則拿掉）。"""
+def delete_category(conn: sqlite3.Connection, key: str, commit: bool = True) -> None:
+    """只能刪自己加的分類：用到它的資料夾改回「自動」（本人的設定、學到的規則、關鍵字規則拿掉）。"""
     row = conn.execute("SELECT builtin FROM categories WHERE key = ?", (key,)).fetchone()
     if row is None or row["builtin"]:
-        raise ValueError("內建的分類不能刪除，可以改名")
-    conn.execute("DELETE FROM category_user WHERE category = ?", (key,))
-    conn.execute("DELETE FROM category_learned WHERE category = ?", (key,))
+        raise ValueError("內建的分類不能刪除，可以改名或合併到別的分類")
+    for table in ("category_user", "category_learned", "category_rules"):
+        conn.execute(f"DELETE FROM {table} WHERE category = ?", (key,))
     conn.execute("DELETE FROM categories WHERE key = ?", (key,))
-    conn.commit()
-    run_rules(conn)
+    if commit:
+        conn.commit()
+        run_rules(conn)
+
+
+# ---- 年份 ----
+
+_YEAR = re.compile(r"(?<!\d)(19[5-9]\d|20[0-4]\d)(?!\d)")
+_ROC = re.compile(r"(?:民國\s*(\d{2,3}))|(?<!\d)(\d{2,3})\s*(?:學年度|學年|年度|上學期|下學期|學期|年(?!級|班))")
+
+
+def name_year(name: str) -> int | None:
+    """資料夾名稱裡的年份：西元（2015）或民國（105 學年、98 年、民國 98）。看不出來回傳 None。"""
+    m = _YEAR.search(name or "")
+    if m:
+        return int(m.group(1))
+    m = _ROC.search(name or "")
+    if m:
+        n = int(m.group(1) or m.group(2))
+        if 50 <= n <= 130:
+            return n + 1911
+    return None
+
+
+_STATS_CACHE: dict = {}
+
+
+def _folder_stats(conn: sqlite3.Connection) -> tuple[dict, dict]:
+    """每個資料夾的「內容組成」（安裝檔、電子書、創作檔各幾個）與檔案年份的加總。
+    要走過所有檔案一次（一百萬個檔案約 3 秒），所以算好就記著，檔案有變動（掃描過）才重算；
+    改分類、看影響範圍時不必再走一次。"""
+    path = conn.execute("PRAGMA database_list").fetchone()["file"]
+    r = conn.execute("SELECT (SELECT MAX(id) FROM files) AS m, (SELECT COUNT(*) FROM files WHERE status = 'ok') AS n, "
+                     "(SELECT MAX(last_scan) FROM roots) AS t, (SELECT COUNT(*) FROM folders) AS f").fetchone()
+    sig = (path, r["m"], r["n"], r["t"], r["f"])
+    hit = _STATS_CACHE.get(path)
+    if hit and hit[0] == sig:
+        return hit[1], hit[2]
+    inst = ",".join(f"'{e}'" for e in INSTALLER_EXT)
+    ebook = ",".join(f"'{e}'" for e in EBOOK_EXT)
+    creative = ",".join(f"'{e}'" for e in CREATIVE_EXT)
+    groups: dict[int, tuple] = {}
+    sums: dict[int, list] = {}
+    for x in conn.execute(
+            f"SELECT folder_id, COUNT(*) AS n, SUM(ext IN ({inst})) AS a, SUM(ext IN ({ebook})) AS b, SUM(ext IN ({creative})) AS c, "
+            "SUM(CASE WHEN mtime > 0 THEN mtime ELSE 0 END) AS ys, SUM(mtime > 0) AS yn FROM files WHERE status = 'ok' GROUP BY folder_id"):
+        groups[x["folder_id"]] = (x["n"], x["a"] or 0, x["b"] or 0, x["c"] or 0)
+        if x["yn"]:
+            sums[x["folder_id"]] = [x["ys"], x["yn"]]
+    comp = {}
+    for fid, (n, a, b, c) in groups.items():
+        for count, cat, reason in ((a, "software", "裡面大多是安裝檔"), (b, "hobby", "裡面大多是電子書"), (c, "creative", "裡面大多是設計、剪輯等創作檔")):
+            if count >= 2 and count >= 0.5 * max(1, n):
+                comp[fid] = (cat, reason)
+                break
+    years = _years_from(conn, sums)
+    _STATS_CACHE[path] = (sig, comp, years)
+    return comp, years
+
+
+def _years_from(conn: sqlite3.Connection, sums: dict) -> dict[int, int]:
+    """由深到淺，把裡面資料夾的加總加到上層，算出每個資料夾（連同裡面）檔案的平均年份。"""
+    import time as _time
+
+    sums = {k: list(v) for k, v in sums.items()}
+    for r in conn.execute("SELECT id, parent_id FROM folders WHERE status = 'ok' ORDER BY length(path) - length(replace(path, '/', '')) DESC, length(path) DESC"):
+        mine = sums.get(r["id"])
+        if mine and r["parent_id"]:
+            up = sums.setdefault(r["parent_id"], [0, 0])
+            up[0] += mine[0]
+            up[1] += mine[1]
+    out = {}
+    for fid, (total, n) in sums.items():
+        if n:
+            try:
+                out[fid] = _time.localtime(total / n).tm_year
+            except (OverflowError, ValueError, OSError):
+                pass
+    return out
+
+
+def _file_years(conn: sqlite3.Connection) -> dict[int, int]:
+    """每個資料夾（連同裡面的資料夾）檔案的修改日期平均是哪一年。複製過的檔案可能是複製當天，所以只在名稱看不出年份時用。"""
+    return _folder_stats(conn)[1]
 
 
 # ---- 規則 ----
@@ -133,6 +247,11 @@ def _name_hit(name: str, words: tuple[str, ...]) -> str | None:
     return None
 
 
+def _matches(pattern: str, low: str, words: set[str]) -> bool:
+    p = pattern.lower()
+    return (p in words) if p.isascii() and p.isalnum() else (p in low)
+
+
 def tokens_of(name: str) -> list[str]:
     """從資料夾名稱取出可以學的詞：中文（日文）連續兩個字以上、英文三個字母以上；純數字、日期不算。"""
     low = (name or "").lower()
@@ -143,15 +262,44 @@ def tokens_of(name: str) -> list[str]:
 
 def _composition(conn: sqlite3.Connection) -> dict[int, tuple[str, str]]:
     """依裡面的檔案判斷：大多是安裝檔、電子書、創作專案檔 → {資料夾編號: (分類, 理由)}"""
-    out: dict[int, tuple[str, str]] = {}
-    groups = ((INSTALLER_EXT, "software", "裡面大多是安裝檔"), (EBOOK_EXT, "hobby", "裡面大多是電子書"),
-              (CREATIVE_EXT, "creative", "裡面大多是設計、剪輯等創作檔"))
-    for exts, cat, reason in groups:
-        marks = ",".join("?" * len(exts))
-        for r in conn.execute(f"SELECT folder_id, COUNT(*) AS n FROM files WHERE status = 'ok' AND ext IN ({marks}) GROUP BY folder_id", exts):
-            out.setdefault(r["folder_id"], (cat, reason, r["n"]))
-    direct = {r["id"]: r["files"] for r in conn.execute("SELECT id, files FROM folders WHERE status = 'ok'")}
-    return {fid: (cat, reason) for fid, (cat, reason, n) in out.items() if n >= 2 and n >= 0.5 * max(1, direct.get(fid, 0))}
+    return _folder_stats(conn)[0]
+
+
+def rules(conn: sqlite3.Connection) -> list[dict]:
+    """我的關鍵字規則（本人定的、助理提出本人確認的），長的詞先比對。"""
+    return [dict(r) for r in conn.execute("SELECT * FROM category_rules ORDER BY length(pattern) DESC, id")]
+
+
+def rule_text(r: dict, names: dict | None = None) -> str:
+    years = ""
+    if r.get("year_from") and r.get("year_to"):
+        years = f"（{r['year_from']}–{r['year_to']} 年）"
+    elif r.get("year_from"):
+        years = f"（{r['year_from']} 年以後）"
+    elif r.get("year_to"):
+        years = f"（{r['year_to']} 年以前）"
+    return f"「{r['pattern']}」{years}"
+
+
+def _in_range(r: dict, year: int | None) -> bool:
+    return (r["year_from"] is None or year >= r["year_from"]) and (r["year_to"] is None or year <= r["year_to"])
+
+
+def _pick(cands: list[dict], year: int | None):
+    """從符合名稱的規則裡挑一條：有年份就看年份範圍；看不出年份、規則又分成好幾類 → 分不清（放進「請你確認」）。
+    回傳 (規則, 分不清時可能的分類) 或 None。"""
+    if not cands:
+        return None
+    ranged = [r for r in cands if r["year_from"] is not None or r["year_to"] is not None]
+    plain = [r for r in cands if r not in ranged]
+    if year is not None:
+        inr = [r for r in ranged if _in_range(r, year)]
+        if inr:
+            return inr[0], None
+        return (plain[0], None) if plain else None
+    if plain:
+        return plain[0], None
+    return ranged[0], list(dict.fromkeys(r["category"] for r in ranged))
 
 
 @dataclass
@@ -160,63 +308,108 @@ class RulesResult:
     by_source: dict | None = None
 
 
-def run_rules(conn: sqlite3.Connection) -> RulesResult:
-    """重新算每個資料夾「目前算哪一類」：本人 > 本人設定的上層 > 學到的規則 > 名稱規則 > 內容組成 > AI > 跟著上層。"""
-    ensure_categories(conn)
+def run_rules(conn: sqlite3.Connection, commit: bool = True) -> RulesResult:
+    """重新算每個資料夾「目前算哪一類」，由高到低：
+    本人改過的 > 本人設定的上層 > 我的關鍵字規則（這個資料夾或上層的名稱符合；有年份範圍的看年份）> 學到的習慣
+    > 內建的名稱規則 > 內容組成 > AI > 跟著上層。合併掉的分類一律換成合併後的那一類。"""
+    ensure_categories(conn, commit=commit)
+    resolve = _resolver(conn)
     keys = valid_keys(conn)
+    names = {c["key"]: display_name(c) for c in categories(conn, include_merged=True)}
     # 資料夾已經從目錄拿掉了：本人對它的設定也拿掉（避免之後別的資料夾剛好用到同一個編號）
     conn.execute("DELETE FROM category_user WHERE target LIKE 'folder:%' AND CAST(substr(target, 8) AS INTEGER) NOT IN (SELECT id FROM folders)")
     conn.execute("DELETE FROM category_user WHERE target LIKE 'file:%' AND CAST(substr(target, 6) AS INTEGER) NOT IN (SELECT id FROM files)")
     user = {int(r["target"][7:]): r["category"] for r in conn.execute("SELECT target, category FROM category_user WHERE target LIKE 'folder:%'")}
+    pending = {}
+    for r in conn.execute("SELECT * FROM category_pending"):
+        try:
+            pending[r["folder_id"]] = (json.loads(r["options"]), r["reason"])
+        except ValueError:
+            pass
     ai = {r["folder_id"]: r for r in conn.execute("SELECT * FROM category_ai")}
     learned = [(r["token"], r["category"]) for r in conn.execute("SELECT token, category FROM category_learned ORDER BY length(token) DESC")]
+    my_rules = [r for r in rules(conn) if resolve(r["category"]) in keys]
     comp = _composition(conn)
+    fyears = _file_years(conn)
     rows = conn.execute("SELECT id, parent_id, name, path, main_kind, total_files FROM folders WHERE status = 'ok' "
                         "ORDER BY root_id, length(path) - length(replace(path, '/', '')), path").fetchall()
-    eff: dict[int, tuple] = {}  # id → (category, source, confidence, reason, review, from_user)
+    eff: dict[int, dict] = {}
     out = []
     by_source: dict[str, int] = {}
     for r in rows:
         fid, parent = r["id"], eff.get(r["parent_id"])
-        res = None
+        low = r["name"].lower()
+        words = set(_WORD.findall(low))
+        # 年份：名稱裡的年份 > 上層名稱裡的年份 > 這個資料夾（連同裡面）檔案的修改日期；都沒有就是看不出來
+        own_year = name_year(r["name"]) if r["path"] else None
+        name_ctx = own_year or (parent["name_year"] if parent else None)
+        year = name_ctx or fyears.get(fid)
+        own_rules = [x for x in my_rules if r["path"] and _matches(x["pattern"], low, words)]
+        ctx_rules = own_rules + [x for x in (parent["ctx"] if parent else []) if x not in own_rules]
+        res = None  # (category, source, confidence, reason, review, from_user)
+        ranged_from = False  # 分類來自有年份範圍的規則（裡面的資料夾年份不同時不跟著）
         if fid in user:
             cat = user[fid]
-            res = (cat if cat in keys else None, "user", 1.0, "你設定的", 0, True)
-        elif parent and parent[5]:
-            res = (parent[0], "user", 1.0, "跟著你設定的上層資料夾", 0, True)
-        elif r["path"]:
-            low = r["name"].lower()
-            hit = next(((t, c) for t, c in learned if c in keys and ((t in set(_WORD.findall(low))) if t.isascii() else (t in low))), None)
+            res = (resolve(cat) if cat else None, "user", 1.0, "你設定的", 0, True)
+        elif parent and parent["from_user"]:
+            res = (parent["cat"], "user", 1.0, "跟著你設定的上層資料夾", 0, True)
+        elif fid in pending:
+            opts, reason = pending[fid]
+            opts = [resolve(o) for o in opts if resolve(o) in keys]
+            if opts:
+                res = (opts[0], "pending", 0.5, reason or "請你選一個分類", 1, False)
+        if res is None and r["path"]:
+            for cands, own in ((own_rules, True), (ctx_rules, False)):
+                got = _pick(cands, year)
+                if not got:
+                    continue
+                rule, unsure = got
+                who = "你定的規則" if rule["source"] == "user" else "助理加的規則（你確認過）"
+                where = "名稱有" if own else "上層資料夾名稱有"
+                if unsure and len(unsure) > 1:
+                    opts = "或".join(f"「{names.get(resolve(c), c)}」" for c in unsure)
+                    res = (resolve(rule["category"]), "my_rule", 0.5, f"{where}「{rule['pattern']}」，但看不出年份：可能是{opts}", 1, False)
+                elif unsure:
+                    res = (resolve(rule["category"]), "my_rule", 0.5, f"{who}：{where}{rule_text(rule)}，但看不出年份", 1, False)
+                else:
+                    res = (resolve(rule["category"]), "my_rule", 0.95, f"{who}：{where}{rule_text(rule)}", 0, False)
+                ranged_from = rule["year_from"] is not None or rule["year_to"] is not None
+                break
+        if res is None and r["path"]:
+            hit = next(((t, c) for t, c in learned if resolve(c) in keys and ((t in words) if t.isascii() else (t in low))), None)
             if hit:
-                res = (hit[1], "learned", 0.9, f"你之前把名稱有「{hit[0]}」的資料夾分到這一類", 0, False)
+                res = (resolve(hit[1]), "learned", 0.9, f"你之前把名稱有「{hit[0]}」的資料夾分到這一類", 0, False)
             else:
-                for cat, words in KEYWORDS.items():
-                    w = _name_hit(r["name"], words)
-                    if w:
-                        res = (cat, "rule", 0.8, f"資料夾名稱有「{w}」", 0, False)
+                for cat, kw in KEYWORDS.items():
+                    w = _name_hit(r["name"], kw)
+                    if w and resolve(cat) in keys:
+                        res = (resolve(cat), "rule", 0.8, f"資料夾名稱有「{w}」", 0, False)
                         break
-            if res is None and fid in comp:
+            if res is None and fid in comp and resolve(comp[fid][0]) in keys:
                 cat, reason = comp[fid]
-                res = (cat, "rule", 0.7, reason, 0, False)
-            if res is None and r["main_kind"] == "audio":
-                res = ("hobby", "rule", 0.7, "裡面大多是音樂", 0, False)
-            if res is None and fid in ai and ai[fid]["category"] in keys:
+                res = (resolve(cat), "rule", 0.7, reason, 0, False)
+            if res is None and r["main_kind"] == "audio" and resolve("hobby") in keys:
+                res = (resolve("hobby"), "rule", 0.7, "裡面大多是音樂", 0, False)
+            if res is None and fid in ai and resolve(ai[fid]["category"]) in keys:
                 a = ai[fid]
-                res = (a["category"], "ai", a["confidence"], a["reason"] or "AI 建議", 1 if a["confidence"] < REVIEW_BELOW else 0, False)
-            if res is None and parent and parent[0]:
-                res = (parent[0], "inherit", parent[2], "跟著上層資料夾", 0, False)
-        if res is None:
-            continue
-        eff[fid] = res
-        if res[0] or res[5]:  # 本人設定「不分類」也記下來（AI 就不會再去問）
-            out.append((fid, res[0], res[1], res[2], res[3], res[4]))
+                res = (resolve(a["category"]), "ai", a["confidence"], a["reason"] or "AI 建議", 1 if a["confidence"] < REVIEW_BELOW else 0, False)
+            # 上層的分類來自有年份範圍的規則、但這個資料夾的年份不在範圍裡（上面已經比對過）：不跟著上層
+            if res is None and parent and parent["cat"] and not (parent["ranged"] and ctx_rules and year is not None):
+                res = (parent["cat"], "inherit", parent["conf"], "跟著上層資料夾", 0, False)
+                ranged_from = parent["ranged"]
+        e = {"cat": res[0] if res else None, "conf": res[2] if res else 0, "from_user": bool(res and res[5]), "ranged": ranged_from,
+             "year": year, "name_year": name_ctx, "ctx": ctx_rules}
+        eff[fid] = e
+        if res and (res[0] or res[5]):  # 本人設定「不分類」也記下來（AI 就不會再去問）
+            out.append((fid, res[0], res[1], res[2], res[3], res[4], year))
             if res[0]:
                 by_source[res[1]] = by_source.get(res[1], 0) + 1
     conn.execute("DELETE FROM folder_category")
     for start in range(0, len(out), 5000):
-        conn.executemany("INSERT INTO folder_category (folder_id, category, source, confidence, reason, review) VALUES (?, ?, ?, ?, ?, ?)",
+        conn.executemany("INSERT INTO folder_category (folder_id, category, source, confidence, reason, review, year) VALUES (?, ?, ?, ?, ?, ?, ?)",
                          out[start:start + 5000])
-    conn.commit()
+    if commit:
+        conn.commit()
     return RulesResult(folders=sum(by_source.values()), by_source=by_source)
 
 
@@ -230,6 +423,8 @@ def set_user(conn: sqlite3.Connection, folder: int | None = None, file: int | No
     if category not in (None, "auto") and category not in valid_keys(conn):
         raise ValueError("沒有這個分類")
     target = f"folder:{int(folder)}" if folder is not None else f"file:{int(file)}"
+    if folder is not None:
+        conn.execute("DELETE FROM category_pending WHERE folder_id = ?", (int(folder),))
     if category == "auto":
         conn.execute("DELETE FROM category_user WHERE target = ?", (target,))
     else:
@@ -291,6 +486,7 @@ def accept(conn: sqlite3.Connection, folders: list[int]) -> int:
         if r is not None:
             conn.execute("INSERT OR REPLACE INTO category_user (target, category, created_at) VALUES (?, ?, ?)",
                          (f"folder:{int(fid)}", r["category"], db.now_iso()))
+            conn.execute("DELETE FROM category_pending WHERE folder_id = ?", (int(fid),))
             n += 1
     conn.commit()
     run_rules(conn)
@@ -315,7 +511,7 @@ def of(conn: sqlite3.Connection, folder: int | None = None, file: int | None = N
     if r is None:
         return {"category": None, "source": "user" if user else None, "user": user}
     return {"category": r["category"], "source": r["source"], "confidence": r["confidence"], "reason": r["reason"],
-            "review": bool(r["review"]), "user": user}
+            "review": bool(r["review"]), "user": user, "year": r["year"]}
 
 
 def overview(conn: sqlite3.Connection) -> list[dict]:
@@ -338,7 +534,8 @@ def overview(conn: sqlite3.Connection) -> list[dict]:
 
 def review_list(conn: sqlite3.Connection, limit: int = 200) -> list[dict]:
     rows = conn.execute(
-        "SELECT c.folder_id, c.category, c.confidence, c.reason, d.name, d.path, d.root_id, d.total_files, d.total_bytes, r.name AS root "
+        "SELECT c.folder_id, c.category, c.confidence, c.reason, c.source, c.year, d.name, d.path, d.root_id, d.total_files, d.total_bytes, "
+        "r.name AS root "
         "FROM folder_category c JOIN folders d ON d.id = c.folder_id JOIN roots r ON r.id = d.root_id "
         "WHERE c.review = 1 AND d.status = 'ok' ORDER BY d.total_bytes DESC LIMIT ?", (limit,)).fetchall()
     return [dict(r) for r in rows]
@@ -370,8 +567,8 @@ def ai_candidates(conn: sqlite3.Connection, limit: int | None = None) -> list[sq
         "SELECT d.id, d.parent_id, d.name, d.path, d.root_id, d.files, d.total_files, d.total_bytes, r.name AS root "
         "FROM folders d JOIN roots r ON r.id = d.root_id LEFT JOIN folder_category c ON c.folder_id = d.id "
         "LEFT JOIN category_ai a ON a.folder_id = d.id "
-        "WHERE d.status = 'ok' AND d.path != '' AND c.folder_id IS NULL AND d.total_files > 0 "
-        "AND (a.folder_id IS NULL OR a.sig != d.name || '|' || d.total_files) "
+        "WHERE d.status = 'ok' AND d.path != '' AND d.total_files > 0 AND (c.folder_id IS NULL OR (c.source = 'ai' AND a.stale = 1)) "
+        "AND (a.folder_id IS NULL OR a.stale = 1 OR a.sig != d.name || '|' || d.total_files) "
         "ORDER BY length(d.path) - length(replace(d.path, '/', '')), d.total_bytes DESC").fetchall()
     return rows[:limit] if limit else rows
 
@@ -380,12 +577,15 @@ def ai_todo(conn: sqlite3.Connection) -> int:
     """還有幾個資料夾等 AI 看（只算數量）。"""
     return conn.execute(
         "SELECT COUNT(*) FROM folders d LEFT JOIN folder_category c ON c.folder_id = d.id LEFT JOIN category_ai a ON a.folder_id = d.id "
-        "WHERE d.status = 'ok' AND d.path != '' AND c.folder_id IS NULL AND d.total_files > 0 "
-        "AND (a.folder_id IS NULL OR a.sig != d.name || '|' || d.total_files)").fetchone()[0]
+        "WHERE d.status = 'ok' AND d.path != '' AND d.total_files > 0 AND (c.folder_id IS NULL OR (c.source = 'ai' AND a.stale = 1)) "
+        "AND (a.folder_id IS NULL OR a.stale = 1 OR a.sig != d.name || '|' || d.total_files)").fetchone()[0]
 
 
 def _prompt(conn: sqlite3.Connection, folder: sqlite3.Row, keys: list[tuple[str, str]], read_text: bool) -> str:
     from .textindex import body
+
+    desc = {c["key"]: c["description"] for c in categories(conn) if c["description"]}
+    prof = profile(conn)
 
     kinds = conn.execute("SELECT kind, COUNT(*) AS n FROM files f JOIN folders d ON d.id = f.folder_id "
                          "WHERE f.status = 'ok' AND f.root_id = ? AND (d.id = ? OR d.path LIKE ? ESCAPE '\\') GROUP BY kind ORDER BY n DESC",
@@ -394,7 +594,7 @@ def _prompt(conn: sqlite3.Connection, folder: sqlite3.Row, keys: list[tuple[str,
     subs = [r["name"] for r in conn.execute("SELECT name FROM folders WHERE parent_id = ? AND status = 'ok' ORDER BY total_bytes DESC LIMIT 15", (folder["id"],))]
     lines = [
         "你是檔案整理助手。根據下面這個資料夾的資訊，判斷它屬於哪一個分類。只能從清單裡選；真的看不出來就回答 unknown。",
-        "分類清單：" + "、".join(f"{k}（{n}）" for k, n in keys),
+        "分類清單：\n" + "\n".join(f"- {k}：{n}" + (f"（{desc.get(k)}）" if desc.get(k) else "") for k, n in keys),
         f"資料夾名稱：{folder['name']}",
         f"位置：{folder['root']} / {folder['path']}",
         "檔案類型：" + "、".join(f"{r['kind']} {r['n']}" for r in kinds),
@@ -414,6 +614,13 @@ def _prompt(conn: sqlite3.Connection, folder: sqlite3.Row, keys: list[tuple[str,
                             "WHERE u.category IS NOT NULL ORDER BY u.created_at DESC LIMIT 10").fetchall()
     if examples:
         lines.append("這個人之前的分類習慣（請參考）：" + "；".join(f"「{e['name']}」→ {e['category']}" for e in examples))
+    if prof.get("identity"):
+        lines.append(f"這個人的身分與習慣：{prof['identity'][:300]}")
+    if prof.get("teach_start_year"):
+        lines.append(f"他大約從 {prof['teach_start_year']} 年開始工作／教書；這之前的資料比較可能是他自己讀書時的。")
+    year = name_year(folder["name"])
+    if year:
+        lines.append(f"資料夾名稱裡的年份：{year}")
     lines.append("請回答 JSON：category（分類的英文代號）、confidence（0 到 1 的信心）、reason（一句中文理由，二十個字以內）。")
     return "\n".join(lines)
 
@@ -473,8 +680,8 @@ def run_ai(conn: sqlite3.Connection, llm, read_text: bool = True, progress=None,
             conf = 0.0
         reason = str(out.get("reason") or "")[:60] if isinstance(out, dict) else ""
         cat = cat if cat in valid else None
-        conn.execute("INSERT OR REPLACE INTO category_ai (folder_id, category, confidence, reason, sig, model, created_at) "
-                     "VALUES (?, ?, ?, ?, ?, ?, ?)", (f["id"], cat, conf, reason, f"{f['name']}|{f['total_files']}",
+        conn.execute("INSERT OR REPLACE INTO category_ai (folder_id, category, confidence, reason, sig, model, created_at, stale) "
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, 0)", (f["id"], cat, conf, reason, f"{f['name']}|{f['total_files']}",
                                                      getattr(llm, "model", "") or "", db.now_iso()))
         if cat:
             decided.add(f["id"])
@@ -491,6 +698,246 @@ def run_ai(conn: sqlite3.Connection, llm, read_text: bool = True, progress=None,
     return result
 
 
+# ---- 本人的身分與習慣（給助理和 AI 參考；只存在這台電腦的目錄裡） ----
+
+PROFILE_KEY = "category_profile"
+
+
+def profile(conn: sqlite3.Connection) -> dict:
+    r = conn.execute("SELECT value FROM settings_kv WHERE key = ?", (PROFILE_KEY,)).fetchone()
+    try:
+        return json.loads(r["value"]) if r else {}
+    except ValueError:
+        return {}
+
+
+def save_profile(conn: sqlite3.Connection, identity: str | None = None, teach_start_year=None, notes: str | None = None) -> dict:
+    p = profile(conn)
+    if identity is not None:
+        p["identity"] = str(identity).strip()[:500]
+    if teach_start_year not in (None, ""):
+        try:
+            y = int(teach_start_year)
+            if 1950 <= y <= 2100:
+                p["teach_start_year"] = y
+        except (TypeError, ValueError):
+            pass
+    if notes is not None:
+        p["notes"] = str(notes).strip()[:500]
+    conn.execute("INSERT OR REPLACE INTO settings_kv (key, value) VALUES (?, ?)", (PROFILE_KEY, json.dumps(p, ensure_ascii=False)))
+    conn.commit()
+    return p
+
+
+# ---- 整理計畫：一連串的小步驟（新增、改名、說明、合併、拆分、規則、替資料夾改分類），先預覽，本人確認才套用，可以復原 ----
+
+OPS = ("add_category", "rename", "describe", "merge", "split", "rule", "remove_rule", "set_folder", "delete_category")
+SNAP_TABLES = ("categories", "category_user", "category_rules", "category_learned", "category_pending")
+MAX_OPS = 100
+
+
+class PlanError(ValueError):
+    """計畫裡有一步看不懂，訊息是給使用者看的。"""
+
+
+def snapshot(conn: sqlite3.Connection) -> dict:
+    """分類相關的設定全部記下來（套用前用，復原時照這份還原）。"""
+    return {t: [dict(r) for r in conn.execute(f"SELECT * FROM {t}")] for t in SNAP_TABLES}
+
+
+def restore(conn: sqlite3.Connection, snap: dict) -> None:
+    for t in SNAP_TABLES:
+        conn.execute(f"DELETE FROM {t}")
+        for row in snap.get(t) or []:
+            cols = list(row)
+            conn.execute(f"INSERT INTO {t} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})", [row[c] for c in cols])
+    conn.commit()
+    run_rules(conn)
+
+
+class _Refs:
+    """計畫裡提到分類可以用代號、目前的名稱，或這個計畫裡新增的名稱。"""
+
+    def __init__(self, conn):
+        self.conn = conn
+        self.reload()
+
+    def reload(self):
+        self.cats = categories(self.conn, include_merged=True)
+
+    def find(self, ref) -> str | None:
+        if ref is None:
+            return None
+        ref = str(ref).strip()
+        low = ref.lower()
+        for c in self.cats:
+            if c["key"] == ref:
+                return c["key"]
+        for c in self.cats:
+            if display_name(c).lower() == low or NAMES.get(c["key"], "").lower() == low:
+                return c["merged_into"] and _resolver(self.conn)(c["key"]) or c["key"]
+        return None
+
+    def need(self, ref, create: bool = False, description: str = "") -> str:
+        key = self.find(ref)
+        if key:
+            return key
+        if create and ref and str(ref).strip():
+            key = add_category(self.conn, str(ref), description, commit=False)
+            self.reload()
+            return key
+        raise PlanError(f"沒有「{ref}」這個分類")
+
+
+def _folder_ids(conn, op) -> list[int]:
+    ids = [int(x) for x in (op.get("folders") or []) if str(x).isdigit()][:5000]
+    pattern = str(op.get("pattern") or "").strip()
+    if pattern:
+        low = pattern.lower()
+        for r in conn.execute("SELECT id, name FROM folders WHERE status = 'ok' AND path != '' AND instr(lower(name), ?) > 0 LIMIT 5000", (low,)):
+            ids.append(r["id"])
+    return list(dict.fromkeys(ids))
+
+
+def apply_ops(conn: sqlite3.Connection, ops: list[dict], source: str = "user") -> list[dict]:
+    """依序做每一步（不 commit，呼叫的人決定要不要保留）。回傳每一步的結果：{op, ok, text}。"""
+    refs = _Refs(conn)
+    out = []
+    for op in (ops or [])[:MAX_OPS]:
+        kind = op.get("op")
+        try:
+            if kind not in OPS:
+                raise PlanError("看不懂這一步")
+            if kind == "add_category":
+                name = str(op.get("name") or "").strip()
+                key = refs.find(name)
+                if key:  # 已經有了：只更新說明
+                    if op.get("description"):
+                        conn.execute("UPDATE categories SET description = ?, merged_into = NULL WHERE key = ?", (str(op["description"])[:300], key))
+                else:
+                    key = refs.need(name, create=True, description=str(op.get("description") or ""))
+                if op.get("examples"):
+                    conn.execute("UPDATE categories SET examples = ? WHERE key = ?", (json.dumps([str(x)[:60] for x in op["examples"]][:6], ensure_ascii=False), key))
+                text = f"新增分類「{name}」"
+            elif kind == "rename":
+                key = refs.need(op.get("category"))
+                rename_category(conn, key, op.get("name"), commit=False)
+                text = f"改名為「{op.get('name')}」"
+            elif kind == "describe":
+                key = refs.need(op.get("category"))
+                conn.execute("UPDATE categories SET description = ? WHERE key = ?", (str(op.get("description") or "")[:300] or None, key))
+                if op.get("examples") is not None:
+                    conn.execute("UPDATE categories SET examples = ? WHERE key = ?", (json.dumps([str(x)[:60] for x in op["examples"]][:6], ensure_ascii=False), key))
+                text = "更新說明"
+            elif kind == "merge":
+                into = refs.need(op.get("into"), create=True)
+                froms = [refs.need(f) for f in (op.get("from") or [])]
+                for f in froms:
+                    if f == into:
+                        continue
+                    conn.execute("UPDATE categories SET merged_into = ? WHERE key = ?", (into, f))
+                    for table in ("category_user", "category_learned", "category_rules"):  # 本人的設定跟著到合併後的那一類
+                        conn.execute(f"UPDATE {table} SET category = ? WHERE category = ?", (into, f))
+                text = "合併"
+            elif kind == "split":
+                src = refs.need(op.get("from"))
+                targets = [refs.need(t, create=True) for t in (op.get("into") or [])]
+                targets = [t for t in targets if t != src]
+                if len(targets) < 2:
+                    raise PlanError("拆分要拆成至少兩類")
+                conn.execute("UPDATE categories SET merged_into = ? WHERE key = ?", (targets[0], src))
+                # 本人原本手動設成這一類的：不知道該跟到哪一類，放進「請你確認」讓本人選（不自己猜）
+                moved = conn.execute("SELECT target FROM category_user WHERE category = ? AND target LIKE 'folder:%'", (src,)).fetchall()
+                name = display_name(next(c for c in refs.cats if c["key"] == src))
+                for row in moved:
+                    conn.execute("INSERT OR REPLACE INTO category_pending (folder_id, options, reason) VALUES (?, ?, ?)",
+                                 (int(row["target"][7:]), json.dumps(targets), f"你原本把它設成「{name}」，這一類拆開了，請選一個"))
+                conn.execute("DELETE FROM category_user WHERE category = ? AND target LIKE 'folder:%'", (src,))
+                conn.execute("UPDATE category_learned SET category = ? WHERE category = ?", (targets[0], src))
+                text = f"拆分「{name}」"
+            elif kind == "rule":
+                pattern = str(op.get("pattern") or "").strip()[:40]
+                if len(pattern) < 2:
+                    raise PlanError("關鍵字太短")
+                key = refs.need(op.get("category"), create=bool(op.get("create")))
+                yf = int(op["year_from"]) if str(op.get("year_from") or "").isdigit() else None
+                yt = int(op["year_to"]) if str(op.get("year_to") or "").isdigit() else None
+                conn.execute("DELETE FROM category_rules WHERE pattern = ? AND year_from IS ? AND year_to IS ?", (pattern, yf, yt))
+                conn.execute("INSERT INTO category_rules (pattern, category, year_from, year_to, source, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                             (pattern, key, yf, yt, op.get("source") or source, db.now_iso()))
+                text = f"規則{rule_text({'pattern': pattern, 'year_from': yf, 'year_to': yt})}"
+            elif kind == "remove_rule":
+                if op.get("id"):
+                    conn.execute("DELETE FROM category_rules WHERE id = ?", (int(op["id"]),))
+                else:
+                    conn.execute("DELETE FROM category_rules WHERE pattern = ?", (str(op.get("pattern") or ""),))
+                text = "拿掉規則"
+            elif kind == "set_folder":
+                cat = op.get("category")
+                key = None if cat in (None, "none") else refs.need(cat, create=bool(op.get("create")))
+                ids = _folder_ids(conn, op)
+                for fid in ids:
+                    conn.execute("INSERT OR REPLACE INTO category_user (target, category, created_at) VALUES (?, ?, ?)",
+                                 (f"folder:{fid}", key, db.now_iso()))
+                    conn.execute("DELETE FROM category_pending WHERE folder_id = ?", (fid,))
+                text = f"{len(ids)} 個資料夾"
+            else:  # delete_category
+                delete_category(conn, refs.need(op.get("category")), commit=False)
+                text = "刪除分類"
+            refs.reload()
+            out.append({"op": kind, "ok": True, "text": text})
+        except (PlanError, ValueError) as exc:
+            out.append({"op": kind, "ok": False, "text": str(exc)})
+    return out
+
+
+def _effective(conn) -> dict[int, str | None]:
+    return {r["folder_id"]: r["category"] for r in conn.execute("SELECT folder_id, category FROM folder_category")}
+
+
+def preview(conn: sqlite3.Connection, ops: list[dict], source: str = "user", examples: int = 5) -> dict:
+    """先在目錄裡試做一次再全部取消，告訴本人：每一步做不做得到、每一類會有幾個資料夾、哪些資料夾會換分類（附例子）。"""
+    ensure_categories(conn)
+    conn.commit()
+    before = _effective(conn)
+    before_counts = {c["key"]: c for c in overview(conn)}
+    conn.execute("SAVEPOINT plan_preview")
+    try:
+        steps = apply_ops(conn, ops, source)
+        run_rules(conn, commit=False)
+        after = _effective(conn)
+        after_cats = overview(conn)
+        names = {c["key"]: display_name(c) for c in categories(conn, include_merged=True)}
+        review = review_count(conn)
+    finally:
+        conn.execute("ROLLBACK TO plan_preview")
+        conn.execute("RELEASE plan_preview")
+    rows = {r["id"]: r for r in conn.execute("SELECT id, name, path, root_id FROM folders WHERE status = 'ok'")}
+    moves: dict[tuple, list] = {}
+    for fid in set(before) | set(after):
+        a, b = before.get(fid), after.get(fid)
+        if a != b and fid in rows:
+            moves.setdefault((a, b), []).append(fid)
+    changes = sorted(({"from": a, "to": b, "from_name": names.get(a) or (NAMES.get(a) if a else None),
+                       "to_name": names.get(b) or (NAMES.get(b) if b else None), "count": len(ids),
+                       "examples": [{"id": i, "name": rows[i]["name"], "path": rows[i]["path"], "root_id": rows[i]["root_id"]}
+                                    for i in sorted(ids, key=lambda i: rows[i]["path"])[:examples]]}
+                      for (a, b), ids in moves.items()), key=lambda x: -x["count"])
+    return {"steps": steps, "changed": sum(x["count"] for x in changes), "changes": changes[:30], "review": review,
+            "categories": [{"key": c["key"], "name": display_name(c), "description": c["description"], "folders": c["folders"], "top": c["top"],
+                            "before": (before_counts.get(c["key"]) or {}).get("folders", 0), "new": c["key"] not in before_counts}
+                           for c in after_cats],
+            "removed": [{"key": k, "name": display_name(v), "folders": v["folders"]} for k, v in before_counts.items()
+                        if k not in {c["key"] for c in after_cats}]}
+
+
+def mark_ai_stale(conn: sqlite3.Connection) -> int:
+    """分類的定義改了：AI 之前的建議照新的定義重新判斷（本人改過的不動）。"""
+    n = conn.execute("UPDATE category_ai SET stale = 1 WHERE stale = 0").rowcount
+    conn.commit()
+    return n
+
+
 def describe_rules(r: RulesResult) -> str:
     s = r.by_source or {}
     parts = [f"分好 {r.folders:,} 個資料夾"]
@@ -500,6 +947,8 @@ def describe_rules(r: RulesResult) -> str:
         parts.append(f"跟著上層 {s['inherit']:,}")
     if s.get("learned"):
         parts.append(f"照你的習慣 {s['learned']:,}")
+    if s.get("my_rule"):
+        parts.append(f"照你定的規則 {s['my_rule']:,}")
     if s.get("ai"):
         parts.append(f"AI {s['ai']:,}")
     if s.get("user"):

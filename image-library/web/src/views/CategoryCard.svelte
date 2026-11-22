@@ -29,7 +29,8 @@
     ...catalog.categories.map((c) => ({ value: c.key, label: categoryName(c, t) })),
     { value: "none", label: t("cat.none") },
   ]);
-  const SOURCE = { user: "cat.src.user", rule: "cat.src.rule", learned: "cat.src.learned", ai: "cat.src.ai", inherit: "cat.src.inherit" };
+  const SOURCE = { user: "cat.src.user", rule: "cat.src.rule", learned: "cat.src.learned", ai: "cat.src.ai", inherit: "cat.src.inherit",
+    my_rule: "cat.src.myRule", pending: "cat.src.pending" };
   const note = $derived(!cur ? "" : cur.from_folder && !cur.user ? t("cat.fromFolder")
     : cur.source ? [t(SOURCE[cur.source] || "cat.src.rule"), cur.source === "user" ? "" : cur.reason].filter(Boolean).join(" · ") : t("cat.undecided"));
 

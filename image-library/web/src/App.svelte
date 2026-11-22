@@ -10,6 +10,7 @@
   import ClassifyConsent from "./components/ClassifyConsent.svelte";
   import CategoryPrompt from "./components/CategoryPrompt.svelte";
   import CategoryReview from "./pages/CategoryReview.svelte";
+  import Insights from "./pages/Insights.svelte";
   import { catalog as catalogState, catalogTotals } from "./data/catalog.svelte.js";
   import { categoryName } from "./data/category.svelte.js";
   import AiSetup from "./components/AiSetup.svelte";
@@ -86,6 +87,7 @@
         : page === "duplicates" ? t("nav.duplicates")
           : page === "kind" ? t(`kind.${seg[1]}`)
           : page === "label" ? t(`label.${seg[1]}`)
+          : page === "insights" ? t("nav.insights")
           : page === "category" ? (seg[1] === "review" ? t("cat.review.title")
             : categoryName(catalogState.categories.find((c) => c.key === seg[1]) || { key: seg[1] }, t))
           : page === "pending" ? t("nav.pending")
@@ -355,6 +357,8 @@
               <Browse scope={seg[1] ? { type: "folder", root: Number(seg[1]), path: route.query.path || "" } : { type: "roots" }} />
             {:else if page === "label" && seg[1]}
               <Browse scope={{ type: "label", label: seg[1] }} />
+            {:else if page === "insights"}
+              <Insights />
             {:else if page === "category" && seg[1] === "review"}
               <CategoryReview />
             {:else if page === "category" && seg[1]}

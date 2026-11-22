@@ -1,4 +1,5 @@
 <script>
+  import { composing, submitEnter } from "../lib/ime.js";
   /**
    * 警示視窗：需要立刻處理的關鍵資訊，最多三個按鈕。
    * 標題要具體（「要把 128 個項目移到垃圾桶嗎？」），取消一律叫「取消」；按鈕順序自動依規範排列，Escape 等同取消。
@@ -32,7 +33,7 @@
     if (e.key === "Escape") {
       const cancel = list.find((a) => a.role === "cancel");
       if (cancel && !cancel.disabled) { e.preventDefault(); cancel.onPress?.(); }
-    } else if (e.key === "Enter" && textField && e.target.closest?.("input")) {
+    } else if (e.key === "Enter" && !composing(e) && textField && e.target.closest?.("input")) {
       const def = list.find((a) => a.role === "default");
       if (def && !def.disabled) { e.preventDefault(); def.onPress?.(); }
     }

@@ -1,4 +1,5 @@
 <script>
+  import { composing, submitEnter } from "../lib/ime.js";
   import Modal from "./Modal.svelte";
   import Icon from "./Icon.svelte";
   import { api, thumbUrl } from "../lib/api.js";
@@ -40,7 +41,7 @@
   <Modal title={d.props.title} onclose={() => closeDialog(null)}>
     <!-- svelte-ignore a11y_autofocus -->
     <input class="input" bind:value={d.props.value} placeholder={d.props.placeholder || ""} autofocus
-      onkeydown={(e) => e.key === "Enter" && closeDialog(d.props.value)} />
+      onkeydown={(e) => submitEnter(e) && closeDialog(d.props.value)} />
     {#snippet actions()}
       <button class="btn ghost" onclick={() => closeDialog(null)}>取消</button>
       <button class="btn" onclick={() => closeDialog(d.props.value)}>{d.props.ok || "確定"}</button>
@@ -69,7 +70,7 @@
   <Modal title="加到相簿（{d.props.count} 個項目）" onclose={() => closeDialog(null)}>
     <div class="new">
       <input class="input" bind:value={newName} placeholder="新相簿名稱"
-        onkeydown={(e) => e.key === "Enter" && newName.trim() && closeDialog({ name: newName.trim() })} />
+        onkeydown={(e) => submitEnter(e) && newName.trim() && closeDialog({ name: newName.trim() })} />
       <button class="btn" disabled={!newName.trim()} onclick={() => closeDialog({ name: newName.trim() })}>
         <Icon path={mdiPlus} size={18} />建立
       </button>

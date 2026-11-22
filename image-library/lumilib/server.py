@@ -2004,7 +2004,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                 try:
                     for ev in ask(c, make_llm(cfg, client_factory()), question, history,
                                   str(body.get("context") or "")[:300], str(body.get("lang") or "zh-Hant"),
-                                  level=cfg.assistant_permission, cloud_content=bool(cfg.assistant_cloud_content)):
+                                  level=cfg.assistant_permission, cloud_content=bool(cfg.assistant_cloud_content), chat_id=chat_id):
                         kind = ev.get("type")
                         if kind == "token":
                             text.append(ev["text"])
@@ -2983,6 +2983,106 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         c = conn()
         try:
             return {"accepted": classify.accept(c, [int(x) for x in body.get("folders") or []][:MAX_IDS])}
+        finally:
+            c.close()
+
+    # ---- 檔案分析與關鍵字雲 ----
+    @app.get("/api/analysis")
+    def analysis_api(limit: int = 150):
+        """類型、年份分布、最常出現的詞（只讀目錄資料庫）。"""
+        from . import analysis
+
+        c = conn()
+        try:
+            return {**analysis.file_stats(c), **analysis.keywords(c, max(10, min(limit, 300)))}
+        finally:
+            c.close()
+
+    @app.post("/api/analysis/run")
+    def analysis_run(body: dict = Body(default={})):
+        """重新找出常見的詞（背景工作）。"""
+        return jobs().submit("keywords")
+
+    @app.get("/api/analysis/word")
+    def analysis_word(w: str):
+        """按一個詞：出現在哪些資料夾、哪些檔案，這些資料夾現在分在哪些類。"""
+        from . import analysis
+
+        if not w.strip():
+            raise HTTPException(400, "請指定一個詞")
+        c = conn()
+        try:
+            return analysis.word_detail(c, w.strip()[:40])
+        finally:
+            c.close()
+
+    @app.post("/api/category/rule/propose")
+    def category_rule_propose(body: dict = Body(...)):
+        """關鍵字雲按「分到某分類」：先算出影響範圍（幾個資料夾、例子），還沒套用；本人確認後用 actions/run 套用，可以復原。"""
+        from .actions import ActionError, propose
+
+        op = {"op": "rule", "pattern": str(body.get("pattern") or "").strip()[:40], "category": body.get("category"),
+              "year_from": body.get("year_from"), "year_to": body.get("year_to")}
+        c = conn()
+        try:
+            return propose(c, "category_rule", {"ops": [op], "source": "user"}, cfg.assistant_permission)
+        except ActionError as e:
+            raise HTTPException(400, str(e)) from e
+        finally:
+            c.close()
+
+    @app.get("/api/category/rules")
+    def category_rules_api():
+        """我的關鍵字規則（本人定的、助理加的），每條影響幾個資料夾。"""
+        from . import classify
+
+        c = conn()
+        try:
+            out = []
+            for r in classify.rules(c):
+                n = c.execute("SELECT COUNT(*) FROM folder_category WHERE source IN ('my_rule', 'inherit') AND category = ? AND reason LIKE ?",
+                              (r["category"], f"%「{r['pattern']}」%")).fetchone()[0]
+                n += c.execute("SELECT COUNT(*) FROM folder_category c JOIN folders d ON d.id = c.folder_id JOIN folder_category p ON p.folder_id = d.parent_id "
+                               "WHERE c.source = 'inherit' AND c.category = ? AND p.source = 'my_rule' AND p.category = ? AND p.reason LIKE ?",
+                               (r["category"], r["category"], f"%「{r['pattern']}」%")).fetchone()[0]
+                out.append({**r, "folders": n})
+            return {"rules": out}
+        finally:
+            c.close()
+
+    @app.post("/api/category/rules/delete")
+    def category_rules_delete(body: dict = Body(...)):
+        """刪除一條規則（記在助理做過的動作裡，可以復原）。"""
+        from .actions import ActionError, propose, run
+
+        c = conn()
+        try:
+            a = propose(c, "category_rule", {"ops": [{"op": "remove_rule", "id": int(body.get("id") or 0)}], "source": "user"},
+                        cfg.assistant_permission)
+            return run(c, a["id"], cfg.assistant_permission)
+        except ActionError as e:
+            raise HTTPException(400, str(e)) from e
+        finally:
+            c.close()
+
+    @app.get("/api/category/profile")
+    def category_profile():
+        from . import classify
+
+        c = conn()
+        try:
+            return classify.profile(c)
+        finally:
+            c.close()
+
+    @app.post("/api/category/profile")
+    def category_profile_save(body: dict = Body(...)):
+        """你的身分與習慣（助理與 AI 分類參考；只存在這台電腦）。"""
+        from . import classify
+
+        c = conn()
+        try:
+            return classify.save_profile(c, body.get("identity"), body.get("teach_start_year"), body.get("notes"))
         finally:
             c.close()
 

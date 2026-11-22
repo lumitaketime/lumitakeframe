@@ -1,4 +1,5 @@
 <script>
+  import { composing, submitEnter } from "../lib/ime.js";
   /** 搜尋欄：佔位文字說明可以搜尋什麼；可帶篩選標籤（tokens）與範圍（scopes）。glass 用在工具列上。 */
   import Icon from "./Icon.svelte";
   import SegmentedControl from "./SegmentedControl.svelte";
@@ -22,7 +23,7 @@
       </span>
     {/each}
     <input bind:this={input} type="search" class={TYPE[platform].body} bind:value placeholder={tokens.length ? "" : ph} aria-label={ph}
-      oninput={() => onchange?.(value)} onkeydown={(e) => { if (e.key === "Enter") onsubmit?.(value); }} />
+      oninput={() => onchange?.(value)} onkeydown={(e) => { if (submitEnter(e, { shift: true })) onsubmit?.(value); }} />
     {#if value}
       <button type="button" class="lg-field-clear" aria-label={t("common.clearSearch")} onclick={(e) => { e.stopPropagation(); value = ""; onchange?.(""); input?.focus(); }}>
         <span><Icon name="xmark" size={9} weight="bold" /></span>

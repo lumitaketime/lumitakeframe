@@ -11,6 +11,12 @@
 權限（設定 → AI 助理）：
 - 3：只在 Re'memor 裡整理（顏色標籤、智慧資料夾、待刪除標記），不碰硬碟。
 - 4：再加上搬移、改名、移到待刪除資料夾（會改變硬碟上檔案的位置或名稱，但不會刪除或修改內容）。
+
+分類的變更（只動 Re'memor 目錄裡的分類，不碰硬碟）也走同一套「提案 → 確認 → 可復原」：
+- category_rule：本人在關鍵字雲按一個詞「分到某分類」（本人自己在介面上做的，不看助理的權限）。
+- category_plan：助理跟本人討論出來的整理計畫（新的分類清單、合併、拆分、規則、替資料夾改分類）；
+  同一段對話裡的修改都累積在同一張計畫卡上，本人勾選、按確認才套用。
+  套用前記下所有分類設定，復原時照那一份還原。
 """
 
 from __future__ import annotations
@@ -25,7 +31,8 @@ from . import db
 
 PENDING_DIR = "Re'memor 待刪除"  # 「移到待刪除資料夾」放在該來源最上層的這個資料夾裡，保留原本的資料夾結構
 MAX_ITEMS = 200
-LEVEL = {"label": 3, "smart_folder": 3, "mark_delete": 3, "move": 4, "rename": 4, "to_pending": 4}
+LEVEL = {"label": 3, "smart_folder": 3, "mark_delete": 3, "move": 4, "rename": 4, "to_pending": 4, "category_rule": 1, "category_plan": 3}
+CATEGORY_KINDS = ("category_rule", "category_plan")
 FILE_OPS = ("move", "rename", "to_pending")
 
 _lock = threading.Lock()
@@ -97,6 +104,17 @@ def propose(conn: sqlite3.Connection, kind: str, args: dict, level: int, questio
         raise ActionError("不認得的動作")
     if level < LEVEL[kind]:
         raise ActionError("目前的權限不允許這個動作" + ("（要「可以搬移、改名檔案」）" if LEVEL[kind] == 4 else "（要「可以幫你整理」）"))
+    if kind == "category_plan" and args.get("chat_id"):
+        # 同一段對話裡已經有一張還沒確認的計畫卡：把這次的修改加上去，不另外開一張
+        for r in conn.execute("SELECT id, payload FROM assistant_actions WHERE kind = 'category_plan' AND state = 'proposed' ORDER BY id DESC"):
+            old = json.loads(r["payload"] or "{}")
+            if old.get("chat_id") == args["chat_id"]:
+                ops = [] if args.get("replace") else old.get("ops") or []
+                payload, summary = _BUILD[kind](conn, {**args, "ops": ops + list(args.get("ops") or [])})
+                conn.execute("UPDATE assistant_actions SET payload = ?, summary = ? WHERE id = ?",
+                             (json.dumps(payload, ensure_ascii=False), summary, r["id"]))
+                conn.commit()
+                return get(conn, r["id"])
     payload, summary = _BUILD[kind](conn, args or {})
     cur = conn.execute(
         "INSERT INTO assistant_actions (kind, level, summary, payload, state, question, created_at) VALUES (?, ?, ?, ?, 'proposed', ?, ?)",
@@ -214,8 +232,56 @@ def _build_pending(conn, args):
     return {"items": items}, f"把 {len(items)} 個檔案移到「{PENDING_DIR}」資料夾（不會刪除，隨時可以搬回來）"
 
 
+def _op_text(op: dict) -> str:
+    """計畫裡的一步，用一般人看得懂的話寫出來。"""
+    k = op.get("op")
+    years = ""
+    if op.get("year_from") and op.get("year_to"):
+        years = f"（{op['year_from']}–{op['year_to']} 年）"
+    elif op.get("year_from"):
+        years = f"（{op['year_from']} 年以後）"
+    elif op.get("year_to"):
+        years = f"（{op['year_to']} 年以前）"
+    if k == "add_category":
+        return f"新增分類「{op.get('name')}」" + (f"：{op['description']}" if op.get("description") else "")
+    if k == "rename":
+        return f"「{op.get('category')}」改名為「{op.get('name')}」"
+    if k == "describe":
+        return f"「{op.get('category')}」的說明：{op.get('description') or ''}"
+    if k == "merge":
+        return "把" + "、".join(f"「{x}」" for x in op.get("from") or []) + f"合併成「{op.get('into')}」"
+    if k == "split":
+        return f"把「{op.get('from')}」拆成" + "、".join(f"「{x}」" for x in op.get("into") or [])
+    if k == "rule":
+        return f"名稱有「{op.get('pattern')}」{years}→「{op.get('category')}」"
+    if k == "remove_rule":
+        return f"拿掉「{op.get('pattern') or op.get('id')}」的規則"
+    if k == "set_folder":
+        what = f"名稱有「{op['pattern']}」的資料夾" if op.get("pattern") else f"{len(op.get('folders') or [])} 個資料夾"
+        return f"{what}→「{op.get('category') or '不分類'}」"
+    if k == "delete_category":
+        return f"刪除分類「{op.get('category')}」"
+    return str(k)
+
+
+def _build_category(conn, args):
+    from . import classify
+
+    ops = [o for o in (args.get("ops") or []) if isinstance(o, dict) and o.get("op") in classify.OPS][:classify.MAX_OPS]
+    if not ops:
+        raise ActionError("計畫裡沒有可以做的步驟")
+    source = "user" if args.get("source") == "user" else "assistant"
+    prev = classify.preview(conn, ops, source)
+    items = [{"type": "op", "op": o, "name": _op_text(o), "ok": prev["steps"][n]["ok"] if n < len(prev["steps"]) else True,
+              "reason": "" if n >= len(prev["steps"]) or prev["steps"][n]["ok"] else prev["steps"][n]["text"]} for n, o in enumerate(ops)]
+    payload = {"ops": ops, "items": items, "preview": prev, "chat_id": args.get("chat_id"), "source": source,
+               "title": str(args.get("title") or "")[:80]}
+    summary = payload["title"] or (items[0]["name"] if len(items) == 1 else f"整理分類（{len(items)} 步）")
+    return payload, f"{summary}：會改變 {prev['changed']:,} 個資料夾的分類"
+
+
 _BUILD = {"label": _build_label, "smart_folder": _build_smart, "mark_delete": _build_mark, "move": _build_move,
-          "rename": _build_rename, "to_pending": _build_pending}
+          "rename": _build_rename, "to_pending": _build_pending, "category_rule": _build_category, "category_plan": _build_category}
 
 
 # ---- 讀取紀錄 ----
@@ -228,8 +294,9 @@ def _public(r: sqlite3.Row) -> dict:
     return {"id": r["id"], "kind": r["kind"], "level": r["level"], "summary": r["summary"], "state": r["state"],
             "question": r["question"], "created_at": r["created_at"], "done_at": r["done_at"], "undone_at": r["undone_at"],
             "color": payload.get("color"), "name": payload.get("name"), "query": payload.get("query"),
+            "preview": payload.get("preview") if r["kind"] in CATEGORY_KINDS else None,
             "folder": payload.get("folder"), "file_op": r["kind"] in FILE_OPS,
-            "items": [{k: it.get(k) for k in ("type", "id", "name", "drive", "from", "to", "size", "new_name")}
+            "items": [{k: it.get(k) for k in ("type", "id", "name", "drive", "from", "to", "size", "new_name", "ok", "reason")}
                       | {"status": (outcome.get(n) or {}).get("status"), "reason": (outcome.get(n) or {}).get("reason")}
                       for n, it in enumerate(items[:MAX_ITEMS])],
             "message": result.get("message") or ""}
@@ -480,8 +547,29 @@ def _run_file_op(conn, payload, chosen):
     return {"items": out}
 
 
+def _run_category(conn, payload, chosen):
+    """套用勾選的步驟：先記下所有分類設定（復原用），再一步一步做，最後重新分類。"""
+    from . import classify
+
+    before = classify.snapshot(conn)
+    ops = [o for n, o in enumerate(payload["ops"]) if n in chosen]
+    steps = iter(classify.apply_ops(conn, ops, payload.get("source") or "assistant"))
+    out = []
+    for n in range(len(payload["ops"])):
+        if n not in chosen:
+            out.append(_skip(n, "沒有勾選"))
+            continue
+        st = next(steps)
+        out.append({"index": n, "status": "done" if st["ok"] else "skipped", "reason": "" if st["ok"] else st["text"]})
+    conn.commit()
+    if any(o.get("op") in ("add_category", "rename", "describe", "merge", "split", "delete_category") for o in ops):
+        classify.mark_ai_stale(conn)  # 分類的定義改了：AI 之前的建議照新的定義重新判斷（本人改過的不動）
+    classify.run_rules(conn)
+    return {"items": out, "before": before, "count": sum(1 for x in out if x["status"] == "done")}
+
+
 _RUN = {"label": _run_label, "smart_folder": _run_smart, "mark_delete": _run_mark, "move": _run_file_op,
-        "rename": _run_file_op, "to_pending": _run_file_op}
+        "rename": _run_file_op, "to_pending": _run_file_op, "category_rule": _run_category, "category_plan": _run_category}
 
 
 # ---- 復原 ----
@@ -498,7 +586,14 @@ def undo(conn: sqlite3.Connection, action_id: int) -> dict:
         result = json.loads(r["result"] or "{}")
         kind = r["kind"]
         problems = []
-        if kind == "smart_folder":
+        if kind in CATEGORY_KINDS:
+            from . import classify
+
+            classify.restore(conn, result.get("before") or {})  # 回到套用前的分類設定
+            for x in result.get("items") or []:
+                if x.get("status") == "done":
+                    x["status"] = "undone"
+        elif kind == "smart_folder":
             from .find import delete_smart_folder
 
             if result.get("smart_id"):

@@ -1,4 +1,5 @@
 <script>
+  import { composing, submitEnter } from "../lib/ime.js";
   /**
    * 檔案管理助理：上方是「我可以幫忙什麼」的建議卡片（直接從目錄算出來），下方是對話。
    * 助理預設在這台電腦上執行（Ollama＋Gemma 4），先查目錄再回答，並附上來源。
@@ -115,7 +116,13 @@
       const m = messages[at];
       if (ev.type === "chat") { if (chatId !== ev.id) { chatId = ev.id; reloadChats(); } }
       else if (ev.type === "step") m.steps.push(ev);
-      else if (ev.type === "action") m.actions.push(ev.action);
+      else if (ev.type === "action") {
+        // 同一張分類計畫卡又更新了：從之前的訊息拿掉，放在這一則（最新的內容）
+        for (const other of messages) if (other !== m && other.actions) other.actions = other.actions.filter((a) => a.id !== ev.action.id);
+        const at = m.actions.findIndex((a) => a.id === ev.action.id);
+        if (at >= 0) m.actions[at] = ev.action;
+        else m.actions.push(ev.action);
+      }
       else if (ev.type === "token") m.content += ev.text;
       else if (ev.type === "done") { m.sources = ev.sources || []; m.busy = false; asking = false; reloadChats(); }
       else if (ev.type === "error") { m.error = ev.message; m.busy = false; asking = false; }
@@ -133,7 +140,7 @@
     if (log) log.scrollTop = log.scrollHeight;
   }
   function onkeydown(e) {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    if (submitEnter(e)) {  // 注音等輸入法選字時的 Enter 不送出
       e.preventDefault();
       send();
     }
@@ -191,7 +198,8 @@
   }
   const hostOf = (u) => { try { return new URL(u).host; } catch { return u || ""; } };
   const STEP = { propose_label: "ai.step.propose", propose_smart_folder: "ai.step.propose", propose_mark_delete: "ai.step.propose",
-    propose_move: "ai.step.propose", propose_rename: "ai.step.propose", propose_to_pending: "ai.step.propose", search_files: "ai.step.search", largest_folders: "ai.step.folders", drives_overview: "ai.step.drives", duplicates: "ai.step.dupes", read_document: "ai.step.read" };
+    propose_move: "ai.step.propose", propose_rename: "ai.step.propose", propose_to_pending: "ai.step.propose", search_files: "ai.step.search", largest_folders: "ai.step.folders", drives_overview: "ai.step.drives", duplicates: "ai.step.dupes", read_document: "ai.step.read",
+    catalog_analysis: "ai.step.analysis", keyword_folders: "ai.step.keyword", save_profile: "ai.step.profile", plan_categories: "ai.step.plan" };
 </script>
 
 <div class="page" bind:clientWidth={pageWidth}>
@@ -298,7 +306,7 @@
       {:else}
         <div class="msg bot mac-body">
           {#each m.steps as s, j (j)}
-            <p class="step mac-callout"><Icon name={s.tool.startsWith("propose_") ? "sparkles" : "magnifyingglass"} size={11} />{t(STEP[s.tool] || "ai.step.other", { q: s.args?.query || "" })}</p>
+            <p class="step mac-callout"><Icon name={s.tool.startsWith("propose_") ? "sparkles" : "magnifyingglass"} size={11} />{t(STEP[s.tool] || "ai.step.other", { q: s.args?.query || "", word: s.args?.word || "" })}</p>
           {/each}
           {#if m.content}
             <p class="answer">{#each parts(m.content) as p, j (j)}{#if p.ref}<button type="button" class="ref mac-caption-1" onclick={() => openSource(m.sources[p.ref - 1])}

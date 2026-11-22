@@ -81,6 +81,7 @@
     { value: "files", label: t("nav.allFiles"), icon: "files", href: "/folders", draggable: true },
     { value: "assistant", label: t("nav.assistant"), icon: "sparkles", href: "/assistant", draggable: true },
     { value: "photos", label: t("nav.photos"), icon: "photo", href: "/", draggable: true },
+    { value: "insights", label: t("nav.insights"), icon: "chart", href: "/insights", draggable: true },
     { value: "duplicates", label: t("nav.duplicates"), icon: "duplicate", href: "/duplicates", draggable: true },
     { value: "pending", label: t("nav.pending"), icon: "trash", href: "/pending", badge: catalog.pending ? formatNumber(catalog.pending) : undefined, draggable: true },
   ]);
@@ -234,6 +235,7 @@
     if (page === "assistant") return "assistant";
     if (page === "settings") return "settings";
     if (page === "duplicates") return "duplicates";
+    if (page === "insights") return "insights";
     if (page === "pending") return "pending";
     if (page === "activity") return "scan";
     if (page === "kind") return `kind:${route.path.split("/")[2]}`;

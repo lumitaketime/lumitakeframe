@@ -1,4 +1,5 @@
 <script>
+  import { composing, submitEnter } from "../lib/ime.js";
   import Loading from "../components/Loading.svelte";
   import BackButton from "../components/BackButton.svelte";
   /**
@@ -83,7 +84,7 @@
   }
 
   function onkey(e) {
-    if (e.key === "Enter") save();
+    if (submitEnter(e)) save();
     if (e.key === "Escape") {
       draft = person?.name || "";
       input?.blur();
