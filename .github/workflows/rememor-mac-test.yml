@@ -3,7 +3,8 @@ name: Re'memor Mac App（測試用）
 # 只在 rememor 分支的 Mac App 外殼有變動時建置，產出一個可以下載的測試版 App。
 # 不會動到 Releases 上的「最新版」安裝檔（那是 apps.yml 在 main 與 Library 分支上做的事）。
 # App 裡包的是建置當下的引擎與介面；想要一份包含最新功能的測試版，改動這個檔案（例如下面這行日期）再推送即可。
-# 上次要求重新建置：2026-11-20（Spotlight 放進外接硬碟的資料夾與檔案）
+# 下載的是 .dmg（不再是 zip 裡面包 zip）。
+# 上次要求重新建置：2026-11-22（改成直接下載 .dmg）
 on:
   push:
     branches: [rememor]
@@ -62,7 +63,7 @@ jobs:
           npm install
           npx tauri build --bundles app
 
-      - name: 放入伺服器、簽章、壓縮
+      - name: 放入伺服器、簽章、做成安裝映像檔（.dmg）
         working-directory: image-library/desktop
         run: |
           APP="src-tauri/target/release/bundle/macos/Re'memor.app"
@@ -70,13 +71,17 @@ jobs:
           test -x "$APP/Contents/Resources/server/lumilib-server"
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep --strict "$APP"
-          mkdir -p out
-          ditto -c -k --keepParent "$APP" "out/Rememor-test.zip"
+          # 做成 .dmg：下載後按兩下就打開，把 App 拖到「應用程式」即可（不用再解壓縮）
+          mkdir -p out dmg
+          ditto "$APP" "dmg/Re'memor.app"
+          ln -s /Applications dmg/應用程式
+          hdiutil create -volname "Re'memor 測試版" -srcfolder dmg -ov -format UDZO "out/Rememor-test.dmg"
           ls -la out
 
-      - uses: actions/upload-artifact@v4
+      # archive: false＝不另外包一層 zip，下載下來就是 .dmg（檔名就是下載的名稱）
+      - uses: actions/upload-artifact@v7
         with:
-          name: Rememor-mac-test
-          path: image-library/desktop/out/Rememor-test.zip
+          path: image-library/desktop/out/Rememor-test.dmg
+          archive: false
           if-no-files-found: error
           retention-days: 14
