@@ -69,12 +69,27 @@ _WORD = re.compile(r"[a-z]+")
 # ---- 分類清單 ----
 
 def ensure_categories(conn: sqlite3.Connection, commit: bool = True) -> None:
-    if conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]:
+    """第一次用時放進預設的分類（只放一次；本人刪掉的不會再自己跑回來）。"""
+    if conn.execute("SELECT 1 FROM settings_kv WHERE key = 'categories_seeded'").fetchone():
         return
-    conn.executemany("INSERT OR IGNORE INTO categories (key, name, position, builtin) VALUES (?, NULL, ?, 1)",
-                     [(k, i) for i, k in enumerate(BUILTIN)])
+    if not conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]:
+        conn.executemany("INSERT OR IGNORE INTO categories (key, name, position, builtin) VALUES (?, NULL, ?, 1)",
+                         [(k, i) for i, k in enumerate(BUILTIN)])
+    conn.execute("INSERT OR REPLACE INTO settings_kv (key, value) VALUES ('categories_seeded', '1')")
     if commit:
         conn.commit()
+
+
+def restore_defaults(conn: sqlite3.Connection) -> int:
+    """把刪掉的預設分類加回來（不動本人自己加的）。回傳加回幾個。"""
+    have = {r["key"] for r in conn.execute("SELECT key FROM categories")}
+    pos = conn.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM categories").fetchone()[0]
+    missing = [k for k in BUILTIN if k not in have]
+    conn.executemany("INSERT INTO categories (key, name, position, builtin) VALUES (?, NULL, ?, 1)", [(k, pos + i) for i, k in enumerate(missing)])
+    conn.execute("UPDATE categories SET merged_into = NULL WHERE builtin = 1 AND merged_into IS NOT NULL")
+    conn.commit()
+    run_rules(conn)
+    return len(missing)
 
 
 def categories(conn: sqlite3.Connection, include_merged: bool = False) -> list[dict]:
@@ -143,10 +158,11 @@ def rename_category(conn: sqlite3.Connection, key: str, name: str | None, commit
 
 
 def delete_category(conn: sqlite3.Connection, key: str, commit: bool = True) -> None:
-    """只能刪自己加的分類：用到它的資料夾改回「自動」（本人的設定、學到的規則、關鍵字規則拿掉）。"""
+    """刪除一個分類（預設的也可以刪）：用到它的資料夾改回「自動」（本人的設定、學到的規則、關鍵字規則拿掉）；
+    預設分類的內建關鍵字也不再把資料夾分到這裡。"""
     row = conn.execute("SELECT builtin FROM categories WHERE key = ?", (key,)).fetchone()
-    if row is None or row["builtin"]:
-        raise ValueError("內建的分類不能刪除，可以改名或合併到別的分類")
+    if row is None:
+        raise ValueError("找不到這個分類")
     for table in ("category_user", "category_learned", "category_rules"):
         conn.execute(f"DELETE FROM {table} WHERE category = ?", (key,))
     conn.execute("DELETE FROM categories WHERE key = ?", (key,))
@@ -936,6 +952,179 @@ def mark_ai_stale(conn: sqlite3.Connection) -> int:
     n = conn.execute("UPDATE category_ai SET stale = 1 WHERE stale = 0").rowcount
     conn.commit()
     return n
+
+
+# ---- AI 真的去看：逐一看資料夾（名稱、檔名、文件開頭、照片描述），判斷該分到哪一類 ----
+
+SUGGEST_MIN = 0.7  # 規則已經分好、AI 想改：信心至少這麼高才放進計畫卡
+SEC_PER_FOLDER = 3.0  # 沒有實測過時的估計（這台電腦上的模型，每個資料夾幾秒）
+
+
+def review_candidates(conn: sqlite3.Connection, words: list[str] | None = None, only_words: bool = False,
+                      since: str | None = None) -> list[sqlite3.Row]:
+    """要看的資料夾：本人沒改過的（也不在本人設定的資料夾裡面），名稱有指定詞的先看，再來淺的、大的。
+    since：接著上次沒看完的（這個時間之後看過的就跳過）。"""
+    rows = conn.execute(
+        "SELECT d.id, d.parent_id, d.name, d.path, d.root_id, d.files, d.total_files, d.total_bytes, r.name AS root, "
+        "c.category AS current, c.source AS source FROM folders d JOIN roots r ON r.id = d.root_id "
+        "LEFT JOIN folder_category c ON c.folder_id = d.id LEFT JOIN category_ai a ON a.folder_id = d.id "
+        "WHERE d.status = 'ok' AND d.path != '' AND d.total_files > 0 AND COALESCE(c.source, '') NOT IN ('user', 'pending') "
+        "AND (? IS NULL OR a.created_at IS NULL OR a.created_at < ?) "
+        "ORDER BY length(d.path) - length(replace(d.path, '/', '')), d.total_bytes DESC", (since, since)).fetchall()
+    words = [w.lower() for w in (words or []) if w and str(w).strip()]
+    if not words:
+        return rows
+    hit = lambda r: any(w in (r["path"] or "").lower() for w in words)  # noqa: E731
+    first = [r for r in rows if hit(r)]
+    return first if only_words else first + [r for r in rows if not hit(r)]
+
+
+def review_estimate(conn: sqlite3.Connection, n: int) -> int:
+    """大約要幾秒：用這台電腦上次實際的速度，沒有就用預設值。"""
+    r = conn.execute("SELECT value FROM settings_kv WHERE key = 'classify_sec_per_folder'").fetchone()
+    try:
+        per = float(r["value"]) if r else SEC_PER_FOLDER
+    except (TypeError, ValueError):
+        per = SEC_PER_FOLDER
+    return int(n * per)
+
+
+def _photo_notes(conn: sqlite3.Connection, folder_id: int) -> list[str]:
+    try:
+        return [r["description"] for r in conn.execute(
+            "SELECT i.description FROM files f JOIN images i ON i.id = f.image_id WHERE f.folder_id = ? AND f.status = 'ok' "
+            "AND i.description IS NOT NULL AND i.description != '' LIMIT 3", (folder_id,))]
+    except sqlite3.Error:
+        return []
+
+
+@dataclass
+class ReviewResult:
+    looked: int = 0
+    labeled: int = 0
+    suggested: int = 0
+    review: int = 0
+    skipped: int = 0
+    stopped: bool = False
+    error: str = ""
+    action_id: int | None = None
+    seconds: float = 0
+
+
+def run_review(conn: sqlite3.Connection, llm, words: list[str] | None = None, targets: list[str] | None = None,
+               only_words: bool = False, read_text: bool = True, since: str | None = None, chat_id: int | None = None,
+               progress=None, stop=None) -> ReviewResult:
+    """AI 逐一看資料夾：
+    - 原本沒有分類（或只有 AI 的舊建議）：直接記下 AI 的判斷（還是「AI 建議」，本人可以改；沒把握的放進「請你確認」）。
+    - 已經靠規則分好、AI 看了內容覺得該換：不直接改，整理成一張計畫卡讓本人勾選、確認才套用。
+    - 本人改過的不看。看過上層、上層有了結論的，裡面的資料夾跟著上層，不再一個一個問。"""
+    import time as _time
+
+    t0 = _time.monotonic()
+    result = ReviewResult()
+    refs = _Refs(conn)
+    cats = categories(conn)
+    if targets:
+        keys = [k for k in (refs.find(t) for t in targets) if k]
+        cats = [c for c in cats if c["key"] in keys] or cats
+    keys = [(c["key"], display_name(c)) for c in cats]
+    valid = {k for k, _ in keys}
+    names = {c["key"]: display_name(c) for c in categories(conn, include_merged=True)}
+    schema = {"type": "object", "properties": {
+        "category": {"type": "string", "enum": [*valid, "unknown"]},
+        "confidence": {"type": "number"}, "reason": {"type": "string"}}, "required": ["category", "confidence", "reason"]}
+    todo = review_candidates(conn, words, only_words, since)
+    parent_of = {r["id"]: r["parent_id"] for r in conn.execute("SELECT id, parent_id FROM folders")}
+    decided: set[int] = set()
+    suggestions: dict[str, list] = {}
+    for i, f in enumerate(todo):
+        if stop is not None and stop.is_set():
+            result.stopped = True
+            break
+        p, inherited = f["parent_id"], False
+        while p:
+            if p in decided:
+                inherited = True
+                break
+            p = parent_of.get(p)
+        if inherited:
+            result.skipped += 1
+            continue
+        if progress:
+            progress(i, len(todo), f["name"])
+        prompt = _prompt(conn, f, keys, read_text)
+        notes = _photo_notes(conn, f["id"])
+        if notes:
+            prompt = prompt.replace("請回答 JSON：", "照片的描述（部分）：" + "；".join(n[:120] for n in notes) + "\n請回答 JSON：", 1)
+        if targets:
+            prompt = prompt.replace("真的看不出來就回答 unknown。", "只有確定屬於清單裡的分類才選；都不是就回答 unknown。", 1)
+        try:
+            out = llm.plan_json(prompt, schema)
+        except Exception as exc:  # noqa: BLE001  模型沒開、太久沒回應…：先停下來，告訴本人
+            result.error = str(exc)
+            break
+        result.looked += 1
+        cat = out.get("category") if isinstance(out, dict) else None
+        cat = cat if cat in valid else None
+        try:
+            conf = max(0.0, min(1.0, float(out.get("confidence") or 0)))
+        except (TypeError, ValueError, AttributeError):
+            conf = 0.0
+        reason = str(out.get("reason") or "")[:60] if isinstance(out, dict) else ""
+        conn.execute("INSERT OR REPLACE INTO category_ai (folder_id, category, confidence, reason, sig, model, created_at, stale) "
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, 0)", (f["id"], cat, conf, reason, f"{f['name']}|{f['total_files']}",
+                                                        getattr(llm, "model", "") or "", db.now_iso()))
+        if not cat:
+            continue
+        decided.add(f["id"])
+        if f["current"] is None or f["source"] == "ai":
+            result.labeled += 1
+            if conf < REVIEW_BELOW:
+                result.review += 1
+        elif f["current"] != cat and conf >= SUGGEST_MIN:
+            suggestions.setdefault(cat, []).append({"id": f["id"], "name": f["name"], "from": f["current"], "reason": reason})
+            result.suggested += 1
+        if result.looked % 20 == 0:
+            conn.commit()
+    conn.commit()
+    run_rules(conn)
+    result.seconds = round(_time.monotonic() - t0, 1)
+    if result.looked:
+        per = max(0.3, result.seconds / result.looked)
+        conn.execute("INSERT OR REPLACE INTO settings_kv (key, value) VALUES ('classify_sec_per_folder', ?)", (f"{per:.2f}",))
+        conn.commit()
+    if suggestions:
+        from .actions import ActionError, propose
+
+        ops = []
+        for cat, items in sorted(suggestions.items(), key=lambda x: -len(x[1])):
+            ops.append({"op": "set_folder", "folders": [x["id"] for x in items], "category": cat,
+                        "note": "；".join(f"{x['name']}：{x['reason']}" for x in items[:3])})
+        try:
+            action = propose(conn, "category_plan", {"ops": ops, "title": "AI 看過內容後的建議"}, 3)
+            result.action_id = action["id"]
+        except ActionError as exc:
+            result.error = result.error or str(exc)
+    if progress:
+        progress(len(todo), len(todo), "")
+    return result
+
+
+def describe_review(r: ReviewResult, names: dict | None = None) -> str:
+    if r.error and not r.looked:
+        return f"沒辦法讓 AI 看資料夾：{r.error}"
+    text = f"AI 看了 {r.looked:,} 個資料夾：替 {r.labeled:,} 個還沒分類的分好"
+    if r.review:
+        text += f"（{r.review:,} 個沒把握，放在「請你確認」）"
+    if r.suggested:
+        text += f"；建議把 {r.suggested:,} 個資料夾換分類，整理在計畫卡上等你確認"
+    if r.skipped:
+        text += f"；{r.skipped:,} 個跟著上層，不用再看"
+    if r.stopped:
+        text += "；已暫停，之後會接著看"
+    if r.error:
+        text += f"；中途停下來：{r.error}"
+    return text
 
 
 def describe_rules(r: RulesResult) -> str:

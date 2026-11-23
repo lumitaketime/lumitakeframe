@@ -4,8 +4,9 @@
    * 分類只記在目錄裡，不改硬碟上的檔案；本人設定的永遠優先。
    */
   import { Alert, Button, List, ListRow, Toggle, TextField } from "../ui/index.js";
-  import { loadCategories, runClassify, editCategory, categoryName, CATEGORY_ICONS } from "../data/category.svelte.js";
+  import { loadCategories, runClassify, editCategory, categoryName, CATEGORY_ICONS, reviewEstimate, runReview } from "../data/category.svelte.js";
   import { loadRules, deleteRule, loadProfile, saveProfile } from "../data/analysis.js";
+  import { undoAction } from "../data/assistant.js";
   import { loadCatalog } from "../data/catalog.svelte.js";
   import { navigate } from "../lib/router.svelte.js";
   import { t, formatNumber } from "../i18n/index.svelte.js";
@@ -84,13 +85,49 @@
     const c = removing;
     removing = null;
     try {
-      await editCategory({ action: "delete", key: c.key });
+      const out = await editCategory({ action: "delete", key: c.key });
       await loadCatalog();
       load();
+      refresh();
+      if (out.action) toast(t("cat.set.deleted", { name: categoryName(c, t) }), "info", 10000, {
+        label: t("act.undo"), run: async () => { await undoAction(out.action.id); await loadCatalog(); load(); refresh(); toast(t("insight.undone")); },
+      });
     } catch (err) {
       toast(err.message, "error");
     }
   }
+  async function restoreDefaults() {
+    try {
+      const out = await editCategory({ action: "restore" });
+      await loadCatalog();
+      load();
+      refresh();
+      toast(out.restored ? t("cat.set.restored", { n: formatNumber(out.restored) }) : t("cat.set.nothingToRestore"));
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+  // 讓 AI 重新看一遍：先說要看幾個資料夾、大約多久，確認才開始
+  let reviewAsk = $state(null);
+  async function askReview() {
+    try {
+      reviewAsk = await reviewEstimate();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+  async function startReview() {
+    reviewAsk = null;
+    try {
+      await runReview();
+      toast(t("cat.review.started"));
+      refresh();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+  const minutes = (s) => Math.max(1, Math.round((s || 0) / 60));
+  const missingDefaults = $derived(st ? ["school", "work", "travel", "life", "finance", "creative", "hobby", "software", "other"].filter((k) => !st.categories.some((c) => c.key === k)).length : 0);
 </script>
 
 {#if settings && st}
@@ -152,11 +189,18 @@
       <ListRow title={categoryName(c, t)} icon={CATEGORY_ICONS[c.key] || "tag"} subtitle={t("cat.set.stats", { folders: formatNumber(c.folders), files: formatNumber(c.files) })}>
         {#snippet trailing()}<span class="acts">
           <Button size="small" variant="borderless" onclick={() => (editing = { key: c.key, name: categoryName(c, t) })}>{t("cat.set.rename")}</Button>
-          {#if !c.builtin}<Button size="small" variant="borderless" role="destructive" onclick={() => (removing = c)}>{t("cat.set.delete")}</Button>{/if}
+          <Button size="small" variant="borderless" role="destructive" onclick={() => (removing = c)}>{t("cat.set.delete")}</Button>
         </span>{/snippet}
       </ListRow>
     {/each}
     <ListRow title={t("cat.set.add")} icon="plus" onclick={() => (editing = { add: true, name: "" })} />
+    {#if missingDefaults}<ListRow title={t("cat.set.restore")} subtitle={t("cat.set.restoreHint", { n: formatNumber(missingDefaults) })} icon="undo" onclick={restoreDefaults} />{/if}
+  </List>
+
+  <List header={t("cat.review.aiTitle")} footer={t("cat.review.aiFooter")}>
+    <ListRow title={t("cat.review.aiRun")} subtitle={t("cat.review.aiHint")} icon="sparkles">
+      {#snippet trailing()}<Button size="small" variant="bordered" disabled={!!job} onclick={askReview}>{t("cat.review.aiButton")}</Button>{/snippet}
+    </ListRow>
   </List>
 {/if}
 
@@ -166,6 +210,15 @@
       message={editing.add ? "" : t("cat.set.renameHint")} actions={[
         { label: t("cat.set.save"), role: "default", onPress: saveEdit, disabled: editing.add && !editing.name.trim() },
         { label: t("common.cancel"), role: "cancel", onPress: () => (editing = null) },
+      ]} />
+  </div>
+{/if}
+{#if reviewAsk}
+  <div class="backdrop">
+    <Alert title={t("cat.review.confirmTitle", { n: formatNumber(reviewAsk.folders) })}
+      message={t("cat.review.confirmMessage", { min: formatNumber(minutes(reviewAsk.seconds)) })} actions={[
+        { label: t("cat.review.aiButton"), role: "default", onPress: startReview, disabled: !reviewAsk.folders },
+        { label: t("common.cancel"), role: "cancel", onPress: () => (reviewAsk = null) },
       ]} />
   </div>
 {/if}

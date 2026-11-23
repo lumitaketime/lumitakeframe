@@ -29,9 +29,9 @@ LABELS = {
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
     "move_catalog": "搬移目錄", "embed_docs": "建立「用意思找」的索引",
-    "photos": "整理照片（拍攝資訊與縮圖）", "backup": "備份目錄", "classify": "自動分類", "classify_ai": "AI 分類", "keywords": "找出常見的詞",
+    "photos": "整理照片（拍攝資訊與縮圖）", "backup": "備份目錄", "classify": "自動分類", "classify_ai": "AI 分類", "keywords": "找出常見的詞", "classify_review": "AI 看資料夾並分類",
 }
-LANES = {"analyze": "ai", "embed": "ai", "embed_docs": "ai", "classify_ai": "ai", "pull": "download", "face_model": "download", "clip_model": "download",
+LANES = {"analyze": "ai", "embed": "ai", "embed_docs": "ai", "classify_ai": "ai", "classify_review": "ai", "pull": "download", "face_model": "download", "clip_model": "download",
          "scan": "scan", "backup": "catalog"}
 QUEUED_LANES = ("main", "ai", "scan")
 SCAN_WORKERS = 4  # 「同時掃描幾顆硬碟」最多 4 顆；實際同時跑幾個看設定
@@ -78,6 +78,14 @@ def _estimate(job: dict) -> None:
     job["eta"] = int((total - done) / ((done - d0) / (now - t0)))
 
 
+_CURRENT: list = []
+
+
+def current_runner():
+    """伺服器正在用的背景工作（助理要排工作時用）；還沒啟動就是 None。"""
+    return _CURRENT[-1] if _CURRENT else None
+
+
 class JobRunner:
     def __init__(self, cfg: Config, client_factory=None):
         self.cfg = cfg
@@ -96,14 +104,15 @@ class JobRunner:
         # 上次關掉 App 時還沒做完的工作：標成「已中斷」，使用者可以按「繼續」
         self._log_sql("UPDATE job_log SET state = 'interrupted', message = ?, finished_at = ? WHERE state IN ('queued', 'running')",
                       ("上次關閉 Re'memor 時還沒做完，可以繼續。", db.now_iso()))
+        _CURRENT.append(self)
         self.threads = [threading.Thread(target=self._worker, args=(lane,), daemon=True, name=f"lumilib-{lane}-{i}")
                         for lane in QUEUED_LANES for i in range(SCAN_WORKERS if lane == "scan" else 1)]
         for t in self.threads:
             t.start()
 
     # ---- 工作紀錄：寫進資料庫，關掉 App 再開仍然看得到；紀錄失敗不影響工作本身 ----
-    LOGGED = ("scan", "index", "compare", "extract", "ocr", "analyze", "embed_docs", "photos", "classify_ai")
-    RESUMABLE = ("scan", "index", "compare", "extract", "ocr", "embed_docs", "photos", "classify_ai")
+    LOGGED = ("scan", "index", "compare", "extract", "ocr", "analyze", "embed_docs", "photos", "classify_ai", "classify_review")
+    RESUMABLE = ("scan", "index", "compare", "extract", "ocr", "embed_docs", "photos", "classify_ai", "classify_review")
 
     def _log_sql(self, sql: str, args: tuple = ()) -> int | None:
         try:
@@ -287,6 +296,8 @@ class JobRunner:
         }
 
     def close(self) -> None:
+        if self in _CURRENT:
+            _CURRENT.remove(self)
         with self.wake:
             self.closed = True
             for q in self.queues.values():
@@ -652,6 +663,38 @@ class JobRunner:
                 parts.append(describe_rules(res))
                 if self.cfg.classify_ai_auto and not opts.get("no_ai") and ai_todo(conn):
                     self.submit("classify_ai")
+            if kind == "classify_review":
+                from . import llm as llm_mod
+                from .classify import describe_review, run_review
+
+                remote = llm_mod.is_remote(self.cfg)
+                if remote and not self.cfg.classify_cloud:
+                    raise RuntimeError("讓 AI 看資料夾只用這台電腦上的模型；要用雲端服務，請到「設定 → AI 助理 → 自動分類」打開")
+                # 暫停後再繼續：從上次開始的時間算起，已經看過的不再看
+                since = opts.get("since") or db.now_iso()
+                job["options"]["since"] = since
+                res = run_review(conn, llm_mod.make_llm(self.cfg, self.client_factory()), words=opts.get("words"), targets=opts.get("targets"),
+                                 only_words=bool(opts.get("only_words")), read_text=bool(self.cfg.classify_read_text) and not remote,
+                                 since=since, chat_id=opts.get("chat_id"), stop=stop,
+                                 progress=lambda done, total, name: upd(done=done, total=total, message=name))
+                job["result"] = {"looked": res.looked, "suggested": res.suggested, "action_id": res.action_id, "stopped": res.stopped}
+                if res.error and not res.looked:
+                    raise RuntimeError(describe_review(res))
+                text = describe_review(res)
+                parts.append(text)
+                if opts.get("chat_id"):  # 在對話裡要求的：看完把結果（和計畫卡）放回那段對話
+                    from . import chats
+
+                    if chats.exists(conn, opts["chat_id"]):
+                        # 助理的回答要等它講完才存進去：等一下（最多一分鐘），讓結果排在回答後面
+                        for _ in range(120):
+                            last = conn.execute("SELECT role FROM assistant_messages WHERE chat_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+                                                (int(opts["chat_id"]),)).fetchone()
+                            if last is None or last["role"] != "user" or stop.is_set():
+                                break
+                            time.sleep(0.5)
+                        chats.add_message(conn, opts["chat_id"], "assistant", text + ("。請看下面的計畫卡，勾選後按「確認套用」。" if res.action_id else "。"),
+                                          [], [], [res.action_id] if res.action_id else [], "")
             if kind == "keywords":
                 from .analysis import build_keywords, describe as describe_keywords
 

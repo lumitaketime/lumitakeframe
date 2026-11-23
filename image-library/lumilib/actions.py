@@ -232,8 +232,14 @@ def _build_pending(conn, args):
     return {"items": items}, f"把 {len(items)} 個檔案移到「{PENDING_DIR}」資料夾（不會刪除，隨時可以搬回來）"
 
 
-def _op_text(op: dict) -> str:
-    """計畫裡的一步，用一般人看得懂的話寫出來。"""
+def _op_text(op: dict, names: dict | None = None) -> str:
+    """計畫裡的一步，用一般人看得懂的話寫出來（分類一律寫名稱，不寫內部代號）。"""
+    names = names or {}
+    op = {**op, **{f: names.get(op.get(f), op.get(f)) for f in ("category", "into") if isinstance(op.get(f), str)}}
+    if op.get("from"):
+        op["from"] = [names.get(x, x) for x in op["from"]] if isinstance(op["from"], list) else names.get(op["from"], op["from"])
+    if isinstance(op.get("into"), list):
+        op["into"] = [names.get(x, x) for x in op["into"]]
     k = op.get("op")
     years = ""
     if op.get("year_from") and op.get("year_to"):
@@ -255,10 +261,10 @@ def _op_text(op: dict) -> str:
     if k == "rule":
         return f"名稱有「{op.get('pattern')}」{years}→「{op.get('category')}」"
     if k == "remove_rule":
-        return f"拿掉「{op.get('pattern') or op.get('id')}」的規則"
+        return f"拿掉「{op.get('pattern') or '這條'}」的規則"
     if k == "set_folder":
         what = f"名稱有「{op['pattern']}」的資料夾" if op.get("pattern") else f"{len(op.get('folders') or [])} 個資料夾"
-        return f"{what}→「{op.get('category') or '不分類'}」"
+        return f"{what}→「{op.get('category') or '不分類'}」" + (f"（{op['note']}）" if op.get("note") else "")
     if k == "delete_category":
         return f"刪除分類「{op.get('category')}」"
     return str(k)
@@ -272,7 +278,8 @@ def _build_category(conn, args):
         raise ActionError("計畫裡沒有可以做的步驟")
     source = "user" if args.get("source") == "user" else "assistant"
     prev = classify.preview(conn, ops, source)
-    items = [{"type": "op", "op": o, "name": _op_text(o), "ok": prev["steps"][n]["ok"] if n < len(prev["steps"]) else True,
+    names = {c["key"]: classify.display_name(c) for c in classify.categories(conn, include_merged=True)}
+    items = [{"type": "op", "op": o, "name": _op_text(o, names), "ok": prev["steps"][n]["ok"] if n < len(prev["steps"]) else True,
               "reason": "" if n >= len(prev["steps"]) or prev["steps"][n]["ok"] else prev["steps"][n]["text"]} for n, o in enumerate(ops)]
     payload = {"ops": ops, "items": items, "preview": prev, "chat_id": args.get("chat_id"), "source": source,
                "title": str(args.get("title") or "")[:80]}

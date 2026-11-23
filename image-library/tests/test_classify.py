@@ -120,10 +120,15 @@ class ClassifyTests(CatalogTestCase):
         key = classify.add_category(self.conn, "社團")
         classify.set_user(self.conn, folder=self.fid("雜七雜八"), category=key)
         self.assertEqual(items_page(self.conn, category=key)["total"], 1)
-        with self.assertRaises(ValueError):
-            classify.delete_category(self.conn, "school")  # 內建的不能刪
         classify.delete_category(self.conn, key)
         self.assertIsNone(self.cat("雜七雜八")["category"])
+        # 預設的分類也可以刪：內建關鍵字不再把資料夾分到這裡，也不會自己跑回來
+        classify.delete_category(self.conn, "school")
+        self.assertIsNone(self.cat("國中")["category"])
+        classify.run_rules(self.conn)
+        self.assertNotIn("school", classify.valid_keys(self.conn))
+        self.assertEqual(classify.restore_defaults(self.conn), 1)  # 加回預設的分類
+        self.assertEqual(self.cat("國中")["category"], "school")
 
     def test_api_and_consent(self):
         from fastapi.testclient import TestClient

@@ -4,7 +4,8 @@
    * 只改目錄裡的分類，不改硬碟上的檔案。
    */
   import { Button, Icon, PopUpButton, ProgressIndicator } from "../ui/index.js";
-  import { loadReview, acceptReview, setCategory, categoryName } from "../data/category.svelte.js";
+  import { loadReview, acceptReview, setCategory, categoryName, loadPlans } from "../data/category.svelte.js";
+  import ActionCard from "../views/ActionCard.svelte";
   import { catalog, loadCatalog } from "../data/catalog.svelte.js";
   import { setFrame } from "../shell/frame.svelte.js";
   import { navigate } from "../lib/router.svelte.js";
@@ -14,8 +15,10 @@
   let items = $state(null);
   let error = $state("");
   let busy = $state(0);
+  let plans = $state([]);
   function load() {
     loadReview().then((d) => { items = d.items; error = ""; }).catch((e) => (error = e.message));
+    loadPlans().then((d) => (plans = d.plans)).catch(() => {});
   }
   $effect(() => {
     app.refreshKey;
@@ -51,11 +54,14 @@
     <h1 class="mac-title-2">{t("cat.review.title")}</h1>
     <p class="mac-body sub">{t("cat.review.lead")}</p>
   </header>
+  {#each plans as _, j (plans[j].id)}
+    <div class="plan"><ActionCard bind:action={plans[j]} /></div>
+  {/each}
   {#if error}
     <div class="state" role="alert"><p class="mac-body">{error}</p><Button onclick={load}>{t("view.retry")}</Button></div>
   {:else if !items}
     <div class="state"><ProgressIndicator kind="spinner" label={t("view.loading")} /></div>
-  {:else if !items.length}
+  {:else if !items.length && !plans.length}
     <div class="state">
       <Icon name="checkmark" size={28} weight="bold" />
       <h2 class="mac-title-3">{t("cat.review.empty")}</h2>
@@ -88,6 +94,7 @@
   .ai { color: var(--label-secondary); }
   .state { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding: var(--space-8) 0; color: var(--label-secondary); text-align: center; }
   .bar { display: flex; margin-bottom: var(--space-2); }
+  .plan { margin-bottom: var(--space-4); }
   .grow { flex: 1; }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
   li { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--fill-quaternary); color: var(--label-secondary); }

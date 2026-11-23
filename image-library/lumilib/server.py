@@ -2898,7 +2898,18 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             if action == "rename":
                 classify.rename_category(c, str(body.get("key") or ""), body.get("name"))
             elif action == "delete":
-                classify.delete_category(c, str(body.get("key") or ""))
+                # 刪除走「提案 → 執行」：記在助理做過的動作裡，可以一鍵復原
+                from .actions import ActionError, propose, run
+
+                try:
+                    a = propose(c, "category_rule", {"ops": [{"op": "delete_category", "category": str(body.get("key") or "")}], "source": "user"},
+                                cfg.assistant_permission)
+                    done = run(c, a["id"], cfg.assistant_permission)
+                except ActionError as e:
+                    raise HTTPException(400, str(e)) from e
+                return {"categories": classify.overview(c), "action": done}
+            elif action == "restore":
+                return {"restored": classify.restore_defaults(c), "categories": classify.overview(c)}
             else:
                 raise HTTPException(400, "未知的動作")
             return {"categories": classify.overview(c)}
@@ -2918,9 +2929,35 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             jobs().submit("classify")
         return categories_api()
 
+    @app.get("/api/classify/review/estimate")
+    def classify_review_estimate():
+        """讓 AI 重新看一遍：要看幾個資料夾、大約幾秒。"""
+        from . import classify
+
+        c = conn()
+        try:
+            n = len(classify.review_candidates(c))
+            return {"folders": n, "seconds": classify.review_estimate(c, n)}
+        finally:
+            c.close()
+
+    @app.get("/api/category/plans")
+    def category_plans():
+        """還沒確認的分類計畫卡（例如 AI 看完資料夾後的建議）。"""
+        from .actions import get
+
+        c = conn()
+        try:
+            ids = [r[0] for r in c.execute("SELECT id FROM assistant_actions WHERE kind = 'category_plan' AND state = 'proposed' ORDER BY id DESC LIMIT 5")]
+            return {"plans": [get(c, i) for i in ids]}
+        finally:
+            c.close()
+
     @app.post("/api/classify/run")
     def classify_run(body: dict = Body(default={})):
-        """立即分類：只用規則（很快），或 now＝true 時連 AI 一起、不等夜間時段。"""
+        """立即分類：只用規則（很快），或 now＝true 時連 AI 一起、不等夜間時段；review＝讓 AI 把所有資料夾重新看一遍。"""
+        if body.get("review"):
+            return jobs().submit("classify_review", targets=body.get("categories") or None)
         if body.get("ai"):
             return jobs().submit("classify_ai", now=True)
         return jobs().submit("classify", no_ai=True)
@@ -3057,7 +3094,11 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
 
         c = conn()
         try:
-            a = propose(c, "category_rule", {"ops": [{"op": "remove_rule", "id": int(body.get("id") or 0)}], "source": "user"},
+            rid = int(body.get("id") or 0)
+            row = c.execute("SELECT pattern FROM category_rules WHERE id = ?", (rid,)).fetchone()
+            if row is None:
+                raise HTTPException(404, "找不到這條規則")
+            a = propose(c, "category_rule", {"ops": [{"op": "remove_rule", "id": rid, "pattern": row["pattern"]}], "source": "user"},
                         cfg.assistant_permission)
             return run(c, a["id"], cfg.assistant_permission)
         except ActionError as e:

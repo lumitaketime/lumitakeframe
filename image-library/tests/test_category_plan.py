@@ -212,3 +212,68 @@ class CategoryPlanTests(CatalogTestCase):
             self.assertEqual(c.get("/api/category/rules").json()["rules"], [])
             c.post("/api/category/profile", json={"identity": "國中老師", "teach_start_year": 2010})
             self.assertEqual(c.get("/api/category/profile").json()["teach_start_year"], 2010)
+
+
+class ReviewTests(CategoryPlanTests):
+    """AI 真的去看資料夾：沒分類的直接分好；規則已經分好、AI 想換的放進計畫卡；本人改過的不看。"""
+
+    class Judge:
+        model = "fake"
+        remote = False
+
+        def __init__(self, answers):
+            self.answers, self.asked, self.prompts = answers, [], []
+
+        def plan_json(self, prompt, schema):
+            name = prompt.split("資料夾名稱：", 1)[1].split("\n", 1)[0]
+            self.asked.append(name)
+            self.prompts.append(prompt)
+            for key, ans in self.answers.items():
+                if key in name:
+                    return ans
+            return {"category": "unknown", "confidence": 0.1, "reason": ""}
+
+    def test_review(self):
+        from lumilib import chats
+
+        classify.set_user(self.conn, folder=self.fid("研習"), category="work")  # 本人改過的：不看
+        judge = self.Judge({
+            "婚攝": {"category": "creative", "confidence": 0.9, "reason": "婚禮攝影的照片"},
+            "設計": {"category": "work", "confidence": 0.85, "reason": "設計案的檔案"},  # 規則原本分到作品與創作
+            "蔦松 雜物": {"category": "school", "confidence": 0.5, "reason": "看不太出來"},
+        })
+        chat = chats.create(self.conn, "重新整理")
+        r = classify.run_review(self.conn, judge, chat_id=chat)
+        self.assertNotIn("研習", judge.asked)
+        self.assertNotIn("2020 數位教學研習", judge.asked)  # 在本人設定的資料夾裡面
+        self.assertEqual(self.cat("婚攝 林家")["category"], "creative")  # 沒分類的：直接分好
+        self.assertEqual(self.cat("婚攝 林家")["source"], "ai")
+        self.assertTrue(self.cat("蔦松 雜物")["review"])  # 沒把握：請你確認
+        self.assertNotIn("舊資料", judge.asked)  # 上層看過有結論：跟著上層
+        self.assertEqual(self.cat("設計 海報案")["category"], "creative")  # 規則分好的不直接改
+        self.assertEqual(r.suggested, 1)
+        plan = actions.get(self.conn, r.action_id)
+        self.assertEqual(plan["kind"], "category_plan")
+        self.assertIn("設計案的檔案", plan["items"][0]["name"])
+        self.assertNotIn("work」", plan["items"][0]["name"].replace("「工作」", ""))  # 寫分類名稱，不寫代號
+        actions.run(self.conn, r.action_id, 3)
+        self.assertEqual(self.cat("設計 海報案")["category"], "work")
+        # 接著上次沒看完的：看過的不再看
+        judge2 = self.Judge({})
+        classify.run_review(self.conn, judge2, since=self.conn.execute("SELECT MIN(created_at) FROM category_ai").fetchone()[0])
+        self.assertNotIn("婚攝 林家", judge2.asked)
+        self.assertGreater(classify.review_estimate(self.conn, 10), 0)
+
+    def test_assistant_starts_review(self):
+        from lumilib import assistant
+        from lumilib.jobs import JobRunner
+
+        m = JobRunner(self.cfg)
+        try:
+            with mock.patch.object(m, "submit") as submit:
+                out = assistant.tool_classify_folders(self.conn, {"words": ["蔦松"], "categories": ["工作"]}, assistant.Ctx(level=3, chat_id=9))
+            self.assertIn("已經開始", out)
+            self.assertEqual(submit.call_args.kwargs["chat_id"], 9)
+            self.assertEqual(submit.call_args.kwargs["words"], ["蔦松"])
+        finally:
+            m.close()

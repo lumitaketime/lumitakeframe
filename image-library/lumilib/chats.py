@@ -52,7 +52,7 @@ def load(conn: sqlite3.Connection, chat_id: int) -> dict | None:
     if c is None:
         return None
     out = []
-    for m in conn.execute("SELECT * FROM assistant_messages WHERE chat_id = ? ORDER BY id", (int(chat_id),)):
+    for m in conn.execute("SELECT * FROM assistant_messages WHERE chat_id = ? ORDER BY created_at, id", (int(chat_id),)):
         acts = []
         for aid in json.loads(m["actions"] or "[]"):
             try:

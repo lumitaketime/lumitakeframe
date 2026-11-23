@@ -1,4 +1,5 @@
 <script>
+  import { blocks } from "../lib/markdown.js";
   import { composing, submitEnter } from "../lib/ime.js";
   /**
    * 檔案管理助理：上方是「我可以幫忙什麼」的建議卡片（直接從目錄算出來），下方是對話。
@@ -41,6 +42,30 @@
       toast(e.message, "error");
     }
   }
+  // AI 在背景看資料夾：看完結果（和計畫卡）會放回這段對話。
+  // 助理開始這個工作後，每 3 秒看一次這段對話有沒有多出新訊息；工作結束、也沒有新訊息就不再等
+  let waitingReview = $state(null); // 在等哪一段對話
+  $effect(() => {
+    const id = waitingReview;
+    if (!id || asking) return;
+    let idle = 0;
+    const timer = setInterval(async () => {
+      if (chatId !== id) { waitingReview = null; return; }
+      const jobs = app.server?.jobs || {};
+      const busy = [...(jobs.active || []), ...(jobs.queued || [])].some((j) => j.kind === "classify_review");
+      try {
+        const d = await loadChat(id);
+        if (chatId === id && !asking && d.messages.length > messages.length) {
+          messages = d.messages.map((m) => ({ ...m, busy: false }));
+          waitingReview = null;
+          scroll();
+          return;
+        }
+      } catch { /* 下次再試 */ }
+      if (!busy && ++idle >= 3) waitingReview = null;
+    }, 3000);
+    return () => clearInterval(timer);
+  });
   function newChat() {
     if (asking) return;
     chatId = null;
@@ -115,6 +140,7 @@
     stopAsk = ask({ question: q, history, context, lang: i18n.locale, chatId }, (ev) => {
       const m = messages[at];
       if (ev.type === "chat") { if (chatId !== ev.id) { chatId = ev.id; reloadChats(); } }
+      if (ev.type === "step" && ev.tool === "classify_folders") waitingReview = chatId;
       else if (ev.type === "step") m.steps.push(ev);
       else if (ev.type === "action") {
         // 同一張分類計畫卡又更新了：從之前的訊息拿掉，放在這一則（最新的內容）
@@ -190,7 +216,7 @@
     return out;
   }
   // 回答裡真的有引用的來源（沒有引用任何一個時全部列出）
-  const cited = (m) => new Set([...m.content.matchAll(/\[(\d{1,2})\]/g)].map((x) => Number(x[1])));
+  const cited = (m) => new Set([...m.content.matchAll(/\[(\d{1,2})\]/g)].map((x) => Number(x[1])).filter((n) => !!m.sources[n - 1]));
   function openSource(s) {
     if (!s) return;
     if (s.type === "folder") return navigate(`/folders/${s.root_id}${s.path ? `?path=${encodeURIComponent(s.path)}` : ""}`);
@@ -199,7 +225,8 @@
   const hostOf = (u) => { try { return new URL(u).host; } catch { return u || ""; } };
   const STEP = { propose_label: "ai.step.propose", propose_smart_folder: "ai.step.propose", propose_mark_delete: "ai.step.propose",
     propose_move: "ai.step.propose", propose_rename: "ai.step.propose", propose_to_pending: "ai.step.propose", search_files: "ai.step.search", largest_folders: "ai.step.folders", drives_overview: "ai.step.drives", duplicates: "ai.step.dupes", read_document: "ai.step.read",
-    catalog_analysis: "ai.step.analysis", keyword_folders: "ai.step.keyword", save_profile: "ai.step.profile", plan_categories: "ai.step.plan" };
+    catalog_analysis: "ai.step.analysis", keyword_folders: "ai.step.keyword", save_profile: "ai.step.profile", plan_categories: "ai.step.plan",
+    classify_folders: "ai.step.review" };
 </script>
 
 <div class="page" bind:clientWidth={pageWidth}>
@@ -309,8 +336,16 @@
             <p class="step mac-callout"><Icon name={s.tool.startsWith("propose_") ? "sparkles" : "magnifyingglass"} size={11} />{t(STEP[s.tool] || "ai.step.other", { q: s.args?.query || "", word: s.args?.word || "" })}</p>
           {/each}
           {#if m.content}
-            <p class="answer">{#each parts(m.content) as p, j (j)}{#if p.ref}<button type="button" class="ref mac-caption-1" onclick={() => openSource(m.sources[p.ref - 1])}
-              disabled={!m.sources[p.ref - 1]}>{p.ref}</button>{:else}{p.text}{/if}{/each}</p>
+            <!-- 回答的排版：標題、清單、粗體；引用編號只有真的對到來源時才顯示 -->
+            {#snippet line(parts)}{#each parts as p, k (k)}{#if p.ref}<button type="button" class="ref mac-caption-1" onclick={() => openSource(m.sources[p.ref - 1])}>{p.ref}</button>{:else if p.bold}<b>{p.text}</b>{:else}{p.text}{/if}{/each}{/snippet}
+            <div class="answer">
+              {#each blocks(m.content, (n) => !!m.sources[n - 1]) as blk, j (j)}
+                {#if blk.type === "h"}<h4 class="mac-headline">{@render line(blk.inline)}</h4>
+                {:else if blk.type === "ul"}<ul>{#each blk.items as it, k (k)}<li>{@render line(it)}</li>{/each}</ul>
+                {:else if blk.type === "ol"}<ol start={blk.start}>{#each blk.items as it, k (k)}<li>{@render line(it)}</li>{/each}</ol>
+                {:else}<p>{@render line(blk.inline)}</p>{/if}
+              {/each}
+            </div>
           {:else if m.busy}
             <p class="thinking mac-callout"><ProgressIndicator kind="spinner" size="small" label={t("ai.thinking")} />{t("ai.thinking")}</p>
           {/if}
@@ -409,7 +444,10 @@
   .msg.user { align-self: flex-end; background: var(--accent); color: var(--on-accent); white-space: pre-wrap; }
   .msg.bot { align-self: flex-start; background: var(--fill-quaternary); color: var(--label-primary); }
   .msg p { margin: 0; }
-  .answer { white-space: pre-wrap; }
+  .answer { display: flex; flex-direction: column; gap: var(--space-2); }
+  .answer p { margin: 0; white-space: pre-wrap; }
+  .answer h4 { margin: var(--space-1) 0 0; }
+  .answer ul, .answer ol { margin: 0; padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
   .step { display: flex; align-items: center; gap: var(--space-1); color: var(--label-secondary); }
   .thinking { display: flex; align-items: center; gap: var(--space-2); color: var(--label-secondary); }
   .err { color: var(--system-red); }

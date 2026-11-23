@@ -38,6 +38,9 @@ TOOLS = {
     "catalog_analysis": (1, "檔案分析：類型、年份分布、最常出現的詞（每個詞在幾個資料夾、大多在哪一類），目前的分類清單、規則、使用者的身分。討論分類時先用這個。args: {}"),
     "keyword_folders": (1, "某個詞出現在哪些資料夾（含年份、目前的分類）。args: {\"word\": 詞}"),
     "save_profile": (1, "記下使用者說的身分與習慣、開始工作（例如教書）的年份。args: {\"identity\": 一兩句身分與習慣, \"teach_start_year\": 西元年（可省略）}"),
+    "classify_folders": (3, "讓這台電腦上的 AI 真的去看資料夾（名稱、檔名、文件開頭、照片描述），在背景逐一判斷該分到哪一類。"
+                            "沒分類的直接分好；原本已經分好、AI 覺得該換的，看完整理成計畫卡讓使用者確認。使用者要你「重新整理、標註、分類」時用這個。"
+                            "args: {\"words\": [先看名稱有這些詞的資料夾（可省略）], \"categories\": [只分到這幾類（分類名稱，可省略）], \"only_words\": 只看名稱有這些詞的（true/false）}"),
     "plan_categories": (3, "提出或修改分類的整理計畫（累積在同一張計畫卡上，使用者確認才套用，可以復原）。args: {\"ops\": [步驟]}。"
                            "步驟：{op: add_category, name, description}｜{op: rename, category, name}｜{op: describe, category, description}｜"
                            "{op: merge, from: [分類…], into: 分類}｜{op: split, from: 分類, into: [分類…]}｜"
@@ -51,7 +54,7 @@ TOOLS = {
     "propose_rename": (4, "提出：替檔案改名（副檔名不變）。args: {\"renames\": [{\"file_id\": 編號, \"new_name\": 新檔名}]}"),
     "propose_to_pending": (4, "提出：把檔案移到該來源的「Re'memor 待刪除」資料夾（不刪除，隨時可以搬回來）。args: {\"file_ids\": [編號]}"),
 }
-PLAN_TOOLS = ("catalog_analysis", "keyword_folders", "save_profile", "plan_categories")
+PLAN_TOOLS = ("catalog_analysis", "keyword_folders", "save_profile", "plan_categories", "classify_folders")
 PROPOSE = {"propose_label": "label", "propose_smart_folder": "smart_folder", "propose_mark_delete": "mark_delete",
            "propose_move": "move", "propose_rename": "rename", "propose_to_pending": "to_pending"}
 
@@ -251,7 +254,7 @@ def tool_catalog_analysis(conn: sqlite3.Connection, args: dict, ctx) -> str:
     else:
         lines.append("（還沒有找出常見的詞）")
     cats = classify.overview(conn)
-    lines.append("目前的分類：" + "；".join(f"{classify.display_name(c)}（代號 {c['key']}，{c['folders']} 個資料夾）"
+    lines.append("目前的分類：" + "；".join(f"{classify.display_name(c)}（{c['folders']} 個資料夾）"
                                           + (f"：{c['description']}" if c["description"] else "") for c in cats))
     rs = classify.rules(conn)
     if rs:
@@ -284,6 +287,28 @@ def tool_save_profile(conn: sqlite3.Connection, args: dict, ctx) -> str:
     return f"已記下：身分「{p.get('identity') or ''}」，開始工作的年份 {p.get('teach_start_year') or '（未說）'}。"
 
 
+def tool_classify_folders(conn: sqlite3.Connection, args: dict, ctx) -> str:
+    """開始「AI 看資料夾」的背景工作：先估計要看幾個、大約多久，再排進去（看完會把結果放回這段對話）。"""
+    from . import classify
+    from . import jobs as jobs_mod
+
+    ctx = _ctx(ctx)
+    words = [str(w).strip() for w in (args.get("words") or []) if str(w).strip()][:10]
+    targets = [str(c).strip() for c in (args.get("categories") or []) if str(c).strip()][:20]
+    only = bool(args.get("only_words")) and bool(words)
+    n = len(classify.review_candidates(conn, words, only))
+    if not n:
+        return "（沒有需要看的資料夾：都是使用者自己設定過的，或目錄裡還沒有資料夾）"
+    secs = classify.review_estimate(conn, n)
+    runner = jobs_mod.current_runner()
+    if runner is None:
+        return "（現在沒辦法在背景開始，請到設定 → AI 助理 → 自動分類按「讓 AI 重新看一遍」）"
+    runner.submit("classify_review", words=words or None, targets=targets or None, only_words=only or None, chat_id=ctx.chat_id)
+    mins = max(1, round(secs / 60))
+    return (f"已經開始在背景看 {n:,} 個資料夾，大約 {mins} 分鐘（上層看過、有結論的，裡面的會跟著，實際會更快）。"
+            "進度在「掃描進度」，可以暫停。看完會把結果和計畫卡放回這段對話；沒分類的會直接分好，原本已分好、AI 覺得該換的要使用者確認。")
+
+
 def tool_plan_categories(conn: sqlite3.Connection, args: dict, ctx) -> str:
     from .actions import ActionError, propose
 
@@ -310,7 +335,7 @@ def tool_plan_categories(conn: sqlite3.Connection, args: dict, ctx) -> str:
 RUN = {"search_files": tool_search_files, "largest_folders": tool_largest_folders, "drives_overview": tool_drives_overview,
        "duplicates": tool_duplicates, "read_document": tool_read_document,
        "catalog_analysis": tool_catalog_analysis, "keyword_folders": tool_keyword_folders, "save_profile": tool_save_profile,
-       "plan_categories": tool_plan_categories,
+       "plan_categories": tool_plan_categories, "classify_folders": tool_classify_folders,
        **{name: _proposer(kind) for name, kind in PROPOSE.items()}}
 
 
@@ -347,7 +372,8 @@ def plan(llm, question: str, history: list[dict], context: str, ctx: Ctx | None 
               + "\n使用者在談自己的身分、習慣，或想怎麼分類時：先用 catalog_analysis 看資料；他說了身分或開始工作的年份就用 save_profile 記下來；"
               + ("要新增、改名、合併、拆分分類，或加關鍵字規則、替資料夾改分類，就用 plan_categories（一次只放這次要改的步驟）。"
                  "同一個詞可能屬於兩類（例如學校名稱可能是讀過也教過）時，年份能分就用有 year_from／year_to 的規則；"
-                 "還不知道他哪一年開始工作，就先不要猜，在回答裡問他。" if can_act else "需要改分類時，請使用者到設定 → AI 助理把權限調到「可以幫你整理」。"))
+                 "還不知道他哪一年開始工作，就先不要猜，在回答裡問他。"
+                 "使用者要你「重新整理、標註、把相關的分到某幾類」時，用 classify_folders 讓 AI 真的去看資料夾（可以指定 words 與 categories）。" if can_act else "需要改分類時，請使用者到設定 → AI 助理把權限調到「可以幫你整理」。"))
     try:
         data = llm.plan_json(prompt, _plan_schema(names))
     except Exception:  # noqa: BLE001  規劃失敗就直接回答（不查資料）
@@ -403,7 +429,9 @@ def ask(conn: sqlite3.Connection, llm, question: str, history: list[dict] | None
                  if ctx.actions else
                  "需要整理時，提出具體建議，並說明要在 Re'memor 的哪個頁面由使用者自己確認（例如「重複項目」頁、「待刪除」頁）"
                  + ("；或請使用者到設定 → AI 助理提高權限，讓你直接提出整理動作。" if ctx.level < 3 else "。"))
-              + "\n- 不要提到工具名稱或 JSON。")
+              + "\n- 不要提到工具名稱、JSON，或分類的內部代號（例如 c10），一律用分類名稱。"
+              + "\n- 只有提到「查到的資料」裡有編號的檔案或資料夾時才標 [編號]；統計、分析的數字不要標。"
+              + "\n- 你可以讓這台電腦上的 AI 在背景真的去看資料夾並分類；已經開始的話，告訴使用者進度在「掃描進度」，看完結果會回到這段對話。")
     data = "\n\n".join(results) if results else "（這個問題沒有查資料）"
     messages = [{"role": "system", "content": system}]
     for m in history[-6:]:
