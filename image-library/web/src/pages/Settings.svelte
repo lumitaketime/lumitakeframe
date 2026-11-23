@@ -27,6 +27,7 @@
     { id: "scan", icon: "clock", tint: "orange" },
     { id: "text", icon: "magnifyingglass", tint: "indigo" },
     { id: "assistant", icon: "sparkles", tint: "purple" },
+    { id: "classify", icon: "tag", tint: "green" },
     { id: "photos", icon: "photo", tint: "pink" },
     { id: "system", icon: "slider-horizontal", tint: "gray-1" },
   ];
@@ -335,6 +336,8 @@
 
     {:else if shown === "assistant"}
       <AssistantSettings {settings} {set} />
+
+    {:else if shown === "classify"}
       <ClassifySettings {settings} {set} />
 
     {:else if shown === "photos"}

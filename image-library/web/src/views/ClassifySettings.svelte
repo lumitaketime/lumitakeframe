@@ -1,10 +1,14 @@
 <script>
   /**
-   * 設定 → AI 助理 → 自動分類：要不要自動跑、立即分類、管理分類清單（改名、新增、刪除自己加的）。
+   * 設定 → 分類（由上到下照使用的順序）：
+   * 1. 分類清單：每一類都能改名、刪除、新增；還沒分類的有幾個；AI 的建議（計畫卡）等你確認。
+   * 2. 讓 AI 看資料夾：放得進分類的直接分好，放不進去的 AI 建議新分類（計畫卡，確認才建立）。
+   * 3. 自動分類：掃描完要不要自動分、要不要交給 AI。
+   * 4. 我的規則、5. 你的身分與習慣。
    * 分類只記在目錄裡，不改硬碟上的檔案；本人設定的永遠優先。
    */
   import { Alert, Button, List, ListRow, Toggle, TextField } from "../ui/index.js";
-  import { loadCategories, runClassify, editCategory, categoryName, CATEGORY_ICONS, reviewEstimate, runReview } from "../data/category.svelte.js";
+  import { loadCategories, editCategory, categoryName, CATEGORY_ICONS, reviewEstimate, runReview, loadPlans } from "../data/category.svelte.js";
   import { loadRules, deleteRule, loadProfile, saveProfile } from "../data/analysis.js";
   import { undoAction } from "../data/assistant.js";
   import { loadCatalog } from "../data/catalog.svelte.js";
@@ -20,8 +24,10 @@
   let ruleList = $state([]);
   let prof = $state(null);
   let removingRule = $state(null);
+  let plans = $state(0);
   function load() {
     loadCategories().then((d) => (st = d)).catch(() => {});
+    loadPlans().then((d) => (plans = d.plans.length)).catch(() => {});
     loadRules().then((d) => (ruleList = d.rules)).catch(() => {});
     loadProfile().then((d) => (prof = { identity: d.identity || "", teach_start_year: d.teach_start_year ? String(d.teach_start_year) : "" })).catch(() => {});
   }
@@ -51,24 +57,19 @@
     app.refreshKey;
     load();
   });
-  const job = $derived(app.server?.jobs?.active?.find((j) => j.kind === "classify" || j.kind === "classify_ai") || null);
+  const job = $derived(app.server?.jobs?.active?.find((j) => ["classify", "classify_ai", "classify_review"].includes(j.kind)) || null);
+  // AI 看完：重新讀一次（新的計畫卡、分好的資料夾）
+  let wasRunning = false;
+  $effect(() => {
+    const running = !!job;
+    if (wasRunning && !running) load();
+    wasRunning = running;
+  });
 
   async function toggle(key, v) {
     await set(key, v ? 1 : 0);
     if (key === "classify_rules_auto" || key === "classify_ai_auto") await set("classify_asked", 1);
     load();
-  }
-  async function run(ai) {
-    busy = ai ? "ai" : "rules";
-    try {
-      await runClassify(ai);
-      toast(ai ? t("cat.set.aiStarted") : t("cat.set.rulesStarted"));
-      refresh();
-    } catch (e) {
-      toast(e.message, "error");
-    } finally {
-      busy = "";
-    }
   }
   async function saveEdit() {
     const e = editing;
@@ -116,10 +117,10 @@
       toast(err.message, "error");
     }
   }
-  async function startReview() {
+  async function startReview(onlyNew) {
     reviewAsk = null;
     try {
-      await runReview();
+      await runReview(undefined, onlyNew);
       toast(t("cat.review.started"));
       refresh();
     } catch (err) {
@@ -131,11 +132,49 @@
 </script>
 
 {#if settings && st}
+  <List header={t("cat.set.list")} footer={t("cat.set.listHint")}>
+    {#each st.categories as c (c.key)}
+      <ListRow title={categoryName(c, t)} icon={CATEGORY_ICONS[c.key] || "tag"} subtitle={c.description || t("cat.set.stats", { folders: formatNumber(c.folders), files: formatNumber(c.files) })}
+        detail={c.description ? t("cat.set.folders", { n: formatNumber(c.folders) }) : ""}>
+        {#snippet trailing()}<span class="acts">
+          <Button size="small" variant="borderless" onclick={() => (editing = { key: c.key, name: categoryName(c, t) })}>{t("cat.set.rename")}</Button>
+          <Button size="small" variant="borderless" role="destructive" onclick={() => (removing = c)}>{t("cat.set.delete")}</Button>
+        </span>{/snippet}
+      </ListRow>
+    {/each}
+    <ListRow title={t("cat.set.add")} icon="plus" onclick={() => (editing = { add: true, name: "" })} />
+    {#if missingDefaults}<ListRow title={t("cat.set.restore")} subtitle={t("cat.set.restoreHint", { n: formatNumber(missingDefaults) })} icon="undo" onclick={restoreDefaults} />{/if}
+  </List>
+
+  {#if plans || st.review}
+    <List header={t("cat.set.waiting")}>
+      {#if plans}
+        <ListRow title={t("cat.set.plans")} subtitle={t("cat.set.plansHint", { n: formatNumber(plans) })} icon="sparkles" iconTint="purple"
+          accessory="disclosure" onclick={() => navigate("/category/review")} />
+      {/if}
+      {#if st.review}
+        <ListRow title={t("cat.review.title")} subtitle={t("cat.review.count", { n: formatNumber(st.review) })} icon="exclamation-triangle" iconTint="orange"
+          accessory="disclosure" onclick={() => navigate("/category/review")} />
+      {/if}
+    </List>
+  {/if}
+
+  <List header={t("cat.look.title")} footer={t("cat.look.footer")}>
+    {#if job}
+      <ListRow title={job.kind === "classify" ? t("cat.set.rulesRunning") : t("cat.look.running")} subtitle={job.message || ""} icon="sparkles"
+        detail={job.total ? `${formatNumber(job.done)} / ${formatNumber(job.total)}` : ""} />
+    {:else}
+      <ListRow title={t("cat.look.run")} subtitle={st.unclassified ? t("cat.look.hintN", { n: formatNumber(st.unclassified) }) : t("cat.look.hint")} icon="sparkles">
+        {#snippet trailing()}<Button size="small" variant="bordered" onclick={askReview}>{t("cat.review.aiButton")}</Button>{/snippet}
+      </ListRow>
+    {/if}
+  </List>
+
   <List header={t("cat.set.title")} footer={t("cat.set.footer")}>
     <ListRow title={t("cat.choice.rules_auto")} subtitle={t("cat.choice.rules_auto.hint")}>
       {#snippet trailing()}<Toggle checked={!!settings.classify_rules_auto} onchange={(v) => toggle("classify_rules_auto", v)} aria-label={t("cat.choice.rules_auto")} />{/snippet}
     </ListRow>
-    <ListRow title={t("cat.choice.ai_auto")} subtitle={t("cat.choice.ai_auto.hint")}>
+    <ListRow title={t("cat.choice.ai_auto")} subtitle={t("cat.choice.ai_auto.hint2")}>
       {#snippet trailing()}<Toggle checked={!!settings.classify_ai_auto} onchange={(v) => toggle("classify_ai_auto", v)} aria-label={t("cat.choice.ai_auto")} />{/snippet}
     </ListRow>
     <ListRow title={t("cat.choice.read_text")} subtitle={t("cat.choice.read_text.hint")}>
@@ -145,21 +184,6 @@
       <ListRow title={t("cat.set.cloud")} subtitle={t("cat.set.cloudHint")}>
         {#snippet trailing()}<Toggle checked={!!settings.classify_cloud} onchange={(v) => toggle("classify_cloud", v)} aria-label={t("cat.set.cloud")} />{/snippet}
       </ListRow>
-    {/if}
-    {#if job}
-      <ListRow title={job.kind === "classify_ai" ? t("cat.set.aiRunning") : t("cat.set.rulesRunning")} subtitle={job.message || ""}
-        detail={job.total ? `${formatNumber(job.done)} / ${formatNumber(job.total)}` : ""} />
-    {:else}
-      <ListRow title={t("cat.set.run")} subtitle={t("cat.set.runHint", { n: formatNumber(st.ai_todo) })}>
-        {#snippet trailing()}<span class="acts">
-          <Button size="small" variant="bordered" loading={busy === "rules"} disabled={!!busy} onclick={() => run(false)}>{t("cat.set.runRules")}</Button>
-          <Button size="small" variant="bordered" loading={busy === "ai"} disabled={!!busy || !st.ai_todo} onclick={() => run(true)}>{t("cat.set.runAi")}</Button>
-        </span>{/snippet}
-      </ListRow>
-    {/if}
-    {#if st.review}
-      <ListRow title={t("cat.review.title")} subtitle={t("cat.review.count", { n: formatNumber(st.review) })} icon="exclamation-triangle" iconTint="orange"
-        accessory="disclosure" onclick={() => navigate("/category/review")} />
     {/if}
   </List>
 
@@ -183,25 +207,6 @@
       </div>
     </List>
   {/if}
-
-  <List header={t("cat.set.list")} footer={t("cat.set.listHint")}>
-    {#each st.categories as c (c.key)}
-      <ListRow title={categoryName(c, t)} icon={CATEGORY_ICONS[c.key] || "tag"} subtitle={t("cat.set.stats", { folders: formatNumber(c.folders), files: formatNumber(c.files) })}>
-        {#snippet trailing()}<span class="acts">
-          <Button size="small" variant="borderless" onclick={() => (editing = { key: c.key, name: categoryName(c, t) })}>{t("cat.set.rename")}</Button>
-          <Button size="small" variant="borderless" role="destructive" onclick={() => (removing = c)}>{t("cat.set.delete")}</Button>
-        </span>{/snippet}
-      </ListRow>
-    {/each}
-    <ListRow title={t("cat.set.add")} icon="plus" onclick={() => (editing = { add: true, name: "" })} />
-    {#if missingDefaults}<ListRow title={t("cat.set.restore")} subtitle={t("cat.set.restoreHint", { n: formatNumber(missingDefaults) })} icon="undo" onclick={restoreDefaults} />{/if}
-  </List>
-
-  <List header={t("cat.review.aiTitle")} footer={t("cat.review.aiFooter")}>
-    <ListRow title={t("cat.review.aiRun")} subtitle={t("cat.review.aiHint")} icon="sparkles">
-      {#snippet trailing()}<Button size="small" variant="bordered" disabled={!!job} onclick={askReview}>{t("cat.review.aiButton")}</Button>{/snippet}
-    </ListRow>
-  </List>
 {/if}
 
 {#if editing}
@@ -215,11 +220,21 @@
 {/if}
 {#if reviewAsk}
   <div class="backdrop">
-    <Alert title={t("cat.review.confirmTitle", { n: formatNumber(reviewAsk.folders) })}
-      message={t("cat.review.confirmMessage", { min: formatNumber(minutes(reviewAsk.seconds)) })} actions={[
-        { label: t("cat.review.aiButton"), role: "default", onPress: startReview, disabled: !reviewAsk.folders },
-        { label: t("common.cancel"), role: "cancel", onPress: () => (reviewAsk = null) },
-      ]} />
+    {#if reviewAsk.unclassified && reviewAsk.unclassified < reviewAsk.folders}
+      <Alert title={t("cat.look.confirmTitle")}
+        message={t("cat.look.confirmMessage", { u: formatNumber(reviewAsk.unclassified), um: formatNumber(minutes(reviewAsk.unclassified_seconds)),
+          n: formatNumber(reviewAsk.folders), nm: formatNumber(minutes(reviewAsk.seconds)) })} actions={[
+          { label: t("cat.look.onlyNew"), role: "default", onPress: () => startReview(true) },
+          { label: t("cat.look.all"), role: "default", onPress: () => startReview(false) },
+          { label: t("common.cancel"), role: "cancel", onPress: () => (reviewAsk = null) },
+        ]} />
+    {:else}
+      <Alert title={t("cat.review.confirmTitle", { n: formatNumber(reviewAsk.folders) })}
+        message={t("cat.review.confirmMessage", { min: formatNumber(minutes(reviewAsk.seconds)) })} actions={[
+          { label: t("cat.review.aiButton"), role: "default", onPress: () => startReview(false), disabled: !reviewAsk.folders },
+          { label: t("common.cancel"), role: "cancel", onPress: () => (reviewAsk = null) },
+        ]} />
+    {/if}
   </div>
 {/if}
 {#if removingRule}

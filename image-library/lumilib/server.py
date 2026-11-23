@@ -2877,7 +2877,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         c = conn()
         try:
             return {"categories": classify.overview(c), "review": classify.review_count(c),
-                    "ai_todo": classify.ai_todo(c), "asked": bool(cfg.classify_asked),
+                    "ai_todo": classify.ai_todo(c), "asked": bool(cfg.classify_asked), "unclassified": classify.unclassified_count(c),
                     "rules_auto": bool(cfg.classify_rules_auto), "ai_auto": bool(cfg.classify_ai_auto),
                     "read_text": bool(cfg.classify_read_text), "cloud": bool(cfg.classify_cloud),
                     "remote": __import__("lumilib.llm", fromlist=["is_remote"]).is_remote(cfg)}
@@ -2937,19 +2937,22 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         c = conn()
         try:
             n = len(classify.review_candidates(c))
-            return {"folders": n, "seconds": classify.review_estimate(c, n)}
+            u = len(classify.review_candidates(c, only_unclassified=True))
+            return {"folders": n, "seconds": classify.review_estimate(c, n),
+                    "unclassified": u, "unclassified_seconds": classify.review_estimate(c, u)}
         finally:
             c.close()
 
     @app.get("/api/category/plans")
     def category_plans():
         """還沒確認的分類計畫卡（例如 AI 看完資料夾後的建議）。"""
-        from .actions import get
+        from .actions import refresh_plan
 
         c = conn()
         try:
             ids = [r[0] for r in c.execute("SELECT id FROM assistant_actions WHERE kind = 'category_plan' AND state = 'proposed' ORDER BY id DESC LIMIT 5")]
-            return {"plans": [get(c, i) for i in ids]}
+            plans = [refresh_plan(c, i) for i in ids]
+            return {"plans": [a for a in plans if a["state"] == "proposed"]}
         finally:
             c.close()
 
@@ -2957,7 +2960,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
     def classify_run(body: dict = Body(default={})):
         """立即分類：只用規則（很快），或 now＝true 時連 AI 一起、不等夜間時段；review＝讓 AI 把所有資料夾重新看一遍。"""
         if body.get("review"):
-            return jobs().submit("classify_review", targets=body.get("categories") or None)
+            return jobs().submit("classify_review", targets=body.get("categories") or None, only_unclassified=bool(body.get("only_unclassified")))
         if body.get("ai"):
             return jobs().submit("classify_ai", now=True)
         return jobs().submit("classify", no_ai=True)

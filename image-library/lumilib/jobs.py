@@ -669,13 +669,13 @@ class JobRunner:
 
                 remote = llm_mod.is_remote(self.cfg)
                 if remote and not self.cfg.classify_cloud:
-                    raise RuntimeError("讓 AI 看資料夾只用這台電腦上的模型；要用雲端服務，請到「設定 → AI 助理 → 自動分類」打開")
+                    raise RuntimeError("讓 AI 看資料夾只用這台電腦上的模型；要用雲端服務，請到「設定 → 分類」打開")
                 # 暫停後再繼續：從上次開始的時間算起，已經看過的不再看
                 since = opts.get("since") or db.now_iso()
                 job["options"]["since"] = since
                 res = run_review(conn, llm_mod.make_llm(self.cfg, self.client_factory()), words=opts.get("words"), targets=opts.get("targets"),
                                  only_words=bool(opts.get("only_words")), read_text=bool(self.cfg.classify_read_text) and not remote,
-                                 since=since, chat_id=opts.get("chat_id"), stop=stop,
+                                 since=since, chat_id=opts.get("chat_id"), stop=stop, only_unclassified=bool(opts.get("only_unclassified")),
                                  progress=lambda done, total, name: upd(done=done, total=total, message=name))
                 job["result"] = {"looked": res.looked, "suggested": res.suggested, "action_id": res.action_id, "stopped": res.stopped}
                 if res.error and not res.looked:
@@ -706,7 +706,7 @@ class JobRunner:
 
                 remote = llm_mod.is_remote(self.cfg)
                 if remote and not self.cfg.classify_cloud:
-                    raise RuntimeError("AI 分類只用這台電腦上的模型；要用雲端服務，請到「設定 → AI 助理 → 自動分類」打開")
+                    raise RuntimeError("AI 分類只用這台電腦上的模型；要用雲端服務，請到「設定 → 分類」打開")
                 model = llm_mod.make_llm(self.cfg, self.client_factory())
                 read_text = bool(self.cfg.classify_read_text) and not remote  # 用雲端時一律不讀文件內容
                 res = run_ai(conn, model, read_text=read_text, stop=stop,

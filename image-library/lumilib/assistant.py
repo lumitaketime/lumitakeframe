@@ -302,7 +302,7 @@ def tool_classify_folders(conn: sqlite3.Connection, args: dict, ctx) -> str:
     secs = classify.review_estimate(conn, n)
     runner = jobs_mod.current_runner()
     if runner is None:
-        return "（現在沒辦法在背景開始，請到設定 → AI 助理 → 自動分類按「讓 AI 重新看一遍」）"
+        return "（現在沒辦法在背景開始，請到「設定 → 分類」按「讓 AI 看資料夾」）"
     runner.submit("classify_review", words=words or None, targets=targets or None, only_words=only or None, chat_id=ctx.chat_id)
     mins = max(1, round(secs / 60))
     return (f"已經開始在背景看 {n:,} 個資料夾，大約 {mins} 分鐘（上層看過、有結論的，裡面的會跟著，實際會更快）。"

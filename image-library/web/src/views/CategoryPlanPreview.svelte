@@ -8,11 +8,17 @@
    */
   import { navigate } from "../lib/router.svelte.js";
   import { t, formatNumber } from "../i18n/index.svelte.js";
+  import { prettyName } from "../lib/names.js";
 
   let { preview, done = false, compact = false } = $props();
   const none = (n) => n || t("plan.uncategorized");
   const href = (e) => `/folders/${e.root_id}?path=${encodeURIComponent(e.path)}`;
   const open = (e, ev) => { ev.preventDefault(); navigate(href(e)); };
+  // 表格只列出會變動的分類（新的、數量變了的）；其他的收起來，要看再展開
+  let all = $state(false);
+  const changedCats = $derived((preview.categories || []).filter((c) => c.new || c.folders !== c.before));
+  const rows = $derived(all || !changedCats.length ? preview.categories || [] : changedCats);
+  const hidden = $derived((preview.categories?.length || 0) - changedCats.length);
 </script>
 
 <div class="pv mac-callout">
@@ -24,7 +30,7 @@
     <table class="cats">
       <thead><tr><th>{t("plan.category")}</th><th class="num">{t("plan.before")}</th><th class="num">{t("plan.after")}</th></tr></thead>
       <tbody>
-        {#each preview.categories as c (c.key)}
+        {#each rows as c (c.key)}
           <tr>
             <td><span class="cname">{c.name}</span>{#if c.new}<span class="tag new">{t("plan.new")}</span>{/if}
               {#if c.description}<span class="desc">{c.description}</span>{/if}</td>
@@ -38,6 +44,9 @@
         {/each}
       </tbody>
     </table>
+    {#if changedCats.length && hidden > 0}
+      <button type="button" class="all mac-caption-1" onclick={() => (all = !all)}>{all ? t("plan.onlyChanged") : t("plan.showAll", { n: formatNumber(hidden) })}</button>
+    {/if}
   {/if}
   {#if preview.changes?.length}
     <ul class="changes">
@@ -45,7 +54,7 @@
         <li>
           <span class="move"><span class="sub">{none(ch.from_name)}</span><span class="arrow">→</span><b>{none(ch.to_name)}</b>
             <span class="sub">{t("plan.folders", { n: formatNumber(ch.count) })}</span></span>
-          <span class="ex sub">{t("plan.example")}{#each ch.examples as e, j (e.id)}{j ? "、" : ""}<a href={href(e)} onclick={(ev) => open(e, ev)}>{e.name}</a>{/each}</span>
+          <span class="ex sub">{t("plan.example")}{#each ch.examples as e, j (e.id)}{j ? "、" : ""}<a href={href(e)} onclick={(ev) => open(e, ev)} title={e.path}>{prettyName(e.name)}</a>{/each}</span>
         </li>
       {/each}
     </ul>
@@ -74,5 +83,6 @@
   .arrow { color: var(--label-secondary); }
   .ex { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ex a { color: var(--accent); text-decoration: none; }
+  .all { align-self: flex-start; border: 0; padding: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
   .ex a:hover { text-decoration: underline; }
 </style>

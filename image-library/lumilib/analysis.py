@@ -56,6 +56,9 @@ _STOP_RE = re.compile("|".join(sorted(map(re.escape, STOP_ZH), key=len, reverse=
 
 def terms(name: str) -> set[str]:
     """一個名稱裡的候選詞（中文片段、英文字）。雜詞（新增資料夾、學年、副本…）先切掉，不會拼成奇怪的片段。"""
+    from .classify import pretty_name
+
+    name = pretty_name(name)  # 「%E5%85%A7…」這種編碼過的檔名先還原
     base = name.rsplit(".", 1)[0] if "." in name[-6:] else name
     base = _STOP_RE.sub(" ", base)
     out = set()

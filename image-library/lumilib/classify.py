@@ -85,6 +85,7 @@ def restore_defaults(conn: sqlite3.Connection) -> int:
     have = {r["key"] for r in conn.execute("SELECT key FROM categories")}
     pos = conn.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM categories").fetchone()[0]
     missing = [k for k in BUILTIN if k not in have]
+    unreject_names(conn, [NAMES.get(k, k) for k in missing])
     conn.executemany("INSERT INTO categories (key, name, position, builtin) VALUES (?, NULL, ?, 1)", [(k, pos + i) for i, k in enumerate(missing)])
     conn.execute("UPDATE categories SET merged_into = NULL WHERE builtin = 1 AND merged_into IS NOT NULL")
     conn.commit()
@@ -117,6 +118,63 @@ def display_name(c: dict) -> str:
     return c.get("name") or NAMES.get(c["key"], c["key"])
 
 
+_PCT = re.compile(r"%[0-9A-Fa-f]{2}")
+
+
+def pretty_name(name: str) -> str:
+    """網頁下載的檔名常常是「%E5%85%A7…」這種編碼過的樣子：還原成看得懂的字（只用來顯示和給 AI 看，不改硬碟）。"""
+    name = name or ""
+    if len(_PCT.findall(name)) < 2:
+        return name
+    from urllib.parse import unquote
+
+    try:
+        out = unquote(name, errors="strict")
+    except UnicodeDecodeError:
+        return name
+    return out if out and out != name else name
+
+
+# ---- 本人刪掉過的分類名稱：AI 建議新分類時不再提 ----
+
+REJECTED_KEY = "category_rejected"
+
+
+def _norm(name: str) -> str:
+    return re.sub(r"[\s「」『』\"'（）()·・\-–—_/]", "", str(name or "")).lower()
+
+
+def rejected_names(conn: sqlite3.Connection) -> list[str]:
+    r = conn.execute("SELECT value FROM settings_kv WHERE key = ?", (REJECTED_KEY,)).fetchone()
+    try:
+        out = json.loads(r["value"]) if r else []
+    except ValueError:
+        out = []
+    return [str(x) for x in out if x][:200] if isinstance(out, list) else []
+
+
+def unreject_names(conn: sqlite3.Connection, names) -> None:
+    """本人又加回這個名稱的分類：從「不要再提」拿掉。"""
+    drop = {_norm(n) for n in names or [] if n}
+    have = rejected_names(conn)
+    if drop and any(_norm(x) in drop for x in have):
+        conn.execute("INSERT OR REPLACE INTO settings_kv (key, value) VALUES (?, ?)",
+                     (REJECTED_KEY, json.dumps([x for x in have if _norm(x) not in drop], ensure_ascii=False)))
+
+
+def reject_names(conn: sqlite3.Connection, names, commit: bool = False) -> None:
+    have = rejected_names(conn)
+    seen = {_norm(x) for x in have}
+    for n in names or []:
+        n = str(n or "").strip()[:40]
+        if n and _norm(n) not in seen:
+            have.append(n)
+            seen.add(_norm(n))
+    conn.execute("INSERT OR REPLACE INTO settings_kv (key, value) VALUES (?, ?)", (REJECTED_KEY, json.dumps(have[-200:], ensure_ascii=False)))
+    if commit:
+        conn.commit()
+
+
 def _resolver(conn: sqlite3.Connection):
     """合併掉的分類 → 合併後的那一類（最多追五層）。"""
     merged = {r["key"]: r["merged_into"] for r in conn.execute("SELECT key, merged_into FROM categories")}
@@ -135,6 +193,7 @@ def add_category(conn: sqlite3.Connection, name: str, description: str = "", com
     name = (name or "").strip()[:40]
     if not name:
         raise ValueError("請輸入分類名稱")
+    unreject_names(conn, [name])
     key = "c" + str(int(conn.execute("SELECT COALESCE(MAX(rowid), 0) + 1 FROM categories").fetchone()[0]))
     pos = conn.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM categories").fetchone()[0]
     conn.execute("INSERT INTO categories (key, name, position, builtin, description) VALUES (?, ?, ?, 0, ?)",
@@ -146,7 +205,7 @@ def add_category(conn: sqlite3.Connection, name: str, description: str = "", com
 
 def rename_category(conn: sqlite3.Connection, key: str, name: str | None, commit: bool = True) -> None:
     """改名；內建的分類給空白＝改回預設名稱。"""
-    row = conn.execute("SELECT builtin FROM categories WHERE key = ?", (key,)).fetchone()
+    row = conn.execute("SELECT * FROM categories WHERE key = ?", (key,)).fetchone()
     if row is None:
         raise ValueError("找不到這個分類")
     name = (name or "").strip()[:40] or None
@@ -160,9 +219,10 @@ def rename_category(conn: sqlite3.Connection, key: str, name: str | None, commit
 def delete_category(conn: sqlite3.Connection, key: str, commit: bool = True) -> None:
     """刪除一個分類（預設的也可以刪）：用到它的資料夾改回「自動」（本人的設定、學到的規則、關鍵字規則拿掉）；
     預設分類的內建關鍵字也不再把資料夾分到這裡。"""
-    row = conn.execute("SELECT builtin FROM categories WHERE key = ?", (key,)).fetchone()
+    row = conn.execute("SELECT * FROM categories WHERE key = ?", (key,)).fetchone()
     if row is None:
         raise ValueError("找不到這個分類")
+    reject_names(conn, [display_name(dict(row))])  # AI 建議新分類時不再提這個名稱
     for table in ("category_user", "category_learned", "category_rules"):
         conn.execute(f"DELETE FROM {table} WHERE category = ?", (key,))
     conn.execute("DELETE FROM categories WHERE key = ?", (key,))
@@ -589,6 +649,12 @@ def ai_candidates(conn: sqlite3.Connection, limit: int | None = None) -> list[sq
     return rows[:limit] if limit else rows
 
 
+def unclassified_count(conn: sqlite3.Connection) -> int:
+    """還沒有分類的資料夾（只算有檔案的，不算硬碟本身）。"""
+    return conn.execute("SELECT COUNT(*) FROM folders d LEFT JOIN folder_category c ON c.folder_id = d.id "
+                        "WHERE d.status = 'ok' AND d.path != '' AND d.total_files > 0 AND c.category IS NULL").fetchone()[0]
+
+
 def ai_todo(conn: sqlite3.Connection) -> int:
     """還有幾個資料夾等 AI 看（只算數量）。"""
     return conn.execute(
@@ -597,7 +663,7 @@ def ai_todo(conn: sqlite3.Connection) -> int:
         "AND (a.folder_id IS NULL OR a.stale = 1 OR a.sig != d.name || '|' || d.total_files)").fetchone()[0]
 
 
-def _prompt(conn: sqlite3.Connection, folder: sqlite3.Row, keys: list[tuple[str, str]], read_text: bool) -> str:
+def _prompt(conn: sqlite3.Connection, folder: sqlite3.Row, keys: list[tuple[str, str]], read_text: bool, allow_new: bool = False) -> str:
     from .textindex import body
 
     desc = {c["key"]: c["description"] for c in categories(conn) if c["description"]}
@@ -606,13 +672,13 @@ def _prompt(conn: sqlite3.Connection, folder: sqlite3.Row, keys: list[tuple[str,
     kinds = conn.execute("SELECT kind, COUNT(*) AS n FROM files f JOIN folders d ON d.id = f.folder_id "
                          "WHERE f.status = 'ok' AND f.root_id = ? AND (d.id = ? OR d.path LIKE ? ESCAPE '\\') GROUP BY kind ORDER BY n DESC",
                          (folder["root_id"], folder["id"], folder["path"].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%")).fetchall()
-    names = [r["name"] for r in conn.execute("SELECT name FROM files WHERE folder_id = ? AND status = 'ok' ORDER BY size DESC LIMIT 30", (folder["id"],))]
-    subs = [r["name"] for r in conn.execute("SELECT name FROM folders WHERE parent_id = ? AND status = 'ok' ORDER BY total_bytes DESC LIMIT 15", (folder["id"],))]
+    names = [pretty_name(r["name"]) for r in conn.execute("SELECT name FROM files WHERE folder_id = ? AND status = 'ok' ORDER BY size DESC LIMIT 30", (folder["id"],))]
+    subs = [pretty_name(r["name"]) for r in conn.execute("SELECT name FROM folders WHERE parent_id = ? AND status = 'ok' ORDER BY total_bytes DESC LIMIT 15", (folder["id"],))]
     lines = [
         "你是檔案整理助手。根據下面這個資料夾的資訊，判斷它屬於哪一個分類。只能從清單裡選；真的看不出來就回答 unknown。",
         "分類清單：\n" + "\n".join(f"- {k}：{n}" + (f"（{desc.get(k)}）" if desc.get(k) else "") for k, n in keys),
-        f"資料夾名稱：{folder['name']}",
-        f"位置：{folder['root']} / {folder['path']}",
+        f"資料夾名稱：{pretty_name(folder['name'])}",
+        f"位置：{folder['root']} / {pretty_name(folder['path'])}",
         "檔案類型：" + "、".join(f"{r['kind']} {r['n']}" for r in kinds),
     ]
     if subs:
@@ -637,8 +703,117 @@ def _prompt(conn: sqlite3.Connection, folder: sqlite3.Row, keys: list[tuple[str,
     year = name_year(folder["name"])
     if year:
         lines.append(f"資料夾名稱裡的年份：{year}")
-    lines.append("請回答 JSON：category（分類的英文代號）、confidence（0 到 1 的信心）、reason（一句中文理由，二十個字以內）。")
+    if allow_new:
+        lines[0] = ("你是檔案整理助手。根據下面這個資料夾的資訊，判斷它屬於哪一個分類。清單裡有適合的就選清單裡的；"
+                    "清單裡都不適合，category 回答 new，並在 new_name 寫一個適合的新分類名稱（2 到 8 個字，例如「護理課程」「軟體安裝檔」），"
+                    "new_description 寫一句說明；完全看不出內容才回答 unknown。")
+        avoid = rejected_names(conn)
+        if avoid:
+            lines.append("這些分類本人刪掉過，不要再用這些名稱：" + "、".join(avoid[:40]))
+        lines.append("請回答 JSON：category（分類的英文代號，或 new、unknown）、new_name、new_description、confidence（0 到 1 的信心）、reason（一句中文理由，二十個字以內）。")
+    else:
+        lines.append("請回答 JSON：category（分類的英文代號）、confidence（0 到 1 的信心）、reason（一句中文理由，二十個字以內）。")
     return "\n".join(lines)
+
+
+def _schema(valid, allow_new: bool) -> dict:
+    props = {"category": {"type": "string", "enum": [*valid, *(["new"] if allow_new else []), "unknown"]},
+             "confidence": {"type": "number"}, "reason": {"type": "string"}}
+    if allow_new:
+        props["new_name"] = {"type": "string"}
+        props["new_description"] = {"type": "string"}
+    return {"type": "object", "properties": props, "required": ["category", "confidence", "reason"]}
+
+
+NEW_MIN_FOLDERS = 2  # AI 想新增的分類：至少這麼多個資料夾（或一個大資料夾）才提
+NEW_BIG_FOLDER = 30
+NEW_MAX = 8  # 一次最多建議幾個新分類
+
+
+def _new_name(out) -> tuple[str, str]:
+    if not isinstance(out, dict):
+        return "", ""
+    name = re.sub(r"\s+", " ", str(out.get("new_name") or "")).strip(" 「」『』\"'。．.")[:20]
+    return name, str(out.get("new_description") or "").strip()[:120]
+
+
+def _consolidate(conn: sqlite3.Connection, llm, picks: dict) -> list[dict]:
+    """把 AI 一個一個資料夾想出來的新分類名稱整理成幾類：意思一樣的合併；本人刪掉過的不提；跟現有分類同名的直接用現有的。
+    picks：名稱 → [{id, name, files, description, reason}]。回傳 [{name, description, key（現有分類）或 None, items}]。"""
+    groups: dict[str, dict] = {}
+    for name, items in picks.items():
+        g = groups.setdefault(_norm(name), {"name": name, "description": "", "items": []})
+        g["items"] += items
+        g["description"] = g["description"] or next((x["description"] for x in items if x.get("description")), "")
+    if len(groups) > 1 and llm is not None:
+        names = [g["name"] for g in groups.values()]
+        schema = {"type": "object", "properties": {"groups": {"type": "array", "items": {"type": "object", "properties": {
+            "name": {"type": "string"}, "description": {"type": "string"}, "members": {"type": "array", "items": {"type": "string"}}},
+            "required": ["name", "members"]}}}, "required": ["groups"]}
+        prompt = ("下面是替一些資料夾想的新分類名稱（括號是有幾個資料夾）。請把意思相同或很接近的合併，"
+                  f"最多 {NEW_MAX} 類；每一類給一個簡短的名稱（2 到 8 個字）和一句說明，members 列出合併了哪些原本的名稱（照抄）。\n"
+                  + "\n".join(f"- {g['name']}（{len(g['items'])}）" + (f"：{g['description']}" if g["description"] else "") for g in groups.values())
+                  + "\n請回答 JSON：groups。")
+        try:
+            out = llm.plan_json(prompt, schema)
+            merged: dict[str, dict] = {}
+            used = set()
+            for grp in (out.get("groups") or []) if isinstance(out, dict) else []:
+                name = str(grp.get("name") or "").strip()[:20]
+                members = [_norm(m) for m in grp.get("members") or [] if _norm(m) in groups and _norm(m) not in used]
+                if not name or not members:
+                    continue
+                g = merged.setdefault(_norm(name), {"name": name, "description": str(grp.get("description") or "")[:120], "items": []})
+                for m in members:
+                    used.add(m)
+                    g["items"] += groups[m]["items"]
+                    g["description"] = g["description"] or groups[m]["description"]
+            for k, g in groups.items():  # 模型漏掉的保持原樣
+                if k not in used:
+                    merged.setdefault(k, g)
+            groups = merged
+        except Exception:  # noqa: BLE001  整理不了就照原本的名稱
+            pass
+    avoid = {_norm(x) for x in rejected_names(conn)}
+    have = {_norm(display_name(c)): c["key"] for c in categories(conn)}
+    out = []
+    for k, g in groups.items():
+        seen, items = set(), []
+        for x in g["items"]:
+            if x["id"] not in seen:
+                seen.add(x["id"])
+                items.append(x)
+        g["items"] = items
+        if k in avoid and k not in have:
+            continue
+        if len(items) < NEW_MIN_FOLDERS and not any((x.get("files") or 0) >= NEW_BIG_FOLDER for x in items):
+            continue
+        g["key"] = have.get(k)
+        out.append(g)
+    out.sort(key=lambda g: -len(g["items"]))
+    return out[:NEW_MAX]
+
+
+def _suggestion_ops(changes: dict, news: list[dict]) -> list[dict]:
+    """計畫卡上的步驟：先新增分類，再把資料夾放進去；AI 想換分類的資料夾也放在同一張卡上。"""
+    ops = []
+    for g in news:
+        note = "；".join(f"{pretty_name(x['name'])}：{x['reason']}" if x.get("reason") else pretty_name(x["name"]) for x in g["items"][:3])
+        if not g.get("key"):
+            ops.append({"op": "add_category", "name": g["name"], "description": g.get("description") or ""})
+        ops.append({"op": "set_folder", "folders": [x["id"] for x in g["items"]], "category": g.get("key") or g["name"], "note": note})
+    for cat, items in sorted(changes.items(), key=lambda x: -len(x[1])):
+        ops.append({"op": "set_folder", "folders": [x["id"] for x in items], "category": cat,
+                    "note": "；".join(f"{pretty_name(x['name'])}：{x['reason']}" for x in items[:3])})
+    return ops
+
+
+def _propose_suggestions(conn: sqlite3.Connection, ops: list[dict]) -> int:
+    """AI 的建議做成計畫卡（還沒確認的那一張會合併進去，不會一直多出新的卡）。"""
+    from .actions import propose
+
+    action = propose(conn, "category_plan", {"ops": ops, "title": "AI 看過內容後的建議", "group": "ai_suggest"}, 3)
+    return action["id"]
 
 
 @dataclass
@@ -649,6 +824,8 @@ class AIResult:
     skipped: int = 0
     stopped: bool = False
     error: str = ""
+    new_categories: int = 0
+    action_id: int | None = None
 
 
 def run_ai(conn: sqlite3.Connection, llm, read_text: bool = True, progress=None, stop=None, wait=None, limit: int | None = None) -> AIResult:
@@ -658,11 +835,10 @@ def run_ai(conn: sqlite3.Connection, llm, read_text: bool = True, progress=None,
     cats = categories(conn)
     keys = [(c["key"], c["name"] or NAMES.get(c["key"], c["key"])) for c in cats]
     valid = {k for k, _ in keys}
-    schema = {"type": "object", "properties": {
-        "category": {"type": "string", "enum": [*valid, "unknown"]},
-        "confidence": {"type": "number"}, "reason": {"type": "string"}}, "required": ["category", "confidence", "reason"]}
+    schema = _schema(valid, True)
     todo = ai_candidates(conn, limit)
     decided: set[int] = set()
+    picks: dict[str, list] = {}  # AI 想新增的分類 → 資料夾
     parent_of = {r["id"]: r["parent_id"] for r in conn.execute("SELECT id, parent_id FROM folders")}
     for i, f in enumerate(todo):
         if stop is not None and stop.is_set():
@@ -684,12 +860,18 @@ def run_ai(conn: sqlite3.Connection, llm, read_text: bool = True, progress=None,
         if progress:
             progress(i, len(todo), f["name"])
         try:
-            out = llm.plan_json(_prompt(conn, f, keys, read_text), schema)
+            out = llm.plan_json(_prompt(conn, f, keys, read_text, allow_new=True), schema)
         except Exception as exc:  # noqa: BLE001  模型沒開、太久沒回應…：先停下來，告訴本人
             result.error = str(exc)
             break
         result.asked += 1
         cat = out.get("category") if isinstance(out, dict) else None
+        if cat == "new":
+            nn, nd = _new_name(out)
+            if nn:
+                picks.setdefault(nn, []).append({"id": f["id"], "name": f["name"], "files": f["total_files"], "description": nd,
+                                                 "reason": str(out.get("reason") or "")[:60]})
+                decided.add(f["id"])
         try:
             conf = max(0.0, min(1.0, float(out.get("confidence") or 0)))
         except (TypeError, ValueError):
@@ -709,6 +891,14 @@ def run_ai(conn: sqlite3.Connection, llm, read_text: bool = True, progress=None,
             run_rules(conn)
     conn.commit()
     run_rules(conn)
+    if picks:
+        news = _consolidate(conn, llm, picks)
+        if news:
+            try:
+                result.action_id = _propose_suggestions(conn, _suggestion_ops({}, news))
+                result.new_categories = sum(1 for g in news if not g.get("key"))
+            except Exception as exc:  # noqa: BLE001
+                result.error = result.error or str(exc)
     if progress:
         progress(len(todo), len(todo), "")
     return result
@@ -961,7 +1151,7 @@ SEC_PER_FOLDER = 3.0  # 沒有實測過時的估計（這台電腦上的模型�
 
 
 def review_candidates(conn: sqlite3.Connection, words: list[str] | None = None, only_words: bool = False,
-                      since: str | None = None) -> list[sqlite3.Row]:
+                      since: str | None = None, only_unclassified: bool = False) -> list[sqlite3.Row]:
     """要看的資料夾：本人沒改過的（也不在本人設定的資料夾裡面），名稱有指定詞的先看，再來淺的、大的。
     since：接著上次沒看完的（這個時間之後看過的就跳過）。"""
     rows = conn.execute(
@@ -970,7 +1160,8 @@ def review_candidates(conn: sqlite3.Connection, words: list[str] | None = None, 
         "LEFT JOIN folder_category c ON c.folder_id = d.id LEFT JOIN category_ai a ON a.folder_id = d.id "
         "WHERE d.status = 'ok' AND d.path != '' AND d.total_files > 0 AND COALESCE(c.source, '') NOT IN ('user', 'pending') "
         "AND (? IS NULL OR a.created_at IS NULL OR a.created_at < ?) "
-        "ORDER BY length(d.path) - length(replace(d.path, '/', '')), d.total_bytes DESC", (since, since)).fetchall()
+        + ("AND c.category IS NULL " if only_unclassified else "")
+        + "ORDER BY length(d.path) - length(replace(d.path, '/', '')), d.total_bytes DESC", (since, since)).fetchall()
     words = [w.lower() for w in (words or []) if w and str(w).strip()]
     if not words:
         return rows
@@ -1009,11 +1200,13 @@ class ReviewResult:
     error: str = ""
     action_id: int | None = None
     seconds: float = 0
+    new_categories: int = 0
+    new_folders: int = 0
 
 
 def run_review(conn: sqlite3.Connection, llm, words: list[str] | None = None, targets: list[str] | None = None,
                only_words: bool = False, read_text: bool = True, since: str | None = None, chat_id: int | None = None,
-               progress=None, stop=None) -> ReviewResult:
+               progress=None, stop=None, only_unclassified: bool = False) -> ReviewResult:
     """AI 逐一看資料夾：
     - 原本沒有分類（或只有 AI 的舊建議）：直接記下 AI 的判斷（還是「AI 建議」，本人可以改；沒把握的放進「請你確認」）。
     - 已經靠規則分好、AI 看了內容覺得該換：不直接改，整理成一張計畫卡讓本人勾選、確認才套用。
@@ -1030,13 +1223,13 @@ def run_review(conn: sqlite3.Connection, llm, words: list[str] | None = None, ta
     keys = [(c["key"], display_name(c)) for c in cats]
     valid = {k for k, _ in keys}
     names = {c["key"]: display_name(c) for c in categories(conn, include_merged=True)}
-    schema = {"type": "object", "properties": {
-        "category": {"type": "string", "enum": [*valid, "unknown"]},
-        "confidence": {"type": "number"}, "reason": {"type": "string"}}, "required": ["category", "confidence", "reason"]}
-    todo = review_candidates(conn, words, only_words, since)
+    allow_new = not targets  # 本人指定了分類時只在那幾類裡選
+    schema = _schema(valid, allow_new)
+    todo = review_candidates(conn, words, only_words, since, only_unclassified)
     parent_of = {r["id"]: r["parent_id"] for r in conn.execute("SELECT id, parent_id FROM folders")}
     decided: set[int] = set()
     suggestions: dict[str, list] = {}
+    picks: dict[str, list] = {}  # 放不進現有分類：AI 想新增的分類 → 資料夾
     for i, f in enumerate(todo):
         if stop is not None and stop.is_set():
             result.stopped = True
@@ -1052,7 +1245,7 @@ def run_review(conn: sqlite3.Connection, llm, words: list[str] | None = None, ta
             continue
         if progress:
             progress(i, len(todo), f["name"])
-        prompt = _prompt(conn, f, keys, read_text)
+        prompt = _prompt(conn, f, keys, read_text, allow_new=allow_new)
         notes = _photo_notes(conn, f["id"])
         if notes:
             prompt = prompt.replace("請回答 JSON：", "照片的描述（部分）：" + "；".join(n[:120] for n in notes) + "\n請回答 JSON：", 1)
@@ -1065,6 +1258,12 @@ def run_review(conn: sqlite3.Connection, llm, words: list[str] | None = None, ta
             break
         result.looked += 1
         cat = out.get("category") if isinstance(out, dict) else None
+        if allow_new and cat == "new" and (f["current"] is None or f["source"] == "ai"):
+            nn, nd = _new_name(out)
+            if nn:
+                picks.setdefault(nn, []).append({"id": f["id"], "name": f["name"], "files": f["total_files"], "description": nd,
+                                                 "reason": str(out.get("reason") or "")[:60]})
+                decided.add(f["id"])
         cat = cat if cat in valid else None
         try:
             conf = max(0.0, min(1.0, float(out.get("confidence") or 0)))
@@ -1093,17 +1292,13 @@ def run_review(conn: sqlite3.Connection, llm, words: list[str] | None = None, ta
         per = max(0.3, result.seconds / result.looked)
         conn.execute("INSERT OR REPLACE INTO settings_kv (key, value) VALUES ('classify_sec_per_folder', ?)", (f"{per:.2f}",))
         conn.commit()
-    if suggestions:
-        from .actions import ActionError, propose
-
-        ops = []
-        for cat, items in sorted(suggestions.items(), key=lambda x: -len(x[1])):
-            ops.append({"op": "set_folder", "folders": [x["id"] for x in items], "category": cat,
-                        "note": "；".join(f"{x['name']}：{x['reason']}" for x in items[:3])})
+    news = _consolidate(conn, llm, picks) if picks else []
+    if suggestions or news:
         try:
-            action = propose(conn, "category_plan", {"ops": ops, "title": "AI 看過內容後的建議"}, 3)
-            result.action_id = action["id"]
-        except ActionError as exc:
+            result.action_id = _propose_suggestions(conn, _suggestion_ops(suggestions, news))
+            result.new_categories = sum(1 for g in news if not g.get("key"))
+            result.new_folders = sum(len(g["items"]) for g in news)
+        except Exception as exc:  # noqa: BLE001
             result.error = result.error or str(exc)
     if progress:
         progress(len(todo), len(todo), "")
@@ -1116,8 +1311,12 @@ def describe_review(r: ReviewResult, names: dict | None = None) -> str:
     text = f"AI 看了 {r.looked:,} 個資料夾：替 {r.labeled:,} 個還沒分類的分好"
     if r.review:
         text += f"（{r.review:,} 個沒把握，放在「請你確認」）"
+    if r.new_categories:
+        text += f"；有 {r.new_folders:,} 個資料夾放不進現有的分類，建議新增 {r.new_categories:,} 個分類"
     if r.suggested:
-        text += f"；建議把 {r.suggested:,} 個資料夾換分類，整理在計畫卡上等你確認"
+        text += f"；建議把 {r.suggested:,} 個資料夾換分類"
+    if r.new_categories or r.suggested:
+        text += "，整理在計畫卡上等你確認"
     if r.skipped:
         text += f"；{r.skipped:,} 個跟著上層，不用再看"
     if r.stopped:
@@ -1151,6 +1350,8 @@ def describe_ai(r: AIResult) -> str:
     text = f"AI 分類：看了 {r.asked:,} 個資料夾，分好 {r.classified:,} 個"
     if r.review:
         text += f"，其中 {r.review:,} 個沒把握，放在「請你確認」"
+    if r.new_categories:
+        text += f"；建議新增 {r.new_categories:,} 個分類，在「分類檢查」的計畫卡等你確認"
     if r.stopped:
         text += "；已暫停，之後會接著做"
     if r.error:

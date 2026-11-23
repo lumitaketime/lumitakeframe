@@ -264,6 +264,62 @@ class ReviewTests(CategoryPlanTests):
         self.assertNotIn("婚攝 林家", judge2.asked)
         self.assertGreater(classify.review_estimate(self.conn, 10), 0)
 
+    class NewJudge(Judge):
+        def plan_json(self, prompt, schema):
+            if "groups" in schema["properties"]:  # 整理新分類名稱
+                self.merge_prompt = prompt
+                return {"groups": [{"name": "婚禮攝影", "description": "接案拍的婚禮照片", "members": ["婚禮攝影", "婚攝作品"]}]}
+            return super().plan_json(prompt, schema)
+
+    def test_review_suggests_new_categories(self):
+        """放不進現有分類的：AI 建議新分類，做成計畫卡，確認才建立；本人刪掉過的名稱不再提；不要的也記住。"""
+        classify.delete_category(self.conn, "creative")
+        classify.delete_category(self.conn, "travel")
+        self.assertIsNone(self.cat("婚攝 林家")["category"])
+        judge = self.NewJudge({
+            "婚攝 林家": {"category": "new", "new_name": "婚禮攝影", "new_description": "婚禮照片", "confidence": 0.8, "reason": "婚禮照片"},
+            "婚攝 陳家": {"category": "new", "new_name": "婚攝作品", "confidence": 0.8, "reason": "婚禮照片"},
+            "設計 海報案": {"category": "new", "new_name": "旅行與活動", "confidence": 0.8, "reason": "?"},
+        })
+        r = classify.run_review(self.conn, judge)
+        self.assertIn("new_name", judge.prompts[0])
+        self.assertIn("旅行與活動", judge.prompts[0])  # 告訴 AI 不要再用刪掉過的名稱
+        self.assertEqual(r.new_categories, 1)
+        self.assertEqual(r.new_folders, 2)
+        self.assertIsNone(self.cat("婚攝 林家")["category"])  # 還沒確認：不改
+        self.assertFalse(any(c["name"] == "婚禮攝影" for c in classify.categories(self.conn)))
+        plan = actions.get(self.conn, r.action_id)
+        self.assertTrue(any(c["new"] and c["name"] == "婚禮攝影" for c in plan["preview"]["categories"]))
+        self.assertFalse(any(c["name"] == "旅行與活動" for c in plan["preview"]["categories"]))  # 刪掉過的不提
+        self.assertIn("建議新增 1 個分類", classify.describe_review(r))
+        # 再看一次：同一張卡合併，不重複
+        r2 = classify.run_review(self.conn, judge)
+        self.assertEqual(r2.action_id, r.action_id)
+        plan = actions.get(self.conn, r.action_id)
+        self.assertEqual(sum(1 for op in plan_ops(self.conn, r.action_id) if op["op"] == "add_category"), 1)
+        actions.run(self.conn, r.action_id, 3)
+        self.assertEqual(classify.display_name(next(c for c in classify.categories(self.conn) if c["key"] == self.cat("婚攝 林家")["category"])), "婚禮攝影")
+        actions.undo(self.conn, r.action_id)
+        self.assertIsNone(self.cat("婚攝 林家")["category"])
+        # 按「不要」：之後不再提這個名稱
+        r3 = classify.run_review(self.conn, judge)
+        actions.dismiss(self.conn, r3.action_id)
+        self.assertIn("婚禮攝影", classify.rejected_names(self.conn))
+        r4 = classify.run_review(self.conn, judge)
+        self.assertEqual(r4.new_categories, 0)
+
+    def test_pretty_name(self):
+        self.assertEqual(classify.pretty_name("%E5%85%A7%E5%A4%96%E7%A7%91_770"), "內外科_770")
+        self.assertEqual(classify.pretty_name("100% 純"), "100% 純")
+        self.assertEqual(classify.pretty_name("%FF%FE"), "%FF%FE")
+
+    def test_history_recent_only(self):
+        a = actions.propose(self.conn, "category_plan", {"ops": [{"op": "add_category", "name": "測試"}]}, 3)
+        actions.run(self.conn, a["id"], 3)
+        self.assertEqual([x["id"] for x in actions.history(self.conn)], [a["id"]])
+        self.conn.execute("UPDATE assistant_actions SET done_at = '2020-01-01T00:00:00+00:00', created_at = '2020-01-01T00:00:00+00:00'")
+        self.assertEqual(actions.history(self.conn), [])
+
     def test_assistant_starts_review(self):
         from lumilib import assistant
         from lumilib.jobs import JobRunner
@@ -277,3 +333,9 @@ class ReviewTests(CategoryPlanTests):
             self.assertEqual(submit.call_args.kwargs["words"], ["蔦松"])
         finally:
             m.close()
+
+
+def plan_ops(conn, action_id):
+    import json
+
+    return json.loads(conn.execute("SELECT payload FROM assistant_actions WHERE id = ?", (action_id,)).fetchone()[0])["ops"]

@@ -2,10 +2,11 @@
   /**
    * 助理提出的一個動作：列出要做什麼（原本 → 之後），本人勾選、按「執行」才做；會動到硬碟的動作再跳一次確認。
    * 做完顯示每一項的結果，可以「復原」。核心原則一：助理只提案，動手的永遠是本人；沒有刪除這個動作。
+   * 已經處理過的（做完、復原、略過）縮成一行：標題、狀態、時間、「復原」；點標題才展開細節。
    */
   import { Alert, Button, Checkbox, Icon } from "../ui/index.js";
   import { runAction, undoAction, dismissAction } from "../data/assistant.js";
-  import { t, formatBytes, formatNumber } from "../i18n/index.svelte.js";
+  import { t, formatBytes, formatNumber, formatDateTime } from "../i18n/index.svelte.js";
   import { toast, refresh } from "../lib/state.svelte.js";
 
   let { action = $bindable(), compact = false } = $props();
@@ -29,6 +30,12 @@
   const canUndo = $derived(action.state === "done" || action.state === "partial");
   let busy = $state(false);
   let confirm = $state(null); // "run" | "undo"
+  let opened = $state(false); // 處理過的動作：展開看細節
+  const folded = $derived(!proposed && !opened);
+  const when = $derived.by(() => {
+    const iso = action.undone_at || action.done_at || action.created_at;
+    return iso ? formatDateTime(new Date(iso)) : "";
+  });
 
   async function call(fn) {
     busy = true;
@@ -58,7 +65,22 @@
   const parent = (p) => (p && p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
 </script>
 
+{#if folded}
+<section class="card folded" class:compact aria-label={action.summary}>
+  <button type="button" class="line" onclick={() => (opened = true)} aria-expanded="false">
+    <Icon name="chevron-right" size={11} />
+    <Icon name={ICON[action.kind] || "sparkles"} size={13} />
+    <span class="title mac-callout">{action.summary}</span>
+    <span class="state s-{action.state} mac-caption-1">{t(`act.state.${action.state}`)}</span>
+    <span class="when mac-caption-1">{when}</span>
+  </button>
+  {#if canUndo}<Button size="small" variant="borderless" icon="undo" loading={busy} onclick={pressUndo}>{t("act.undo")}</Button>{/if}
+</section>
+{:else}
 <section class="card" class:compact aria-label={action.summary}>
+  {#if !proposed}
+    <button type="button" class="fold mac-caption-1" onclick={() => (opened = false)} aria-expanded="true">{t("act.collapse")}</button>
+  {/if}
   <header>
     <Icon name={ICON[action.kind] || "sparkles"} size={15} />
     <div class="head">
@@ -116,6 +138,7 @@
     </div>
   {/if}
 </section>
+{/if}
 
 {#if confirm}
   <div class="backdrop">
@@ -131,6 +154,16 @@
   .card { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md); background: var(--bg-primary); box-shadow: inset 0 0 0 1px var(--separator); }
   .card.compact { margin-top: 0; }
+  .card { position: relative; margin-bottom: 0; }
+  .card.folded { flex-direction: row; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); }
+  .line { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-2); border: 0; padding: var(--space-1) 0; background: none;
+    color: var(--label-primary); font: inherit; text-align: left; cursor: pointer; }
+  .line > :global(svg) { flex: none; color: var(--label-secondary); }
+  .line > :global(svg + svg) { color: var(--accent); }
+  .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .when { flex: none; color: var(--label-secondary); }
+  .card:has(.fold) header { padding-right: var(--space-6); }
+  .fold { position: absolute; top: var(--space-2); right: var(--space-3); border: 0; padding: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
   header { display: flex; align-items: flex-start; gap: var(--space-2); }
   header > :global(svg) { flex: none; margin-top: 3px; color: var(--accent); }
   .head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

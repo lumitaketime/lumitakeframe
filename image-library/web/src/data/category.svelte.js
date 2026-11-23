@@ -20,7 +20,7 @@ export const runClassify = (ai = false) => api("/api/classify/run", { body: { ai
 /** 讓 AI 重新看一遍：要看幾個資料夾、大約幾秒 */
 export const reviewEstimate = () => api("/api/classify/review/estimate", { quiet: true });
 /** 讓這台電腦上的 AI 在背景逐一看資料夾並分類（看完的建議放在計畫卡上） */
-export const runReview = (categories) => api("/api/classify/run", { body: { review: true, categories } });
+export const runReview = (categories, onlyUnclassified = false) => api("/api/classify/run", { body: { review: true, categories, only_unclassified: onlyUnclassified } });
 /** 還沒確認的分類計畫卡 */
 export const loadPlans = () => api("/api/category/plans", { quiet: true });
 /** 新增、改名、刪除、加回預設分類：{action: add|rename|delete|restore, key, name} */

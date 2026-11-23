@@ -5,7 +5,7 @@
    *    這台電腦：顯示偵測到的晶片與記憶體，依記憶體推薦模型；太大的模型標出來，下載前再提醒。
    *    雲端服務：切換前一定先跳出確認（核心原則二：資料不出家門，例外要本人明確同意）。金鑰只存在這台電腦，介面不會再顯示。
    * 2. 助理可以做什麼：四個權限等級；雲端服務可不可以看到文件內容另外一個開關。
-   * 3. 助理做過的動作：可以復原。
+   * 3. 助理做過的動作（最近 7 天；每筆一行，點開看細節）：可以復原。分類的設定在「設定 → 分類」。
    */
   import { Alert, Button, List, ListRow, PopUpButton, RadioGroup, TextField, Toggle } from "../ui/index.js";
   import { loadModels, testAssistant, saveSettings } from "../data/settings.js";
@@ -273,7 +273,7 @@
     {/if}
   </List>
 
-  <List header={t("set.ai.history")} footer={actions.length ? t("set.ai.historyFooter") : ""}>
+  <List header={t("set.ai.history")} footer={t("set.ai.historyRecent") + (actions.length ? " " + t("set.ai.historyFooter") : "")}>
     {#if actions.length}
       <div class="pad history">
         {#each actions as _, k (actions[k].id)}

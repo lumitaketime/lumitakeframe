@@ -104,12 +104,13 @@ def propose(conn: sqlite3.Connection, kind: str, args: dict, level: int, questio
         raise ActionError("不認得的動作")
     if level < LEVEL[kind]:
         raise ActionError("目前的權限不允許這個動作" + ("（要「可以搬移、改名檔案」）" if LEVEL[kind] == 4 else "（要「可以幫你整理」）"))
-    if kind == "category_plan" and args.get("chat_id"):
-        # 同一段對話裡已經有一張還沒確認的計畫卡：把這次的修改加上去，不另外開一張
+    if kind == "category_plan" and (args.get("chat_id") or args.get("group")):
+        # 同一段對話（或 AI 的建議）已經有一張還沒確認的計畫卡：把這次的修改加上去，不另外開一張
         for r in conn.execute("SELECT id, payload FROM assistant_actions WHERE kind = 'category_plan' AND state = 'proposed' ORDER BY id DESC"):
             old = json.loads(r["payload"] or "{}")
-            if old.get("chat_id") == args["chat_id"]:
-                ops = [] if args.get("replace") else old.get("ops") or []
+            same = (args.get("chat_id") and old.get("chat_id") == args["chat_id"]) or (args.get("group") and old.get("group") == args["group"])
+            if same:
+                ops = [] if args.get("replace") else _without(old.get("ops") or [], args.get("ops") or [])
                 payload, summary = _BUILD[kind](conn, {**args, "ops": ops + list(args.get("ops") or [])})
                 conn.execute("UPDATE assistant_actions SET payload = ?, summary = ? WHERE id = ?",
                              (json.dumps(payload, ensure_ascii=False), summary, r["id"]))
@@ -121,6 +122,23 @@ def propose(conn: sqlite3.Connection, kind: str, args: dict, level: int, questio
         (kind, LEVEL[kind], summary, json.dumps(payload, ensure_ascii=False), question[:500], db.now_iso()))
     conn.commit()
     return get(conn, cur.lastrowid)
+
+
+def _without(old_ops: list, new_ops: list) -> list:
+    """合併計畫卡時，舊的步驟裡拿掉這次又提到的資料夾和分類（以這次的為準，不重複）。"""
+    folders = {int(i) for op in new_ops if op.get("op") == "set_folder" for i in (op.get("folders") or []) if str(i).isdigit()}
+    added = {str(op.get("name") or "").strip() for op in new_ops if op.get("op") == "add_category"}
+    out = []
+    for op in old_ops:
+        if op.get("op") == "add_category" and str(op.get("name") or "").strip() in added:
+            continue
+        if op.get("op") == "set_folder" and op.get("folders"):
+            keep = [i for i in op["folders"] if not (str(i).isdigit() and int(i) in folders)]
+            if not keep:
+                continue
+            op = {**op, "folders": keep}
+        out.append(op)
+    return out
 
 
 def _build_label(conn, args):
@@ -281,7 +299,7 @@ def _build_category(conn, args):
     names = {c["key"]: classify.display_name(c) for c in classify.categories(conn, include_merged=True)}
     items = [{"type": "op", "op": o, "name": _op_text(o, names), "ok": prev["steps"][n]["ok"] if n < len(prev["steps"]) else True,
               "reason": "" if n >= len(prev["steps"]) or prev["steps"][n]["ok"] else prev["steps"][n]["text"]} for n, o in enumerate(ops)]
-    payload = {"ops": ops, "items": items, "preview": prev, "chat_id": args.get("chat_id"), "source": source,
+    payload = {"ops": ops, "items": items, "preview": prev, "chat_id": args.get("chat_id"), "group": args.get("group"), "source": source,
                "title": str(args.get("title") or "")[:80]}
     summary = payload["title"] or (items[0]["name"] if len(items) == 1 else f"整理分類（{len(items)} 步）")
     return payload, f"{summary}：會改變 {prev['changed']:,} 個資料夾的分類"
@@ -316,14 +334,47 @@ def get(conn: sqlite3.Connection, action_id: int) -> dict:
     return _public(r)
 
 
-def history(conn: sqlite3.Connection, limit: int = 30) -> list[dict]:
+HISTORY_DAYS = 7  # 「助理做過的動作」只列出最近幾天的
+
+
+def history(conn: sqlite3.Connection, limit: int = 30, days: int | None = HISTORY_DAYS) -> list[dict]:
+    since = None
+    if days:
+        from datetime import datetime, timedelta, timezone
+
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
     rows = conn.execute("SELECT * FROM assistant_actions WHERE state != 'proposed' AND state != 'dismissed' "
-                        "ORDER BY COALESCE(done_at, created_at) DESC, id DESC LIMIT ?", (max(1, min(limit, 200)),)).fetchall()
+                        "AND (? IS NULL OR COALESCE(undone_at, done_at, created_at) >= ?) "
+                        "ORDER BY COALESCE(done_at, created_at) DESC, id DESC LIMIT ?", (since, since, max(1, min(limit, 200)))).fetchall()
     return [_public(r) for r in rows]
 
 
+def refresh_plan(conn: sqlite3.Connection, action_id: int) -> dict:
+    """還沒確認的分類計畫卡：照目前的分類重新試算一次（之後刪掉、改名的分類，預覽才會是對的）。"""
+    r = conn.execute("SELECT kind, payload, state FROM assistant_actions WHERE id = ?", (int(action_id),)).fetchone()
+    if r is not None and r["kind"] == "category_plan" and r["state"] == "proposed":
+        old = json.loads(r["payload"] or "{}")
+        try:
+            payload, summary = _BUILD["category_plan"](conn, old)
+        except ActionError:
+            return get(conn, action_id)
+        # 每一步都做不了了（例如要放進去的分類已經被刪掉）：這張卡沒有用了，收起來
+        dead = bool(payload["items"]) and not any(it.get("ok", True) for it in payload["items"])
+        conn.execute("UPDATE assistant_actions SET payload = ?, summary = ?, state = ? WHERE id = ?",
+                     (json.dumps(payload, ensure_ascii=False), summary, "dismissed" if dead else "proposed", int(action_id)))
+        conn.commit()
+    return get(conn, action_id)
+
+
 def dismiss(conn: sqlite3.Connection, action_id: int) -> dict:
+    r = conn.execute("SELECT kind, payload, state FROM assistant_actions WHERE id = ?", (int(action_id),)).fetchone()
     conn.execute("UPDATE assistant_actions SET state = 'dismissed' WHERE id = ? AND state = 'proposed'", (int(action_id),))
+    if r is not None and r["kind"] == "category_plan" and r["state"] == "proposed":
+        payload = json.loads(r["payload"] or "{}")
+        if payload.get("group") == "ai_suggest":  # 不要 AI 建議的新分類：之後不再提這些名稱
+            from .classify import reject_names
+
+            reject_names(conn, [op.get("name") for op in payload.get("ops") or [] if op.get("op") == "add_category"])
     conn.commit()
     return get(conn, action_id)
 
