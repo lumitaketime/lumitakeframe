@@ -167,6 +167,7 @@
           [t("info.drive"), driveName(picked)],
         ],
         category: typeof picked.id === "number" && (picked.type === "folder" || picked.type === "file") ? { [picked.type]: picked.id } : null,
+        doc: picked.type === "file" && typeof picked.id === "number" ? picked.id : null, // 關鍵字、AI 摘要、別顆硬碟上的副本
       };
     } else if (loc) {
       info = {

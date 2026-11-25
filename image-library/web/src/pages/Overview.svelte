@@ -173,6 +173,20 @@
         {/if}
       </section>
 
+      {#if ov?.week}
+        <section class="card">
+          <h2 class="mac-headline">{t("ov.week")}</h2>
+          <ul class="rows mac-callout">
+            <li><Icon name="plus" size={14} /><span>{ov.week.files ? t("ov.weekNew", { n: formatNumber(ov.week.files), size: formatBytes(ov.week.bytes) || "0 KB" }) : t("ov.weekNoNew")}</span></li>
+            {#if ov.week.kinds.length}<li class="indent sub">{ov.week.kinds.slice(0, 4).map((k) => `${t(`kind.${k.kind}`)} ${formatNumber(k.files)}`).join("、")}</li>{/if}
+            {#if ov.week.scans.length}<li><Icon name="external-drive" size={14} /><span>{t("ov.weekScans", { drives: ov.week.scans.slice(0, 4).map((d) => `「${d}」`).join("、") })}</span></li>{/if}
+            {#if ov.week.docs}<li><Icon name="document" size={14} /><span>{t("ov.weekDocs", { n: formatNumber(ov.week.docs) })}</span></li>{/if}
+            {#if ov.week.hashed}<li><Icon name="duplicate" size={14} /><span>{t("ov.weekHashed", { n: formatNumber(ov.week.hashed) })}</span></li>{/if}
+            {#if ov.week.actions}<li><Icon name="sparkles" size={14} /><span>{t("ov.weekActions", { n: formatNumber(ov.week.actions) })}</span></li>{/if}
+          </ul>
+        </section>
+      {/if}
+
       {#if cats.length}
         <section class="card">
           <h2 class="mac-headline">{t("ov.categories")}</h2>
@@ -244,6 +258,7 @@
   .snooze { flex: none; margin-left: auto; width: var(--space-5); height: var(--space-5); display: inline-flex; align-items: center; justify-content: center;
     border: 0; border-radius: var(--radius-capsule); background: none; color: var(--label-tertiary); cursor: pointer; }
   .snooze:hover { background: var(--fill-tertiary); color: var(--label-primary); }
+  .indent { padding-left: calc(14px + var(--space-2)); }
   .ok { display: flex; align-items: center; gap: var(--space-2); color: var(--system-green); }
   .big { font-feature-settings: "tnum"; }
   .acts { margin-top: auto; padding-top: var(--space-2); }

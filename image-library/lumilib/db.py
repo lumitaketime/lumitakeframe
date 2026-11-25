@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 35  # v35：硬碟淘汰檢查（每個檔案在別顆硬碟有沒有副本）、檔案的快速指紋、文件封面縮圖；v34：分類的說明與合併、我的關鍵字規則（可有年份範圍）、等本人選的資料夾、關鍵字統計；v33：自動分類（分類清單、本人設定、AI 建議、學到的規則、每個資料夾目前的分類）；v32：側邊欄「喜好項目」裡釘選的檔案與捷徑；v31：已經交給 Spotlight 的項目；v30：助理的對話紀錄；v29：硬碟健康（自我檢測、讀取錯誤、本人的處理方式）；v28：文件的語意向量（用意思找文件）；v27：助理提出的動作（提案、執行、復原的紀錄）；v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 36  # v36：文件的 AI 摘要（資訊欄）；v35：硬碟淘汰檢查（每個檔案在別顆硬碟有沒有副本）、檔案的快速指紋、文件封面縮圖；v34：分類的說明與合併、我的關鍵字規則（可有年份範圍）、等本人選的資料夾、關鍵字統計；v33：自動分類（分類清單、本人設定、AI 建議、學到的規則、每個資料夾目前的分類）；v32：側邊欄「喜好項目」裡釘選的檔案與捷徑；v31：已經交給 Spotlight 的項目；v30：助理的對話紀錄；v29：硬碟健康（自我檢測、讀取錯誤、本人的處理方式）；v28：文件的語意向量（用意思找文件）；v27：助理提出的動作（提案、執行、復原的紀錄）；v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -647,7 +647,10 @@ CREATE TABLE IF NOT EXISTS file_covers (
 
 
 def _migrate_v35(conn: sqlite3.Connection) -> None:
+    from .insight import SUMMARY_SCHEMA
+
     conn.executescript(RETIRE_SCHEMA)
+    conn.executescript(SUMMARY_SCHEMA)  # v36
     if "quick_sig" not in {r[1] for r in conn.execute("PRAGMA table_info(files)")}:
         conn.execute("ALTER TABLE files ADD COLUMN quick_sig TEXT")  # 開頭結尾各 64KB 的快速指紋（比對副本時先用它篩）
 

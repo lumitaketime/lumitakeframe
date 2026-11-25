@@ -3,6 +3,7 @@
   import { t, formatNumber, formatBytes } from "../i18n/index.svelte.js";
   import { catalog, catalogTotals } from "../data/catalog.svelte.js";
   import CategoryCard from "../views/CategoryCard.svelte";
+  import DocInsight from "../views/DocInsight.svelte";
 
   let { info = null } = $props();
   const totals = $derived(catalogTotals());
@@ -44,6 +45,7 @@
       {/each}
     </dl>
     {#if shown.category}<div class="catbox"><CategoryCard target={shown.category} /></div>{/if}
+    {#if shown.doc}<DocInsight fileId={shown.doc} />{/if}
     {#if kinds.length}
       <h3 class="mac-subheadline">{t("info.byKind")}</h3>
       <div class="donut">

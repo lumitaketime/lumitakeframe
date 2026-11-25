@@ -36,6 +36,9 @@ TOOLS = {
     "duplicates": (1, "重複的檔案與資料夾，以及可以釋出多少空間。args: {}"),
     "retire_check": (1, "淘汰檢查：某顆硬碟上的檔案在別顆硬碟有沒有一模一樣的副本、哪些只在這顆上、能不能淘汰。"
                         "使用者問「某顆硬碟可以淘汰／丟掉／不要了嗎」時用這個。args: {\"drive\": 硬碟名稱}"),
+    "year_recap": (1, "某一年的回顧：那年留下哪些檔案（各類型、每個月）、最常出現的資料夾、照片在哪裡拍、有哪些文件、分類。"
+                      "使用者問「某年我在做什麼／那年有什麼」時用這個。args: {\"year\": 西元年}"),
+    "compare_documents": (2, "比較兩份文件的文字差在哪裡（新增、刪掉、改了哪些段落）。args: {\"file_a\": 檔案編號, \"file_b\": 檔案編號}（先用 search_files 找到）"),
     "read_document": (2, "讀一份文件的內容（Re'memor 已經讀好的文字）。args: {\"file_id\": 檔案編號（先用 search_files 找到）}"),
     "catalog_analysis": (1, "檔案分析：類型、年份分布、最常出現的詞（每個詞在幾個資料夾、大多在哪一類），目前的分類清單、規則、使用者的身分。討論分類時先用這個。args: {}"),
     "keyword_folders": (1, "某個詞出現在哪些資料夾（含年份、目前的分類）。args: {\"word\": 詞}"),
@@ -107,7 +110,7 @@ def _ctx(ctx) -> Ctx:
 
 
 def allowed_tools(ctx: Ctx) -> list[str]:
-    return [name for name, (lv, _) in TOOLS.items() if ctx.level >= lv and (name != "read_document" or ctx.content)]
+    return [name for name, (lv, _) in TOOLS.items() if ctx.level >= lv and (name not in ("read_document", "compare_documents") or ctx.content)]
 
 
 def _fmt_bytes(n: int) -> str:
@@ -254,6 +257,51 @@ def tool_propose_consolidate(conn: sqlite3.Connection, args: dict, ctx) -> str:
             "複製在背景進行，可以暫停；原本的檔案不會被刪除。")
 
 
+def tool_year_recap(conn: sqlite3.Connection, args: dict, ctx) -> str:
+    from .insight import describe_year, year_recap
+
+    try:
+        year = int(str(args.get("year") or "").strip()[:4])
+    except ValueError:
+        return "（沒有給年份）"
+    if not 1950 <= year <= 2100:
+        return "（年份看起來不對）"
+    ctx = _ctx(ctx)
+    r = year_recap(conn, year)
+    text = describe_year(r)
+    for f in r["folders"][:5]:
+        n = _source(ctx.sources, {"type": "folder", "id": f["id"], "root_id": f["root_id"], "name": f["name"] or f["drive"], "path": f["path"],
+                                  "drive": f["drive"]})
+        text += f"\n[{n}] 資料夾 {f['drive']}／{f['path'] or '（最上層）'}"
+    return text
+
+
+def tool_compare_documents(conn: sqlite3.Connection, args: dict, ctx) -> str:
+    from .insight import compare_texts, describe_compare
+    from .textindex import body
+
+    ctx = _ctx(ctx)
+    if not ctx.content:
+        return "（目前的設定不允許讀文件內容）"
+    try:
+        a, b = int(args.get("file_a")), int(args.get("file_b"))
+    except (TypeError, ValueError):
+        return "（要給兩個檔案編號）"
+    rows = {r["id"]: r for r in conn.execute(
+        "SELECT f.id, f.name, f.size, f.root_id, d.path AS folder, COALESCE(v.name, r.name) AS drive FROM files f JOIN folders d ON d.id = f.folder_id "
+        "JOIN roots r ON r.id = f.root_id LEFT JOIN drives v ON v.id = r.drive_id WHERE f.id IN (?, ?)", (a, b))}
+    if a not in rows or b not in rows:
+        return "（找不到其中一個檔案）"
+    ta, tb = body(conn, a), body(conn, b)
+    if not ta or not tb:
+        return "（其中一份 Re'memor 還沒讀到文字，沒辦法比較）"
+    for i in (a, b):
+        r = rows[i]
+        _source(ctx.sources, {"type": "file", "id": r["id"], "root_id": r["root_id"], "name": r["name"], "folder": r["folder"],
+                              "path": f"{r['folder']}/{r['name']}" if r["folder"] else r["name"], "drive": r["drive"], "size": r["size"]})
+    return describe_compare(rows[a]["name"], rows[b]["name"], compare_texts(ta, tb))
+
+
 def tool_read_document(conn: sqlite3.Connection, args: dict, ctx) -> str:
     from .textindex import body
 
@@ -387,6 +435,7 @@ def tool_plan_categories(conn: sqlite3.Connection, args: dict, ctx) -> str:
 
 RUN = {"search_files": tool_search_files, "largest_folders": tool_largest_folders, "drives_overview": tool_drives_overview,
        "duplicates": tool_duplicates, "read_document": tool_read_document, "retire_check": tool_retire_check, "propose_consolidate": tool_propose_consolidate,
+       "year_recap": tool_year_recap, "compare_documents": tool_compare_documents,
        "catalog_analysis": tool_catalog_analysis, "keyword_folders": tool_keyword_folders, "save_profile": tool_save_profile,
        "plan_categories": tool_plan_categories, "classify_folders": tool_classify_folders,
        **{name: _proposer(kind) for name, kind in PROPOSE.items()}}

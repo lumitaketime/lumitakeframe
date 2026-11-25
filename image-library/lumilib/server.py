@@ -1869,7 +1869,41 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                     item.update({"ready": sm["ready"], "total": sm["total"], "only": sm["states"]["only"], "maybe": sm["states"]["maybe"],
                                  "risky": sm["states"]["risky"], "copy": sm["states"]["copy"], "computed_at": sm["computed_at"]})
                 retire.append(item)
-            return {"recent": {"files": recent["n"], "bytes": recent["b"], "items": newest}, "attention": attention, "retire": retire}
+            from .insight import week_report
+
+            return {"recent": {"files": recent["n"], "bytes": recent["b"], "items": newest}, "attention": attention, "retire": retire,
+                    "week": week_report(c)}
+        finally:
+            c.close()
+
+    # ---- 文件的關鍵字、AI 摘要、別顆硬碟上的副本（資訊欄） ----
+    @app.get("/api/files/{file_id:int}/insight")
+    def file_insight(file_id: int):
+        from .insight import insight
+
+        c = conn()
+        try:
+            return insight(c, file_id)
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+        finally:
+            c.close()
+
+    @app.post("/api/files/{file_id:int}/summary")
+    def file_summary(file_id: int, body: dict = Body(default={})):
+        """請 AI 寫摘要：預設用這台電腦上的模型；雲端服務要本人允許傳文件內容才送。"""
+        from . import llm as llm_mod
+        from .insight import summarize
+
+        if llm_mod.is_remote(cfg) and not cfg.assistant_cloud_content:
+            raise HTTPException(400, "助理現在設成雲端服務，而且沒有允許傳文件內容；請到「設定 → AI 助理」改用這台電腦上的模型，或允許傳文件內容")
+        c = conn()
+        try:
+            return {"summary": summarize(c, llm_mod.make_llm(cfg, jobs().client_factory()), file_id, str(body.get("lang") or "zh-Hant"))}
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        except Exception as e:  # noqa: BLE001  模型沒開、太久沒回應…
+            raise HTTPException(503, f"AI 沒辦法回答：{e}") from e
         finally:
             c.close()
 
