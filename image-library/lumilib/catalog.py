@@ -264,7 +264,7 @@ def _file_item(r: sqlite3.Row) -> dict:
     folder = r["folder_path"]
     return {"type": "file", "id": r["id"], "name": r["name"], "kind": r["kind"], "size": r["size"], "mtime": r["mtime"],
             "root_id": r["root_id"], "folder": folder, "path": f"{folder}/{r['name']}" if folder else r["name"],
-            "image_id": r["image_id"], "label": r["label"]}
+            "image_id": r["image_id"], "label": r["label"], "cover": bool(r["cover"]) if "cover" in r.keys() else False}
 
 
 def _folder_item(r: sqlite3.Row) -> dict:
@@ -288,7 +288,9 @@ def items_page(conn: sqlite3.Connection, *, root_id: int | None = None, path: st
     grp = _group_expr(group)
     if grp:  # 先依組別，組內再依使用者選的排序
         file_order = f"{grp}, {file_order}"
-    file_cols = "f.id, f.name, f.kind, f.size, f.mtime, f.root_id, f.image_id, f.label, d.path AS folder_path"
+    # cover：文件有沒有做好的封面縮圖（PDF 第一頁等）
+    file_cols = ("f.id, f.name, f.kind, f.size, f.mtime, f.root_id, f.image_id, f.label, d.path AS folder_path, "
+                 "(SELECT ok FROM file_covers c WHERE c.file_id = f.id) AS cover")
 
     if kind is not None:
         kinds = KIND_GROUPS.get(kind)

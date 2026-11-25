@@ -1144,6 +1144,16 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         finally:
             c.close()
 
+    @app.get("/api/files/{file_id:int}/cover")
+    def file_cover(file_id: int):
+        """文件封面縮圖（掃描後在背景做好、存在 Re'memor 的資料目錄）。"""
+        from .covers import cover_path
+
+        target = cover_path(cfg.home, file_id)
+        if not target.is_file():
+            raise HTTPException(404, "還沒有封面")
+        return FileResponse(target, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+
     @app.get("/api/faces/{face_id:int}/thumb")
     def face_thumb(face_id: int):
         from .faces import face_thumb_path
@@ -1789,6 +1799,63 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         except OSError:
             pass
         return {"path": str(out)}
+
+    # ---- 總覽首頁：一頁看完整體狀況（只讀目錄，都很快；淘汰檢查只用算好的結果） ----
+    @app.get("/api/overview")
+    def overview():
+        import json as _json
+        from datetime import datetime, timedelta, timezone
+
+        from . import health as _health
+        from . import pending as _pending
+        from .classify import review_count
+        from .retire import _name_of
+
+        c = conn()
+        try:
+            week = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds")
+            recent = c.execute("SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS b FROM files WHERE status = 'ok' AND first_seen >= ?", (week,)).fetchone()
+            newest = [{"type": "file", "id": r["id"], "name": r["name"], "kind": r["kind"], "size": r["size"], "mtime": r["mtime"],
+                       "root_id": r["root_id"], "folder": r["folder"], "image_id": r["image_id"], "cover": bool(r["cover"])}
+                      for r in c.execute("SELECT f.id, f.name, f.kind, f.size, f.mtime, f.root_id, f.image_id, d.path AS folder, "
+                                         "(SELECT ok FROM file_covers v WHERE v.file_id = f.id) AS cover FROM files f JOIN folders d ON d.id = f.folder_id "
+                                         "WHERE f.status = 'ok' AND f.first_seen >= ? ORDER BY f.id DESC LIMIT 12", (week,))]
+            attention = []
+            for h in _health.listing(c):
+                if h["status"] in ("warn", "fail"):
+                    attention.append({"kind": "health", "level": h["status"], "name": h["name"],
+                                      "detail": (h["findings"][0]["text"] if h["findings"] else ""), "href": "/drives"})
+            old = (datetime.now(timezone.utc) - timedelta(days=180)).isoformat(timespec="seconds")
+            roots = c.execute("SELECT * FROM roots ORDER BY name").fetchall()
+            for r in roots:
+                name = _name_of(c, r)
+                if not r["last_scan"]:
+                    attention.append({"kind": "never", "level": "info", "name": name, "href": "/drives"})
+                elif r["scan_state"] == "partial":
+                    attention.append({"kind": "partial", "level": "info", "name": name, "href": "/drives"})
+                elif r["last_scan"] < old:
+                    attention.append({"kind": "stale", "level": "info", "name": name, "date": r["last_scan"], "href": "/drives"})
+            marks = _pending.count(c)
+            if marks:
+                attention.append({"kind": "pending", "level": "info", "n": marks, "href": "/pending"})
+            review = review_count(c)
+            if review:
+                attention.append({"kind": "review", "level": "info", "n": review, "href": "/category/review"})
+            plans = c.execute("SELECT COUNT(*) FROM assistant_actions WHERE state = 'proposed'").fetchone()[0]
+            if plans:
+                attention.append({"kind": "plans", "level": "info", "n": plans, "href": "/category/review"})
+            retire = []
+            runs = {r["root_id"]: _json.loads(r["summary"]) for r in c.execute("SELECT root_id, summary FROM retire_runs")}
+            for r in roots:
+                sm = runs.get(r["id"])
+                item = {"root_id": r["id"], "name": _name_of(c, r), "checked": sm is not None}
+                if sm:
+                    item.update({"ready": sm["ready"], "total": sm["total"], "only": sm["states"]["only"], "maybe": sm["states"]["maybe"],
+                                 "risky": sm["states"]["risky"], "copy": sm["states"]["copy"], "computed_at": sm["computed_at"]})
+                retire.append(item)
+            return {"recent": {"files": recent["n"], "bytes": recent["b"], "items": newest}, "attention": attention, "retire": retire}
+        finally:
+            c.close()
 
     # ---- 硬碟淘汰檢查：每個檔案在別顆硬碟有沒有一模一樣的副本（只讀，不刪不搬） ----
     def _retire_job(root_id: int):

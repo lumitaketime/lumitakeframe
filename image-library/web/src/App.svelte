@@ -22,6 +22,7 @@
   import Browse from "./pages/Browse.svelte";
   import Drives from "./pages/Drives.svelte";
   import Retire from "./pages/Retire.svelte";
+  import Overview from "./pages/Overview.svelte";
   import Albums from "./pages/Albums.svelte";
   import Album from "./pages/Album.svelte";
   import People from "./pages/People.svelte";
@@ -179,13 +180,13 @@
     && catalogState.loaded && catalogTotals().files > 0 && !app.server?.jobs?.active?.some((j) => j.kind === "scan"));
 
   // 開啟 App 時先顯示的頁面（設定 → 一般）：只在一打開、網址是首頁時跳一次；之後按側邊欄的「照片」照常進入照片
-  const START = { folders: "/folders", drives: "/drives", find: "/find" };
+  const START = { overview: "/overview", folders: "/folders", drives: "/drives", find: "/find" };
   let startChecked = false;
   $effect(() => {
     const ui = app.server?.ui;
     if (!ui || startChecked) return;
     startChecked = true;
-    const to = START[ui.start_page || "folders"];
+    const to = START[ui.start_page || "overview"];
     if (to && location.pathname === "/" && !location.search && (history.state?.idx ?? 0) === 0) navigate(to, { replace: true });
   });
 
@@ -364,6 +365,8 @@
               <CategoryReview />
             {:else if page === "category" && seg[1]}
               <Browse scope={{ type: "category", category: seg[1] }} />
+            {:else if page === "overview"}
+              <Overview />
             {:else if page === "drives"}
               <Drives />
             {:else if page === "retire" && seg[1]}

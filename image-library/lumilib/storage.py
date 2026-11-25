@@ -161,6 +161,16 @@ def clean_orphans(conn: sqlite3.Connection, cfg: Config) -> dict:
         freed += _file_size(f)
         f.unlink(missing_ok=True)
         files += 1
+    # 文件封面：檔案已經不在目錄裡（或不是 ok）的那些
+    covers = Path(cfg.home) / "covers"
+    if covers.is_dir():
+        alive = {r[0] for r in conn.execute("SELECT c.file_id FROM file_covers c JOIN files f ON f.id = c.file_id WHERE f.status = 'ok'")}
+        for p in covers.glob("*/*.jpg"):
+            if p.stem.isdigit() and int(p.stem) not in alive:
+                freed += _file_size(p)
+                p.unlink(missing_ok=True)
+                files += 1
+        conn.execute("DELETE FROM file_covers WHERE file_id NOT IN (SELECT id FROM files WHERE status = 'ok')")
     before = sum(_file_size(Path(str(cfg.db_path) + s)) for s in ("", "-wal"))
     conn.commit()
     conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")

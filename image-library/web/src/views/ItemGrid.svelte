@@ -105,6 +105,9 @@
             <i class="ph"></i>
           {:else if item.image_id}
             <img src={thumbUrl({ id: item.image_id })} alt="" loading="lazy" decoding="async" draggable="false" />
+          {:else if item.cover}
+            <!-- 文件封面（PDF 第一頁、電子書封面…）：掃描後在背景做好，存在 Re'memor 的資料目錄 -->
+            <img class="cover" src={`/api/files/${item.id}/cover`} alt="" loading="lazy" decoding="async" draggable="false" />
           {:else}
             <KindIcon kind={item.icon || (item.type === "folder" ? "folder" : item.kind)} size={Math.round(size * 0.5)} />
           {/if}
@@ -128,6 +131,9 @@
   .pic { position: relative; width: var(--size); height: var(--size); display: flex; align-items: center; justify-content: center;
     border-radius: var(--radius-md); background: var(--fill-quaternary); overflow: hidden; }
   .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* 文件封面：整頁看得到，不裁切；像一張紙放在格子裡 */
+  .pic img.cover { width: auto; height: auto; max-width: 82%; max-height: 92%; object-fit: contain; border-radius: var(--radius-xs);
+    box-shadow: 0 0 0 1px var(--separator), var(--shadow-knob); background: var(--bg-primary); }
   .cell.on .pic { box-shadow: 0 0 0 3px var(--selection); }
   .name { max-width: 100%; padding: 1px var(--space-1); border-radius: var(--radius-xs); text-align: center; overflow: hidden;
     display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; line-height: 1.25; }

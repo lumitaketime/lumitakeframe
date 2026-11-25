@@ -24,7 +24,7 @@ from .media import MediaError
 from .scanner import scan_all
 
 LABELS = {
-    "scan": "掃描", "compare": "比對內容", "retire_verify": "確認副本", "consolidate": "複製到另一顆硬碟", "extract": "讀取文件文字", "ocr": "文字辨識", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
+    "scan": "掃描", "compare": "比對內容", "retire_verify": "確認副本", "consolidate": "複製到另一顆硬碟", "covers": "做文件封面", "extract": "讀取文件文字", "ocr": "文字辨識", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
     "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
@@ -111,8 +111,8 @@ class JobRunner:
             t.start()
 
     # ---- 工作紀錄：寫進資料庫，關掉 App 再開仍然看得到；紀錄失敗不影響工作本身 ----
-    LOGGED = ("scan", "index", "compare", "retire_verify", "consolidate", "extract", "ocr", "analyze", "embed_docs", "photos", "classify_ai", "classify_review")
-    RESUMABLE = ("scan", "index", "compare", "retire_verify", "consolidate", "extract", "ocr", "embed_docs", "photos", "classify_ai", "classify_review")
+    LOGGED = ("scan", "index", "compare", "retire_verify", "consolidate", "covers", "extract", "ocr", "analyze", "embed_docs", "photos", "classify_ai", "classify_review")
+    RESUMABLE = ("scan", "index", "compare", "retire_verify", "consolidate", "covers", "extract", "ocr", "embed_docs", "photos", "classify_ai", "classify_review")
 
     def _log_sql(self, sql: str, args: tuple = ()) -> int | None:
         try:
@@ -483,6 +483,16 @@ class JobRunner:
             if photos_todo and after != "photos":  # 做完照片之後不再排一次（只在雲端的照片一直會算在裡面）
                 self.submit("photos")
                 message += f"；接著替 {photos_todo:,} 張照片與影片做縮圖"
+            # 文件封面（PDF 第一頁、電子書封面…）：只讀硬碟，縮圖存在 Re'memor 的資料目錄
+            from .covers import plan as covers_plan
+
+            conn = db.connect(self.cfg.db_path)
+            try:
+                covers_todo = covers_plan(conn)["todo"]
+            finally:
+                conn.close()
+            if covers_todo and after != "covers":
+                self.submit("covers")
             if self.cfg.auto_extract:
                 from .ocr import available as ocr_available
                 from .ocr import ocr_plan
@@ -635,6 +645,14 @@ class JobRunner:
                                     progress=lambda done, total, n: upd(done=done, total=total, message=n))
                 job["result"] = {"copies": res.copies, "stopped": res.stopped}
                 parts.append(describe_retire(res, name))
+            if kind == "covers":
+                from . import covers
+                from .health import held_roots
+
+                res = covers.run(conn, self.cfg.home, stop=stop, hold=held_roots(conn, "read"),
+                                 progress=lambda done, total, n: upd(done=done, total=total, message=n))
+                job["result"] = res
+                parts.append(covers.describe(res))
             if kind == "consolidate":
                 import json as _json
 

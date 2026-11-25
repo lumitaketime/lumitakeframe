@@ -78,6 +78,7 @@
 
   const LABELS = ["red", "yellow", "green", "blue", "purple"];
   const libraryItems = $derived([
+    { value: "overview", label: t("nav.overview"), icon: "house", href: "/overview", draggable: true },
     { value: "files", label: t("nav.allFiles"), icon: "files", href: "/folders", draggable: true },
     { value: "assistant", label: t("nav.assistant"), icon: "sparkles", href: "/assistant", draggable: true },
     { value: "photos", label: t("nav.photos"), icon: "photo", href: "/", draggable: true },

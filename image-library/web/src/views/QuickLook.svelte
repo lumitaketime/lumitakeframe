@@ -140,7 +140,8 @@
         {/if}
       {:else}
         <div class="card">
-          <KindIcon kind={item.icon || (item.type === "folder" ? "folder" : item.kind)} size={96} />
+          {#if item.cover}<img class="cover" src={`/api/files/${item.id}/cover`} alt={item.name} draggable="false" />
+          {:else}<KindIcon kind={item.icon || (item.type === "folder" ? "folder" : item.kind)} size={96} />{/if}
           {#if tagsOf["曲名"] || tagsOf["演出者"]}
             <div class="tags">
               <b class="mac-title-3">{tagsOf["曲名"] || item.name}</b>
@@ -165,6 +166,7 @@
 {/if}
 
 <style>
+  .cover { max-width: min(320px, 80%); max-height: 50vh; object-fit: contain; border-radius: var(--radius-sm); box-shadow: var(--shadow-popover); background: var(--bg-primary); }
   .scrim { position: fixed; inset: 0; z-index: 310; border: 0; padding: 0; background: var(--media-scrim-light); cursor: default; }
   .ql { position: fixed; z-index: 311; left: 50%; top: 50%; translate: -50% -50%; width: min(880px, calc(100vw - var(--space-8))); height: min(640px, calc(100dvh - var(--space-8)));
     display: flex; flex-direction: column; overflow: hidden; border-radius: var(--radius-lg); background: var(--elevated-primary); color: var(--label-primary);

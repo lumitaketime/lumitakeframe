@@ -176,8 +176,8 @@
       {#if settings}
         <List header={t("set.general.start")} footer={t("set.general.startHint")}>
           <ListRow title={t("set.general.startPage")}>
-            {#snippet trailing()}<PopUpButton value={settings.start_page || "folders"} onchange={(v) => set("start_page", v)}
-              options={["folders", "drives", "find", "photos"].map((v) => ({ value: v, label: t(`set.start.${v}`) }))} />{/snippet}
+            {#snippet trailing()}<PopUpButton value={settings.start_page || "overview"} onchange={(v) => set("start_page", v)}
+              options={["overview", "folders", "drives", "find", "photos"].map((v) => ({ value: v, label: t(`set.start.${v}`) }))} />{/snippet}
           </ListRow>
         </List>
         {#if isMac}
