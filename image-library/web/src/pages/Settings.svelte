@@ -10,6 +10,7 @@
   import CatalogBackup from "../views/CatalogBackup.svelte";
   import AssistantSettings from "../views/AssistantSettings.svelte";
   import ClassifySettings from "../views/ClassifySettings.svelte";
+  import PhoneSettings from "../views/PhoneSettings.svelte";
   import { api } from "../lib/api.js";
   import SemanticSettings from "../views/SemanticSettings.svelte";
   import { loadSettings, saveSetting, loadStorage, resetText } from "../data/settings.js";
@@ -361,7 +362,8 @@
       <div class="legacy"><PhotoSettings embedded section={photoTab} /></div>
 
     {:else if shown === "system"}
-      <div class="legacy"><PhotoSettings embedded section="system" /></div>
+      <PhoneSettings />
+      <div class="legacy"><PhotoSettings embedded section="system" hidePhone /></div>
 
     {:else if shown === "about"}
       <div class="legacy"><PhotoSettings embedded section="about" /></div>

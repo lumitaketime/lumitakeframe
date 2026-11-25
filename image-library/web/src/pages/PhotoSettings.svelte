@@ -29,7 +29,7 @@
   } from "../lib/icons.js";
 
 
-  let { section = "", embedded = false } = $props();
+  let { section = "", embedded = false, hidePhone = false } = $props();
   let winWidth = $state(1200);
   // 6 個分類；每類裡面是原本的幾個區塊（舊網址 /settings/faces 這類仍然有效，會捲到那個區塊）
   const SECTIONS = [
@@ -882,7 +882,7 @@
       <p class="muted tiny">左側選單的分組（圖庫、整理、分類…）可以點組名收合。</p>
     </section>
     {/if}
-    {#if current === "system"}
+    {#if current === "system" && !hidePhone}
     <div class="anchor" id="sec-phone"></div>
     <!-- 手機 -->
     <section class="card">

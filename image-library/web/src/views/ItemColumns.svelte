@@ -3,6 +3,7 @@
    * 直欄檢視：一層一欄向右展開，最右邊一欄是選取項目的預覽。
    * 上下鍵在欄內移動；→ 進入資料夾、← 回上一層。按一下資料夾就往右展開下一欄。
    */
+  import { prettyName } from "../lib/names.js";
   import ColumnPane from "./ColumnPane.svelte";
   import KindIcon from "./KindIcon.svelte";
   import { handleViewKey } from "./keys.js";
@@ -98,7 +99,7 @@
         {#if picked.image_id}<img src={thumbUrl({ id: picked.image_id })} alt="" draggable="false" />
         {:else}<KindIcon kind={picked.type === "folder" ? "folder" : picked.kind} size={72} />{/if}
       </div>
-      <h3 class="mac-headline">{picked.name}</h3>
+      <h3 class="mac-headline">{prettyName(picked.name)}</h3>
       <dl class="mac-callout">
         <div><dt>{t("info.kind")}</dt><dd>{picked.type === "folder" ? t("info.kind.folder") : t(`kind.${picked.kind}`)}</dd></div>
         {#if picked.size}<div><dt>{t("info.size")}</dt><dd>{formatBytes(picked.size)}</dd></div>{/if}

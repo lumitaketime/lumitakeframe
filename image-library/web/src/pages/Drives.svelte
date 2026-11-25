@@ -3,6 +3,7 @@
    * 硬碟總覽：每顆硬碟一張卡片（不論有沒有接上），可以掃描、停止、從目錄移除；
    * 已接上但還沒加入目錄的硬碟只顯示「加入目錄」按鈕，不會自動掃描。
    */
+  import { fsName } from "../lib/names.js";
   import { Alert, Button, Icon, ProgressIndicator } from "../ui/index.js";
   import { catalog, loadCatalog } from "../data/catalog.svelte.js";
   import { loadDrivesDetail, scanRoots, stopJob, addRoot, pickFolder, removeRoot } from "../data/drives.js";
@@ -123,7 +124,7 @@
             <div class="head">
               <span class="glyph"><Icon name="external-drive-fill" size={22} weight="medium" /></span>
               <div class="titles"><h3 class="mac-headline">{v.name}</h3>
-                <p class="mac-callout sub">{[v.fs_label, v.capacity ? formatBytes(v.capacity) : ""].filter(Boolean).join(" · ")}{#if v.read_only}<span class="badge">{t("drive.readOnly")}</span>{/if}</p></div>
+                <p class="mac-callout sub">{[fsName(v.fs_label, t), v.capacity ? formatBytes(v.capacity) : ""].filter(Boolean).join(" · ")}{#if v.read_only}<span class="badge">{t("drive.readOnly")}</span>{/if}</p></div>
             </div>
             <p class="mac-callout sub">{t("drives.newHint")}</p>
             <div class="actions">
@@ -160,7 +161,7 @@
             <div class="titles">
               <h3 class="mac-headline"><a href={`/folders/${d.roots[0].id}`} use:link>{d.name}</a></h3>
               <p class="mac-callout sub">
-                {[d.fs_label, d.capacity ? formatBytes(d.capacity) : ""].filter(Boolean).join(" · ")}
+                {[fsName(d.fs_label, t), d.capacity ? formatBytes(d.capacity) : ""].filter(Boolean).join(" · ")}
                 {#if d.read_only || d.fs_label === "NTFS"}<span class="badge">{t("drive.readOnly")}</span>{/if}
               </p>
             </div>

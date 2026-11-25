@@ -1,4 +1,5 @@
 <script>
+  import { fsName } from "../lib/names.js";
   import { untrack } from "svelte";
   /**
    * 瀏覽頁：「所有檔案」、每顆硬碟的資料夾、跨硬碟的類型，共用同一頁，用工具列切換檢視。
@@ -178,7 +179,7 @@
           [t("info.files"), formatNumber(loc.files)],
           [t("info.size"), formatBytes(loc.bytes)],
           [t("info.drive"), loc.drive?.name || loc.root.name],
-          [t("info.format"), loc.drive?.fs_label],
+          [t("info.format"), fsName(loc.drive?.fs_label, t)],
           [t("info.capacity"), loc.drive?.capacity ? formatBytes(loc.drive.capacity) : ""],
           [t("info.status"), (loc.root.online ? t("drive.online") : t("drive.offline")) + (loc.root.scan_state === "partial" ? ` · ${t("drive.incomplete")}` : "")],
           [t("info.lastScan"), loc.root.last_scan ? formatDate(new Date(loc.root.last_scan)) : t("drive.neverScanned")],

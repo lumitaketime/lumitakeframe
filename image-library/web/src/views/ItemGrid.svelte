@@ -3,6 +3,7 @@
    * 圖像檢視：縮圖格狀。照片與影片顯示掃描時產生的小縮圖（不讀原檔），其他顯示類型圖示。
    * 只畫出看得到的幾列；每列高度固定、位置用 transform。
    */
+  import { prettyName } from "../lib/names.js";
   import KindIcon from "./KindIcon.svelte";
   import { handleViewKey } from "./keys.js";
   import { sectionOf } from "./sections.js";
@@ -113,7 +114,7 @@
           {/if}
           {#if item?.label}<i class="label" style:background="var(--label-{item.label})"></i>{/if}
         </span>
-        <span class="name">{item?.name || ""}</span>
+        <span class="name">{prettyName(item?.name || "")}</span>
       </div>
     {/each}
   </div>

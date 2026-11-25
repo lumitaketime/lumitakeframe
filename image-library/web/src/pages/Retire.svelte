@@ -26,6 +26,7 @@
   let open = $state({}); // 資料夾 id → {total, files}
   let asking = $state(null); // 確認副本前的計畫
   let busy = $state("");
+  let tabsWidth = $state(0);
   const local = $derived(!!app.server?.local);
   const isMac = $derived(app.server?.platform === "darwin");
 
@@ -220,13 +221,15 @@
           </ListRow>
         {/if}
         {#if s.states.only.files}
-          <ListRow title={t("retire.copy")} subtitle={targets.length ? t("retire.copyHint", { n: formatNumber(s.states.only.files), size: formatBytes(s.states.only.bytes) || "0 KB" }) : t("retire.copyNoTarget")} icon="folder">
-            {#snippet trailing()}{#if targets.length}<span class="acts">
-              <PopUpButton value={target || targets[0].value} onchange={(v) => (target = v)} options={targets} />
-              <Button size="small" variant="bordered" loading={busy === "plan"} onclick={makePlan}>{t("retire.copyButton")}</Button>
-            </span>{/if}{/snippet}
-          </ListRow>
+          <ListRow title={t("retire.copy")} subtitle={targets.length ? t("retire.copyHint", { n: formatNumber(s.states.only.files), size: formatBytes(s.states.only.bytes) || "0 KB" }) : t("retire.copyNoTarget")} icon="folder" />
           {#if targets.length}
+            <!-- 目標硬碟另外一列：窄螢幕上說明文字才不會被擠成一長條 -->
+            <ListRow title={t("retire.target")}>
+              {#snippet trailing()}<span class="acts">
+                <PopUpButton value={target || targets[0].value} onchange={(v) => (target = v)} options={targets} />
+                <Button size="small" variant="bordered" loading={busy === "plan"} onclick={makePlan}>{t("retire.copyButton")}</Button>
+              </span>{/snippet}
+            </ListRow>
             <ListRow title={t("retire.markSource")} subtitle={t("retire.markSourceHint")}>
               {#snippet trailing()}<Toggle checked={markSource} onchange={(v) => (markSource = v)} aria-label={t("retire.markSource")} />{/snippet}
             </ListRow>
@@ -246,9 +249,15 @@
         <ActionCard bind:action={cards[k]} />
       {/each}
 
-      <div class="tabs">
-        <SegmentedControl value={tab} onchange={(v) => (tab = v)} ariaLabel={t("retire.listLabel")}
-          segments={["only", "maybe", "risky", "copy"].map((v) => ({ value: v, label: `${t(`retire.tab.${v}`)}（${formatNumber(s.states[v].files)}）` }))} />
+      <!-- 窄螢幕放不下四個分段：改成下拉選單 -->
+      <div class="tabs" bind:clientWidth={tabsWidth}>
+        {#if tabsWidth && tabsWidth < 560}
+          <PopUpButton value={tab} onchange={(v) => (tab = v)}
+            options={["only", "maybe", "risky", "copy"].map((v) => ({ value: v, label: `${t(`retire.tab.${v}`)}（${formatNumber(s.states[v].files)}）` }))} />
+        {:else}
+          <SegmentedControl value={tab} onchange={(v) => (tab = v)} ariaLabel={t("retire.listLabel")}
+            segments={["only", "maybe", "risky", "copy"].map((v) => ({ value: v, label: `${t(`retire.tab.${v}`)}（${formatNumber(s.states[v].files)}）` }))} />
+        {/if}
       </div>
       <p class="mac-callout sub hint">{t(`retire.tabHint.${tab}`)}</p>
 
@@ -325,7 +334,7 @@
   .dot { width: var(--space-2); height: var(--space-2); border-radius: var(--radius-capsule); flex: none; }
   .note.warn { color: var(--system-orange); }
   .acts { display: inline-flex; align-items: center; gap: var(--space-2); }
-  .tabs { margin-top: var(--space-2); }
+  .tabs { margin-top: var(--space-2); max-width: 100%; }
   .hint { margin-top: calc(-1 * var(--space-1)); }
   .empty { padding: var(--space-4) 0; }
   .folders, .files { list-style: none; margin: 0; padding: 0; }

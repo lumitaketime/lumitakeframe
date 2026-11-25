@@ -3,6 +3,7 @@
    * 列表檢視：一列一個項目，欄位可排序、可調寬、可顯示或隱藏。
    * 只畫出看得到的列（上下各多畫幾列），列高固定、位置用 transform，十萬個項目也只有幾十個 DOM 節點。
    */
+  import { prettyName } from "../lib/names.js";
   import { Icon } from "../ui/index.js";
   import KindIcon from "./KindIcon.svelte";
   import CopiesMark from "./CopiesMark.svelte";
@@ -116,7 +117,7 @@
               {#if c === "name"}
                 <span class="cell name" title={item.name}>
                   <KindIcon kind={item.icon || (item.type === "folder" ? "folder" : item.kind)} />
-                  <span class="text">{item.name}</span>
+                  <span class="text">{prettyName(item.name)}</span>
                   {#if item.label}<i class="label" style:background="var(--label-{item.label})" title={t(`label.${item.label}`)}></i>{/if}
                   {#if item.copies}<CopiesMark copies={item.copies} />{/if}
                   {#if item.note}<span class="note mac-callout">{item.note}</span>{/if}

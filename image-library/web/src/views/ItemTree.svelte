@@ -4,6 +4,7 @@
    * 按三角形展開；⌥ 加按展開整個子樹；→ 展開、← 收合或回到上一層的資料夾。
    * 和列表一樣只畫看得到的列。
    */
+  import { prettyName } from "../lib/names.js";
   import { Icon } from "../ui/index.js";
   import KindIcon from "./KindIcon.svelte";
   import CopiesMark from "./CopiesMark.svelte";
@@ -102,7 +103,7 @@
                   onclick={(e) => toggle(e, i, item)} ondblclick={(e) => e.stopPropagation()}><Icon name="chevron-right" size={10} weight="bold" /></button>
               {:else}<span class="disc-space"></span>{/if}
               <KindIcon kind={isFolder ? "folder" : item.kind} />
-              <span class="text">{item.name}</span>
+              <span class="text">{prettyName(item.name)}</span>
               {#if item.label}<i class="label" style:background="var(--label-{item.label})" title={t(`label.${item.label}`)}></i>{/if}
               {#if item.copies}<CopiesMark copies={item.copies} />{/if}
               {#if isFolder && item.files != null}<span class="count mac-callout">{t("status.filesOnly", { files: formatNumber(item.files) })}</span>{/if}

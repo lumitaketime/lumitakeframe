@@ -264,8 +264,8 @@
   .track { height: 8px; border-radius: var(--radius-capsule); background: var(--fill-tertiary); overflow: hidden; }
   .track i { display: block; height: 100%; border-radius: inherit; }
   .num { text-align: right; font-feature-settings: "tnum"; white-space: nowrap; }
-  .years { display: flex; align-items: flex-end; gap: 2px; height: 160px; padding-bottom: 18px; position: relative; }
-  .ycol { flex: 1; min-width: 4px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; }
+  .years { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 160px; padding-bottom: 18px; position: relative; }
+  .ycol { flex: 1; min-width: 4px; max-width: 56px; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; }
   .ybar { width: 100%; border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: var(--accent); }
   .ycol:hover .ybar { opacity: .75; }
   .ylab { position: absolute; bottom: -18px; color: var(--label-secondary); white-space: nowrap; }

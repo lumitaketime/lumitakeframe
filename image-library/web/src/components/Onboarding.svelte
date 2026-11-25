@@ -7,6 +7,7 @@
    * 4. 接上第一顆硬碟並加入目錄（不會自動掃描，要按「加入目錄」）→「完成」
    * 之後可以在「設定 → 關於」重新執行。
    */
+  import { fsName } from "../lib/names.js";
   import { Button, Icon, ProgressIndicator } from "../ui/index.js";
   import Wordmark from "./Wordmark.svelte";
   import CatalogLocation from "../views/CatalogLocation.svelte";
@@ -134,7 +135,7 @@
             {#each detail.new as v (v.path)}
               <li>
                 <span class="pi"><Icon name="external-drive-fill" size={16} weight="medium" /></span>
-                <span class="grow"><b class="mac-headline">{v.name}</b><span class="mac-callout sub">{[v.fs_label, v.capacity ? formatBytes(v.capacity) : "", v.read_only ? t("drive.readOnly") : ""].filter(Boolean).join(" · ")}</span></span>
+                <span class="grow"><b class="mac-headline">{v.name}</b><span class="mac-callout sub">{[fsName(v.fs_label, t), v.capacity ? formatBytes(v.capacity) : "", v.read_only ? t("drive.readOnly") : ""].filter(Boolean).join(" · ")}</span></span>
                 <Button size="small" variant="borderedProminent" loading={busy === v.path} disabled={!!busy || !local} onclick={() => add(v)}>{t("drives.add")}</Button>
               </li>
             {/each}

@@ -9,13 +9,14 @@
   import { app, refresh, toast } from "../lib/state.svelte.js";
   import { confirm } from "../lib/actions.js";
   import { bytes, count } from "../lib/format.js";
+  import { t } from "../i18n/index.svelte.js";
   import { mdiDatabaseOutline, mdiDeleteOutline, mdiFolderOpenOutline, mdiBroom, mdiHarddisk, mdiRefresh } from "../lib/icons.js";
 
   let data = $state(null);
   let loading = $state(false);
   let busy = $state("");
 
-  const KIND = { ollama: "AI 模型（Ollama）", face: "人臉辨識模型", clip: "圖像搜尋模型" };
+  const KIND = $derived({ ollama: t("stor.kind.ollama"), face: t("stor.kind.face"), clip: t("stor.kind.clip") });
 
   async function load() {
     loading = true;
@@ -35,10 +36,10 @@
 
   const modelBytes = $derived((data?.models || []).reduce((s, m) => s + m.bytes, 0));
   const parts = $derived(data ? [
-    { key: "models", label: "模型", bytes: modelBytes, color: "var(--primary)" },
-    { key: "thumbs", label: "縮圖快取", bytes: data.thumbs.bytes, color: "var(--tertiary)" },
-    { key: "faces", label: "人臉縮圖", bytes: data.face_thumbs.bytes, color: "var(--secondary)" },
-    { key: "db", label: "資料庫（分析結果）", bytes: data.database.bytes, color: "var(--outline)" },
+    { key: "models", label: t("stor.models"), bytes: modelBytes, color: "var(--primary)" },
+    { key: "thumbs", label: t("stor.thumbs"), bytes: data.thumbs.bytes, color: "var(--tertiary)" },
+    { key: "faces", label: t("stor.faces"), bytes: data.face_thumbs.bytes, color: "var(--secondary)" },
+    { key: "db", label: t("stor.db"), bytes: data.database.bytes, color: "var(--outline)" },
   ] : []);
   const total = $derived(parts.reduce((s, p) => s + p.bytes, 0));
 
@@ -56,37 +57,37 @@
   }
 
   async function deleteModel(m) {
-    const inUse = m.roles.length ? `目前用於「${m.roles.join("、")}」，刪除後這個功能要重新下載模型才能使用。` : "";
-    if (!(await confirm(`刪除 ${m.name}？`, `${inUse}會釋放約 ${bytes(m.bytes)}。已完成的分析結果不受影響。`, { ok: "刪除", danger: true }))) return;
+    const inUse = m.roles.length ? t("stor.inUseWarn", { roles: m.roles.join("、") }) : "";
+    if (!(await confirm(t("stor.deleteModelTitle", { name: m.name }), inUse + t("stor.deleteModelMsg", { size: bytes(m.bytes) }), { ok: t("stor.delete"), danger: true }))) return;
     await run(`m:${m.kind}:${m.name}`, async () => {
       await api("/api/storage/models/delete", { body: { kind: m.kind, name: m.name } });
-      toast(`已刪除 ${m.name}，釋放約 ${bytes(m.bytes)}`);
+      toast(t("stor.deletedModel", { name: m.name, size: bytes(m.bytes) }));
     });
   }
 
   async function removeRoot(r) {
     const ok = await confirm(
-      `從圖庫移除「${r.name}」？`,
-      `會刪除這個資料夾在圖庫裡的所有資料：${count(r.items)} 張照片的縮圖（約 ${bytes(r.thumb_bytes) || "0 KB"}）、AI 分析結果與人臉資料。硬碟上的照片完全不受影響，之後重新加入需要重新分析。`,
-      { ok: "移除並清除資料", danger: true },
+      t("stor.removeTitle", { name: r.name }),
+      t("stor.removeMsg", { n: count(r.items), size: bytes(r.thumb_bytes) || "0 KB" }),
+      { ok: t("stor.removeOk"), danger: true },
     );
     if (!ok) return;
     await run(`r:${r.id}`, async () => {
       const res = await api(`/api/roots/${r.id}`, { method: "DELETE" });
-      toast(`已移除「${r.name}」，釋放約 ${bytes(res.freed) || "0 KB"}`);
+      toast(t("stor.removed", { name: r.name, size: bytes(res.freed) || "0 KB" }));
     });
   }
 
   async function clearAnalysis(r) {
     const ok = await confirm(
-      `清除「${r.name}」的 AI 分析？`,
-      `${count(r.analyzed)} 張照片的描述、關鍵字與圖中文字會被清除並回到「待分析」。照片、星等、標籤、相簿與人臉不受影響。`,
-      { ok: "清除分析結果", danger: true },
+      t("stor.clearTitle", { name: r.name }),
+      t("stor.clearMsg", { n: count(r.analyzed) }),
+      { ok: t("stor.clearOk"), danger: true },
     );
     if (!ok) return;
     await run(`c:${r.id}`, async () => {
       const res = await api("/api/storage/clear-analysis", { body: { root_id: r.id } });
-      toast(`已清除 ${count(res.cleared)} 張照片的分析結果`);
+      toast(t("stor.cleared", { n: count(res.cleared) }));
     });
   }
 
@@ -96,7 +97,7 @@
   async function clean() {
     await run("clean", async () => {
       const res = await api("/api/storage/clean", { body: {} });
-      toast(res.freed ? `已清理 ${count(res.files)} 個檔案，釋放約 ${bytes(res.freed)}` : "沒有需要清理的檔案");
+      toast(res.freed ? t("stor.cleaned", { n: count(res.files), size: bytes(res.freed) }) : t("stor.nothingToClean"));
     });
   }
 
@@ -110,16 +111,16 @@
 </script>
 
 <section class="card">
-  <h2><Icon path={mdiDatabaseOutline} />儲存空間與模型
-    <button class="icon-btn small-btn" onclick={load} disabled={loading} title="重新計算" aria-label="重新計算"><Icon path={mdiRefresh} size={20} /></button>
+  <h2><Icon path={mdiDatabaseOutline} />{t("stor.title")}
+    <button class="icon-btn small-btn" onclick={load} disabled={loading} title={t("stor.recalc")} aria-label={t("stor.recalc")}><Icon path={mdiRefresh} size={20} /></button>
   </h2>
-  <p class="muted small">這裡只管理圖庫自己產生的資料與下載的模型。照片檔案本身永遠不會在這裡被刪除。</p>
+  <p class="muted small">{t("stor.lead")}</p>
 
   {#if !data}
-    <Loading kind="spinner" inline size={28} label="正在計算各項目佔用的空間…" />
+    <Loading kind="spinner" inline size={28} label={t("stor.calculating")} />
   {:else}
-    <div class="total"><b>{bytes(total) || "0 KB"}</b><span class="muted small">共使用</span></div>
-    <div class="bar" role="img" aria-label="空間使用比例">
+    <div class="total"><b>{bytes(total) || "0 KB"}</b><span class="muted small">{t("stor.used")}</span></div>
+    <div class="bar" role="img" aria-label={t("stor.ratio")}>
       {#each parts as p (p.key)}
         {#if p.bytes}<span style:width="{(p.bytes / total) * 100}%" style:background={p.color} title="{p.label} {bytes(p.bytes)}"></span>{/if}
       {/each}
@@ -130,18 +131,18 @@
       {/each}
     </ul>
     <div class="where">
-      <span class="muted small">圖庫資料位置：<code>{data.home}</code></span>
-      {#if app.server?.local}<button class="btn ghost small" onclick={reveal}><Icon path={mdiFolderOpenOutline} size={18} />在 Finder 中打開</button>{/if}
+      <span class="muted small">{t("stor.where")}<code>{data.home}</code></span>
+      {#if app.server?.local}<button class="btn ghost small" onclick={reveal}><Icon path={mdiFolderOpenOutline} size={18} />{t("stor.reveal")}</button>{/if}
     </div>
   {/if}
 </section>
 
 {#if data}
   <section class="card">
-    <h2>模型</h2>
-    <p class="muted small">已下載的所有模型。不用的可以刪除釋放空間，需要時再到對應的設定頁下載。{#if !data.ollama_ok}Ollama 目前沒有在執行，所以看不到它的模型。{/if}</p>
+    <h2>{t("stor.models")}</h2>
+    <p class="muted small">{t("stor.modelsLead")}{#if !data.ollama_ok}{t("stor.ollamaOff")}{/if}</p>
     {#if !data.models.length}
-      <p class="empty-row muted">還沒有下載任何模型。</p>
+      <p class="empty-row muted">{t("stor.noModels")}</p>
     {:else}
       <ul class="rows">
         {#each [...data.models].sort((a, b) => b.bytes - a.bytes) as m (m.kind + m.name)}
@@ -151,12 +152,12 @@
               <span class="muted tiny">{KIND[m.kind]}{m.detail ? ` · ${m.detail}` : ""}</span>
             </div>
             {#if m.roles.length}
-              <span class="tag on">使用中：{m.roles.join("、")}</span>
+              <span class="tag on">{t("stor.inUse", { roles: m.roles.join("、") })}</span>
             {:else}
-              <span class="tag">未使用</span>
+              <span class="tag">{t("stor.unused")}</span>
             {/if}
             <span class="size">{bytes(m.bytes)}</span>
-            <button class="icon-btn" onclick={() => deleteModel(m)} disabled={busy === `m:${m.kind}:${m.name}`} title="刪除模型" aria-label="刪除 {m.name}">
+            <button class="icon-btn" onclick={() => deleteModel(m)} disabled={busy === `m:${m.kind}:${m.name}`} title={t("stor.deleteModel")} aria-label={t("stor.deleteModelTitle", { name: m.name })}>
               {#if busy === `m:${m.kind}:${m.name}`}<span class="spinner"></span>{:else}<Icon path={mdiDeleteOutline} size={20} />{/if}
             </button>
           </li>
@@ -166,26 +167,26 @@
   </section>
 
   <section class="card">
-    <h2>各資料夾的資料</h2>
-    <p class="muted small">掃描過、但不再使用的資料夾，可以在這裡移除，連同縮圖、分析結果與人臉資料一起清掉。</p>
+    <h2>{t("stor.folders")}</h2>
+    <p class="muted small">{t("stor.foldersLead")}</p>
     {#if !data.roots.length}
-      <p class="empty-row muted">還沒有加入任何資料夾。</p>
+      <p class="empty-row muted">{t("stor.noFolders")}</p>
     {:else}
       <ul class="rows">
         {#each data.roots as r (r.id)}
           <li class="root">
             <Icon path={mdiHarddisk} />
             <div class="grow">
-              <b>{r.name}</b>{#if !r.online}<span class="off">未連接</span>{/if}
+              <b>{r.name}</b>{#if !r.online}<span class="off">{t("drive.offline")}</span>{/if}
               <span class="muted tiny path">{r.path}</span>
-              <span class="muted tiny">{count(r.items)} 張 · 已分析 {count(r.analyzed)} · 人臉 {count(r.faces)} · 縮圖 {bytes(r.thumb_bytes) || "0 KB"}</span>
+              <span class="muted tiny">{t("stor.rootStats", { n: count(r.items), analyzed: count(r.analyzed), faces: count(r.faces), size: bytes(r.thumb_bytes) || "0 KB" })}</span>
             </div>
             <div class="acts">
               <button class="btn ghost small" onclick={() => clearAnalysis(r)} disabled={!r.analyzed || !!busy}>
-                {#if busy === `c:${r.id}`}<span class="spinner"></span>{/if}清除分析
+                {#if busy === `c:${r.id}`}<span class="spinner"></span>{/if}{t("stor.clear")}
               </button>
               <button class="btn ghost small danger-text" onclick={() => removeRoot(r)} disabled={!!busy}>
-                {#if busy === `r:${r.id}`}<span class="spinner"></span>{/if}移除資料夾
+                {#if busy === `r:${r.id}`}<span class="spinner"></span>{/if}{t("stor.remove")}
               </button>
             </div>
           </li>
@@ -195,23 +196,23 @@
   </section>
 
   <section class="card">
-    <h2><Icon path={mdiBroom} />清理快取</h2>
+    <h2><Icon path={mdiBroom} />{t("stor.cleanTitle")}</h2>
     {#if o.bytes >= 1024 * 1024}
       <div class="reclaim">
-        <span class="muted small">可以釋放</span>
+        <span class="muted small">{t("stor.canFree")}</span>
         <b>{bytes(o.bytes)}</b>
       </div>
       <ul class="reclaim-list">
-        {#if o.thumbs.files}<li><span>沒有照片使用的縮圖（照片已刪除或搬走）</span><span>{count(o.thumbs.files)} 個 · {bytes(o.thumbs.bytes)}</span></li>{/if}
-        {#if o.face_thumbs.files}<li><span>不再使用的人臉縮圖（重新辨識後留下的）</span><span>{count(o.face_thumbs.files)} 個 · {bytes(o.face_thumbs.bytes)}</span></li>{/if}
-        {#if o.database.bytes >= 1024 * 1024}<li><span>資料庫裡刪除資料後的空白</span><span>{bytes(o.database.bytes)}</span></li>{/if}
+        {#if o.thumbs.files}<li><span>{t("stor.orphanThumbs")}</span><span>{t("stor.filesSize", { n: count(o.thumbs.files), size: bytes(o.thumbs.bytes) })}</span></li>{/if}
+        {#if o.face_thumbs.files}<li><span>{t("stor.orphanFaces")}</span><span>{t("stor.filesSize", { n: count(o.face_thumbs.files), size: bytes(o.face_thumbs.bytes) })}</span></li>{/if}
+        {#if o.database.bytes >= 1024 * 1024}<li><span>{t("stor.dbSlack")}</span><span>{bytes(o.database.bytes)}</span></li>{/if}
       </ul>
-      <p class="muted small">只刪除本程式產生的快取，照片、分析結果與人物都不受影響。</p>
+      <p class="muted small">{t("stor.cleanSafe")}</p>
     {:else}
-      <p class="muted small">目前沒有需要清理的快取{o.bytes ? `（只有約 ${bytes(o.bytes)}）` : ""}，不用清理。</p>
+      <p class="muted small">{o.bytes ? t("stor.nothingSmall", { size: bytes(o.bytes) }) : t("stor.nothing")}</p>
     {/if}
     <button class="btn" class:soft={o.bytes < 1024 * 1024} onclick={clean} disabled={busy === "clean"}>
-      {#if busy === "clean"}<span class="spinner"></span>清理中…{:else if o.bytes >= 1024 * 1024}清理，釋放 {bytes(o.bytes)}{:else}仍要壓縮資料庫{/if}
+      {#if busy === "clean"}<span class="spinner"></span>{t("stor.cleaning")}{:else if o.bytes >= 1024 * 1024}{t("stor.cleanFree", { size: bytes(o.bytes) })}{:else}{t("stor.compact")}{/if}
     </button>
   </section>
 {/if}

@@ -353,4 +353,11 @@
   .state h2 { color: var(--label-primary); }
   @media (max-width: 799px) { .num:not(.free) { display: none; } }
   @media (prefers-reduced-motion: reduce) { .disc { transition: none; } }
+  /* 窄螢幕：位置佔滿一行，「前往」「在 Finder 中顯示」換到下一行，不會擠在一起 */
+  @media (max-width: 640px) {
+    .copies { padding-left: var(--space-3); }
+    .copies li { flex-wrap: wrap; }
+    .place { flex-basis: calc(100% - var(--space-8)); }
+    .free { min-width: 0; }
+  }
 </style>

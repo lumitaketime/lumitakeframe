@@ -12,3 +12,8 @@ export function prettyName(name) {
     return s;
   }
 }
+
+/** 硬碟格式的名稱：引擎看不出格式時回傳「未知」，換成目前語言的說法 */
+export function fsName(label, t) {
+  return label === "未知" ? t("drive.fsUnknown") : label || "";
+}
