@@ -194,6 +194,60 @@ def index_bytes(conn: sqlite3.Connection) -> int:
     return int(body + fts)
 
 
+FTS_SIG_KEY = "fts_signature"
+
+
+def index_current(conn: sqlite3.Connection) -> bool:
+    """全文索引是不是用現在的斷詞規則（語言包）建的。"""
+    from . import lang
+
+    r = conn.execute("SELECT value FROM settings_kv WHERE key = ?", (FTS_SIG_KEY,)).fetchone()
+    if r is None:  # 第一次：沒有任何讀過的文字就不必重建
+        if not conn.execute("SELECT 1 FROM file_text WHERE body IS NOT NULL LIMIT 1").fetchone():
+            conn.execute("INSERT OR REPLACE INTO settings_kv (key, value) VALUES (?, ?)", (FTS_SIG_KEY, lang.signature()))
+            conn.commit()
+            return True
+        return False
+    return r["value"] == lang.signature()
+
+
+def rebuild_index(conn: sqlite3.Connection, progress=None, stop=None) -> dict:
+    """依現在的語言包重建全文索引（從已經讀好的文字重算，不必再讀硬碟）。
+    整個做完才換上去；中途停止就維持原本的索引，下次再重做。"""
+    from . import lang
+
+    total = conn.execute("SELECT COUNT(*) FROM file_text WHERE body IS NOT NULL").fetchone()[0]
+    conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute("INSERT INTO file_fts(file_fts) VALUES ('delete-all')")
+        done, last = 0, 0
+        cur = conn.execute("SELECT file_id, body FROM file_text WHERE body IS NOT NULL ORDER BY file_id")
+        while True:
+            rows = cur.fetchmany(500)
+            if not rows:
+                break
+            if stop is not None and stop.is_set():
+                conn.rollback()
+                return {"files": done, "stopped": True}
+            conn.executemany("INSERT INTO file_fts(rowid, tokens) VALUES (?, ?)",
+                             [(r["file_id"], db.fts_tokens(zlib.decompress(r["body"]).decode("utf-8", "replace"))) for r in rows])
+            done += len(rows)
+            if progress and done - last >= 500:
+                last = done
+                progress(done, total, "")
+        conn.execute("DELETE FROM search_fts")
+        conn.execute("INSERT INTO search_fts(rowid, tokens) SELECT id, fts_tokens(search_text) FROM images")
+        conn.execute("INSERT OR REPLACE INTO settings_kv (key, value) VALUES (?, ?)", (FTS_SIG_KEY, lang.signature()))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    if progress:
+        progress(total, total, "")
+    return {"files": done, "stopped": False}
+
+
 def reset(conn: sqlite3.Connection, ocr_only: bool = False) -> int:
     """清除讀過的文字與索引，之後重新讀取（只動 Re'memor 自己的資料庫，不碰硬碟上的檔案）。
     ocr_only＝只清文字辨識的結果。回傳清掉幾個檔案。"""

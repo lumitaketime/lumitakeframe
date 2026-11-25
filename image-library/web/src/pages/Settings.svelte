@@ -110,14 +110,19 @@
     }
   }
 
-  // ---- 文字辨識的語言（Apple Vision 的語言代碼） ----
-  const OCR_LANGS = ["zh-Hant", "zh-Hans", "en-US", "ja-JP", "ko-KR"];
-  const langs = $derived(new Set((settings?.ocr_languages || "").split(",").filter(Boolean)));
-  function toggleLang(code, on) {
-    const next = OCR_LANGS.filter((c) => (c === code ? on : langs.has(c)));
-    if (!next.length) return toast(t("set.ocr.needOne"));
-    set("ocr_languages", next.join(","));
+  // ---- 語言包：中文、英文內建；日、韓、德、法可以加入（文字辨識的語言、搜尋的詞形變化跟著改） ----
+  const PACKS = ["ja", "ko", "de", "fr"];
+  const packs = $derived(new Set((settings?.lang_packs || "").split(",").filter(Boolean)));
+  const reindexJob = $derived(app.server?.jobs?.active?.find((j) => j.kind === "reindex_text") || null);
+  async function togglePack(code, on) {
+    const next = PACKS.filter((c) => (c === code ? on : packs.has(c)));
+    await set("lang_packs", next.join(","));
+    load();
+    toast(t("set.lang.changed"));
   }
+
+  // ---- 文字辨識的語言（Apple Vision 的語言代碼） ----
+  const langs = $derived(new Set((settings?.ocr_languages || "").split(",").filter(Boolean)));
 
   const local = $derived(!!app.server?.local);
   const isMac = $derived(app.server?.platform === "darwin");
@@ -274,6 +279,17 @@
       </List>
 
     {:else if shown === "text"}
+      <List header={t("set.lang.title")} footer={t("set.lang.footer")}>
+        <ListRow title={t("set.lang.builtin")} subtitle={t("set.lang.builtinHint")} icon="checkmark" iconTint="green" />
+        {#each PACKS as code (code)}
+          <ListRow title={t(`set.lang.${code}`)} subtitle={t(`set.lang.${code}Hint`)}>
+            {#snippet trailing()}<Toggle checked={packs.has(code)} aria-label={t(`set.lang.${code}`)} onchange={(v) => togglePack(code, v)} />{/snippet}
+          </ListRow>
+        {/each}
+        {#if reindexJob}
+          <ListRow title={t("set.lang.reindexing")} detail={reindexJob.total ? `${formatNumber(reindexJob.done)} / ${formatNumber(reindexJob.total)}` : ""} />
+        {/if}
+      </List>
       <List header={t("set.text.status")}>
         {#if !text}
           <div class="pad"><ProgressIndicator kind="spinner" size="small" label={t("view.loading")} /></div>
@@ -316,12 +332,7 @@
             ]} />
           </div>
           {#if settings.ocr_scope !== "off"}
-            <ListRow title={t("set.ocr.languages")} subtitle={t("set.ocr.languagesHint")} />
-            <div class="pad langs">
-              {#each OCR_LANGS as code (code)}
-                <Checkbox label={t(`set.ocr.lang.${code}`)} checked={langs.has(code)} onchange={(v) => toggleLang(code, v)} />
-              {/each}
-            </div>
+            <ListRow title={t("set.ocr.languages")} subtitle={t("set.ocr.byPacks")} detail={[...langs].map((c) => t(`set.ocr.lang.${c}`)).join("、")} />
             {#if text?.ocr.available}
               <ListRow title={t("set.ocr.todo")} detail={formatNumber(text.ocr.todo)}>
                 {#snippet trailing()}{#if !textJob && text.ocr.todo}<Button size="small" variant="bordered" onclick={() => start("ocr")}>{t("find.ocr")}</Button>{/if}{/snippet}

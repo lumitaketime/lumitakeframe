@@ -472,22 +472,28 @@ _WORD = re.compile(r"[^\W_]+")
 
 
 def fts_tokens(text: str | None) -> str:
-    """全文索引用的詞：中日韓文字拆成單字與兩字一組（「海邊」→ 海 邊 海邊），其他保留原文交給 unicode61 斷詞。"""
+    """全文索引用的詞：中日韓文字拆成單字與兩字一組（「海邊」→ 海 邊 海邊）；
+    拉丁字母的詞換成詞根（reports → report，依語言包；見 lang.py），其他交給 unicode61 斷詞。"""
+    from . import lang
+
     text = (text or "").lower()
+    which = lang.guess(text)
     out: list[str] = []
     pos = 0
     for m in _CJK.finditer(text):
-        out.append(text[pos:m.start()])
+        out.append(lang.stem_text(text[pos:m.start()], which))
         run = m.group()
         out.extend(run)
         out.extend(run[i:i + 2] for i in range(len(run) - 1))
         pos = m.end()
-    out.append(text[pos:])
+    out.append(lang.stem_text(text[pos:], which))
     return " ".join(x.strip() for x in out if x.strip())
 
 
 def fts_query(term: str) -> str | None:
     """搜尋詞 → FTS5 查詢式；做不到和原本「子字串比對」一樣的結果時回傳 None（改用 LIKE）。"""
+    from . import lang
+
     t = (term or "").lower().strip()
     if not t:
         return None
@@ -510,7 +516,9 @@ def fts_query(term: str) -> str | None:
             # 含數字的詞（檔名、型號，例如 0012、x-t5）常常從中間開始比對，交給 LIKE
             if any(ch.isdigit() for w in words for ch in w):
                 return None
-            exprs.append('"' + " ".join(words) + '"*')
+            # 換成詞根再找（索引裡存的也是詞根）；啟用了幾種語言就各試一次
+            phrases = list(dict.fromkeys('"' + " ".join(lang.stem(w, which) for w in words) + '"*' for which in lang._state["langs"]))
+            exprs.append(phrases[0] if len(phrases) == 1 else "(" + " OR ".join(phrases) + ")")
     return "(" + " AND ".join(exprs) + ")" if exprs else None
 
 

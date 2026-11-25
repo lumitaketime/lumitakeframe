@@ -24,7 +24,7 @@ from .media import MediaError
 from .scanner import scan_all
 
 LABELS = {
-    "scan": "掃描", "compare": "比對內容", "retire_verify": "確認副本", "consolidate": "複製到另一顆硬碟", "covers": "做文件封面", "extract": "讀取文件文字", "ocr": "文字辨識", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
+    "scan": "掃描", "compare": "比對內容", "retire_verify": "確認副本", "consolidate": "複製到另一顆硬碟", "covers": "做文件封面", "reindex_text": "重建搜尋索引", "extract": "讀取文件文字", "ocr": "文字辨識", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
     "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
@@ -645,6 +645,12 @@ class JobRunner:
                                     progress=lambda done, total, n: upd(done=done, total=total, message=n))
                 job["result"] = {"copies": res.copies, "stopped": res.stopped}
                 parts.append(describe_retire(res, name))
+            if kind == "reindex_text":
+                from .textindex import rebuild_index
+
+                res = rebuild_index(conn, stop=stop, progress=lambda done, total, n: upd(done=done, total=total, message=n))
+                job["result"] = res
+                parts.append(("已停止，下次會重做" if res["stopped"] else f"依目前的語言包重建了 {res['files']:,} 份文件的搜尋索引"))
             if kind == "covers":
                 from . import covers
                 from .health import held_roots

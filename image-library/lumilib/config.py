@@ -67,7 +67,8 @@ DEFAULTS = {
     "album_sort": "updated",  # 相簿排序：updated／name／created／count／custom（拖曳排的順序）
     "folder_sort": "name",  # 資料夾排序：name／updated／count／custom
     "ocr_scope": "scans",  # 文字辨識範圍：scans＝掃描檔與截圖／all＝再加上所有照片／off
-    "ocr_languages": "zh-Hant,zh-Hans,en-US",  # 文字辨識的語言（Apple Vision 的語言代碼）
+    "ocr_languages": "zh-Hant,zh-Hans,en-US",
+    "lang_packs": "",  # 加入的語言包（ja、ko、de、fr，逗號分隔）；中文、英文內建  # 文字辨識的語言（Apple Vision 的語言代碼）
     "assistant_model": "",  # 檔案管理助理在這台電腦上用的模型（Ollama）；空白＝依這台電腦的記憶體自動挑
     # 助理用哪個服務：ollama＝這台電腦（離線）／claude／gemini／openai／custom（其他 OpenAI 相容的服務，網址自己填）
     "assistant_provider": "ollama",
@@ -168,6 +169,7 @@ class Config:
     open_action: str = DEFAULTS["open_action"]
     ocr_scope: str = DEFAULTS["ocr_scope"]
     ocr_languages: str = DEFAULTS["ocr_languages"]
+    lang_packs: str = DEFAULTS["lang_packs"]
     assistant_model: str = DEFAULTS["assistant_model"]
     assistant_provider: str = DEFAULTS["assistant_provider"]
     assistant_api_url: str = DEFAULTS["assistant_api_url"]
