@@ -251,6 +251,9 @@
           <ListRow title={t("set.scan.onStart")} subtitle={t("set.scan.onStartHint")}>
             {#snippet trailing()}<Toggle checked={!!settings.scan_on_start} aria-label={t("set.scan.onStart")} onchange={(v) => set("scan_on_start", v ? 1 : 0)} />{/snippet}
           </ListRow>
+          <ListRow title={t("set.scan.autoContinue")} subtitle={t("set.scan.autoContinueHint")}>
+            {#snippet trailing()}<Toggle checked={settings.auto_continue !== 0} aria-label={t("set.scan.autoContinue")} onchange={(v) => set("auto_continue", v ? 1 : 0)} />{/snippet}
+          </ListRow>
           <ListRow title={t("set.scan.parallel")} subtitle={t("set.scan.parallelHint")}>
             {#snippet trailing()}<PopUpButton value={String(settings.scan_parallel || 2)} onchange={(v) => set("scan_parallel", Number(v))}
               options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: t("set.scan.parallelN", { n }) }))} />{/snippet}

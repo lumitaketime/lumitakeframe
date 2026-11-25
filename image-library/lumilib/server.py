@@ -70,7 +70,7 @@ SETTING_KEYS = {
     "face_enabled", "face_model", "face_similarity", "face_min_faces",
     "query_rewrite", "clip_enabled", "clip_model",
     "keep_awake", "stack_enabled", "burst_seconds",
-    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "doc_semantic", "doc_embed_model", "spotlight", "spotlight_internal", "scan_parallel", "backup_auto", "backup_keep",
+    "auto_analyze", "dup_threshold", "screen_png_rule", "large_files_limit", "album_sort", "folder_sort", "open_action", "ocr_scope", "ocr_languages", "start_page", "auto_extract", "assistant_model", "assistant_provider", "assistant_api_url", "assistant_api_model", "assistant_api_key", "assistant_claude_model", "assistant_claude_key", "assistant_gemini_model", "assistant_gemini_key", "assistant_openai_model", "assistant_openai_key", "assistant_permission", "assistant_cloud_content", "doc_semantic", "doc_embed_model", "spotlight", "spotlight_internal", "scan_parallel", "auto_continue", "backup_auto", "backup_keep",
     "classify_rules_auto", "classify_ai_auto", "classify_read_text", "classify_cloud", "analysis_detail", "analyze_schedule", "night_start", "night_end", "schedule_days", "schedule_start", "schedule_end", "schedule_ac", "schedule_idle", "schedule_battery", "viewer_rating_bar", "nav_hidden", "pinned_tools", "grid_style", "onboarded",
     "text_model", "analysis_prompt", "clip_custom_repo", "face_custom_url", "face_custom_det", "face_custom_rec",
 }
@@ -167,9 +167,14 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             state["jobs"].submit("scan")
         if start_jobs_on_boot:
             start_backup_timer()
+            from .autopilot import DriveWatcher
+
+            state["watcher"] = DriveWatcher(cfg, state["jobs"]).start()  # 硬碟接上時接著做沒做完的工作
         app.state.schedule_warm(4.0)  # 開機後在背景先把探索、整理工具等統計算好
         yield
         app.state.stop_warm()
+        if state.get("watcher"):
+            state["watcher"].close()
         state["jobs"].close()
         exiftool().close()
 
@@ -1854,6 +1859,29 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                                  "risky": sm["states"]["risky"], "copy": sm["states"]["copy"], "computed_at": sm["computed_at"]})
                 retire.append(item)
             return {"recent": {"files": recent["n"], "bytes": recent["b"], "items": newest}, "attention": attention, "retire": retire}
+        finally:
+            c.close()
+
+    # ---- 主動提醒（只提醒不動手；每一則可以先不要提醒七天） ----
+    @app.get("/api/reminders")
+    def reminders_list(limit: int = 8):
+        from . import reminders
+
+        c = conn()
+        try:
+            items = reminders.compute(c, max(1, min(int(limit), 20)))
+            return {"items": items, "count": len(items)}
+        finally:
+            c.close()
+
+    @app.post("/api/reminders/snooze")
+    def reminders_snooze(body: dict = Body(...)):
+        from . import reminders
+
+        c = conn()
+        try:
+            reminders.snooze(c, str(body.get("key") or ""), int(body.get("days") or 7))
+            return {"ok": True}
         finally:
             c.close()
 

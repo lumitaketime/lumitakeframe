@@ -90,6 +90,7 @@ DEFAULTS = {
     "spotlight": 1,  # Mac App：把目錄放進 Spotlight（索引只在這台 Mac）
     "spotlight_internal": 1,
     "scan_parallel": 2,
+    "auto_continue": 1,  # 目錄裡的硬碟接上時，接著做上次沒做完的工作（掃描、讀文字、確認副本…）
     # 目錄備份：每週自動做一份（要先選存放位置），只保留最近幾份自動備份；本人按的「立即備份」不會被拿掉
     "backup_auto": 1,
     "backup_dir": "",
@@ -182,6 +183,7 @@ class Config:
     spotlight: int = DEFAULTS["spotlight"]
     spotlight_internal: int = DEFAULTS["spotlight_internal"]
     scan_parallel: int = DEFAULTS["scan_parallel"]
+    auto_continue: int = DEFAULTS["auto_continue"]
     backup_auto: int = DEFAULTS["backup_auto"]
     backup_dir: str = DEFAULTS["backup_dir"]
     backup_keep: int = DEFAULTS["backup_keep"]

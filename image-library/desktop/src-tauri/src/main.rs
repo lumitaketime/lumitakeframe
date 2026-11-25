@@ -286,6 +286,17 @@ fn job_summary() -> Option<(String, Option<u32>, usize)> {
     Some((text, percent, active.len() + queued))
 }
 
+/// 最重要的一則主動提醒（選單列用）：（文字, 共幾則）。只提醒、不動手
+fn reminder_top() -> Option<(String, usize)> {
+    let raw = http_get("/api/reminders?limit=3")?;
+    let body = raw.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or(&raw);
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    let items = v["items"].as_array().cloned().unwrap_or_default();
+    let first = items.first()?;
+    let text: String = first["text"].as_str().unwrap_or("").chars().take(48).collect();
+    Some((text, items.len()))
+}
+
 /// 在主視窗裡換到某一頁（網頁裡的路由會跟著 popstate 換頁）
 fn open_page(app: &AppHandle, path: &str) {
     show_main(app);
@@ -299,6 +310,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     // 有工作時：選單列圖示旁顯示百分比，選單最上面是目前的工作與「停止」；沒有工作時只有圖示
     let status = MenuItem::with_id(app, "status", "目前沒有進行中的工作", false, None::<&str>)?;
     let activity = MenuItem::with_id(app, "activity", "查看掃描進度…", true, None::<&str>)?;
+    let reminder = MenuItem::with_id(app, "reminder", "沒有新的提醒", false, None::<&str>)?;
     let stop = MenuItem::with_id(app, "stop", "停止所有工作", false, None::<&str>)?;
     let open = MenuItem::with_id(app, "open", "打開 Re'memor", true, None::<&str>)?;
     let browser = MenuItem::with_id(app, "browser", "在瀏覽器中開啟", true, None::<&str>)?;
@@ -312,6 +324,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             &status,
             &activity,
             &stop,
+            &PredefinedMenuItem::separator(app)?,
+            &reminder,
             &PredefinedMenuItem::separator(app)?,
             &open,
             &browser,
@@ -334,6 +348,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "open" => show_main(app),
             "about" => open_page(app, "/settings/about"),
             "activity" => open_page(app, "/activity"),
+            "reminder" => open_page(app, "/overview"),
             "stop" => {
                 // 停止後下次可以從中斷的地方繼續（掃描、讀取文字、比對內容都會記錄進度）
                 let _ = http_post("/api/jobs/stop", "{}");
@@ -358,8 +373,24 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     // 每兩秒看一次背景工作，有變化才更新選單列
     thread::spawn(move || {
         let mut last: Option<(String, Option<u32>, usize)> = None;
+        let mut tick: u32 = 0;
         loop {
             thread::sleep(Duration::from_secs(2));
+            // 提醒每半分鐘看一次就好
+            if tick % 15 == 0 {
+                match reminder_top() {
+                    Some((text, n)) => {
+                        let line = if n > 1 { format!("提醒：{text}（共 {n} 則）") } else { format!("提醒：{text}") };
+                        let _ = reminder.set_text(line.as_str());
+                        let _ = reminder.set_enabled(true);
+                    }
+                    None => {
+                        let _ = reminder.set_text("沒有新的提醒");
+                        let _ = reminder.set_enabled(false);
+                    }
+                }
+            }
+            tick = tick.wrapping_add(1);
             let now = job_summary().unwrap_or((String::new(), None, 0));
             if last.as_ref() == Some(&now) {
                 continue;

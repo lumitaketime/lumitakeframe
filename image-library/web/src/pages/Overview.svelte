@@ -23,11 +23,13 @@
 
   let ov = $state(null);
   let dupes = $state(null);
+  let notes = $state([]); // 主動提醒（只提醒不動手，可以先不要提醒）
   let error = $state("");
   let broken = $state(new Set()); // 縮圖讀不到的（例如照片還沒做縮圖）：改顯示類型圖示
   function load() {
     api("/api/overview", { quiet: true }).then((d) => { ov = d; error = ""; }).catch((e) => (error = e.message));
     loadDupesSummary().then((d) => (dupes = d)).catch(() => {});
+    api("/api/reminders", { quiet: true }).then((d) => (notes = d.items)).catch(() => {});
     if (!catalog.loaded) loadCatalog();
   }
   $effect(() => {
@@ -59,6 +61,10 @@
   const attentionText = (a) => t(`ov.att.${a.kind}`, { name: a.name || "", n: formatNumber(a.n || 0), detail: a.detail || "",
     date: a.date ? formatDate(new Date(a.date)) : "" });
   const ATT_ICON = { health: "exclamation-triangle", never: "external-drive", partial: "clock", stale: "clock", pending: "trash", review: "exclamation-triangle", plans: "sparkles" };
+  async function snooze(n) {
+    notes = notes.filter((x) => x.key !== n.key);
+    await api("/api/reminders/snooze", { body: { key: n.key, days: 7 } }).catch(() => {});
+  }
   const fileHref = (f) => `/folders/${f.root_id}${f.folder ? `?path=${encodeURIComponent(f.folder)}` : ""}`;
 </script>
 
@@ -116,10 +122,14 @@
         <h2 class="mac-headline">{t("ov.attention")}</h2>
         {#if !ov}
           <ProgressIndicator kind="spinner" size="small" label={t("view.loading")} />
-        {:else if !ov.attention.length}
+        {:else if !ov.attention.length && !notes.length}
           <p class="ok mac-body"><Icon name="checkmark" size={14} />{t("ov.allGood")}</p>
         {:else}
           <ul class="rows mac-callout">
+            {#each notes as n (n.key)}
+              <li class="lv-{n.level}"><Icon name={n.icon || "info"} size={14} /><a href={n.href} use:link>{n.text}</a>
+                <button type="button" class="snooze" title={t("ov.snooze")} aria-label={t("ov.snooze")} onclick={() => snooze(n)}><Icon name="xmark" size={10} /></button></li>
+            {/each}
             {#each ov.attention.slice(0, 8) as a, i (i)}
               <li class="lv-{a.level}"><Icon name={ATT_ICON[a.kind] || "info"} size={14} /><a href={a.href} use:link>{attentionText(a)}</a></li>
             {/each}
@@ -231,6 +241,9 @@
   .rows a:hover, .dname:hover { color: var(--accent); text-decoration: underline; }
   .dname { flex: 0 1 auto; font-weight: 600; }
   .when, .num { margin-left: auto; flex: none; }
+  .snooze { flex: none; margin-left: auto; width: var(--space-5); height: var(--space-5); display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: var(--radius-capsule); background: none; color: var(--label-tertiary); cursor: pointer; }
+  .snooze:hover { background: var(--fill-tertiary); color: var(--label-primary); }
   .ok { display: flex; align-items: center; gap: var(--space-2); color: var(--system-green); }
   .big { font-feature-settings: "tnum"; }
   .acts { margin-top: auto; padding-top: var(--space-2); }
