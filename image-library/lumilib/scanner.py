@@ -573,7 +573,7 @@ class _Scan:
                 return rec["id"]
             # 內容變了：之前算的完整指紋作廢，要重新比對才算數
             conn.execute("UPDATE files SET size = ?, mtime = ?, ctime = ?, kind = ?, status = 'ok', last_seen = ?, "
-                         "content_hash = NULL, hashed_at = NULL WHERE id = ?",
+                         "content_hash = NULL, hashed_at = NULL, quick_sig = NULL WHERE id = ?",
                          (size, mtime, ctime, kind, self.now, rec["id"]))
             self.pending += 1
             return rec["id"]

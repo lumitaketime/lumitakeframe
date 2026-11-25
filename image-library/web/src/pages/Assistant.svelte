@@ -224,9 +224,9 @@
   }
   const hostOf = (u) => { try { return new URL(u).host; } catch { return u || ""; } };
   const STEP = { propose_label: "ai.step.propose", propose_smart_folder: "ai.step.propose", propose_mark_delete: "ai.step.propose",
-    propose_move: "ai.step.propose", propose_rename: "ai.step.propose", propose_to_pending: "ai.step.propose", search_files: "ai.step.search", largest_folders: "ai.step.folders", drives_overview: "ai.step.drives", duplicates: "ai.step.dupes", read_document: "ai.step.read",
+    propose_move: "ai.step.propose", propose_rename: "ai.step.propose", propose_to_pending: "ai.step.propose", propose_consolidate: "ai.step.propose", search_files: "ai.step.search", largest_folders: "ai.step.folders", drives_overview: "ai.step.drives", duplicates: "ai.step.dupes", read_document: "ai.step.read",
     catalog_analysis: "ai.step.analysis", keyword_folders: "ai.step.keyword", save_profile: "ai.step.profile", plan_categories: "ai.step.plan",
-    classify_folders: "ai.step.review" };
+    classify_folders: "ai.step.review", retire_check: "ai.step.retire" };
 </script>
 
 <div class="page" bind:clientWidth={pageWidth}>

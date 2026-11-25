@@ -5,7 +5,9 @@
    * 已經處理過的（做完、復原、略過）縮成一行：標題、狀態、時間、「復原」；點標題才展開細節。
    */
   import { Alert, Button, Checkbox, Icon } from "../ui/index.js";
-  import { runAction, undoAction, dismissAction } from "../data/assistant.js";
+  import { runAction, undoAction, dismissAction, loadAction } from "../data/assistant.js";
+  import { app } from "../lib/state.svelte.js";
+  import { ProgressIndicator } from "../ui/index.js";
   import { t, formatBytes, formatNumber, formatDateTime } from "../i18n/index.svelte.js";
   import { toast, refresh } from "../lib/state.svelte.js";
 
@@ -14,7 +16,7 @@
   import CategoryPlanPreview from "./CategoryPlanPreview.svelte";
 
   const ICON = { label: "star", smart_folder: "magnifyingglass", mark_delete: "trash", move: "folder", rename: "compose", to_pending: "trash",
-    category_rule: "tag", category_plan: "tag" };
+    category_rule: "tag", category_plan: "tag", consolidate: "duplicate" };
   // 分類的整理計畫：看不懂的那一步預設不勾
   const isPlan = $derived(action.kind === "category_plan" || action.kind === "category_rule");
   const SHOW = 6;
@@ -27,11 +29,21 @@
   const chosen = $derived(checked.map((c, i) => (c ? i : -1)).filter((i) => i >= 0));
   const visible = $derived(expanded ? action.items : action.items.slice(0, SHOW));
   const proposed = $derived(action.state === "proposed");
+  const isCopy = $derived(action.kind === "consolidate");
+  // 整理計畫在背景複製：顯示進度；工作結束就重新讀這張卡
+  const copyJob = $derived(isCopy ? [...(app.server?.jobs?.active || []), ...(app.server?.jobs?.queued || [])]
+    .find((j) => j.kind === "consolidate" && j.target === `consolidate:${action.id}`) || null : null);
+  let wasCopying = false;
+  $effect(() => {
+    const on = !!copyJob;
+    if (wasCopying && !on) loadAction(action.id).then((a) => (action = a)).catch(() => {});
+    wasCopying = on;
+  });
   const canUndo = $derived(action.state === "done" || action.state === "partial");
   let busy = $state(false);
   let confirm = $state(null); // "run" | "undo"
   let opened = $state(false); // 處理過的動作：展開看細節
-  const folded = $derived(!proposed && !opened);
+  const folded = $derived(!proposed && action.state !== "running" && !opened);
   const when = $derived.by(() => {
     const iso = action.undone_at || action.done_at || action.created_at;
     return iso ? formatDateTime(new Date(iso)) : "";
@@ -96,13 +108,29 @@
     <CategoryPlanPreview preview={action.preview} done={!proposed} />
     {#if action.items.length}<h4 class="mac-caption-1 steps">{t("plan.steps")}</h4>{/if}
   {/if}
+  {#if isCopy && action.examples?.length && (proposed || opened)}
+    <ul class="items mac-callout">
+      {#each action.examples.slice(0, 4) as e, i (i)}
+        <li><div class="what"><span class="path sub"><span>{e.from}</span><span class="arrow">→</span><span class="to">{e.to}</span></span></div>
+          <span class="st mac-caption-1">{formatBytes(e.size) || "0 KB"}</span></li>
+      {/each}
+    </ul>
+  {/if}
+  {#if isCopy && action.state === "running"}
+    <p class="mac-callout running"><ProgressIndicator kind="circular" size="small" value={copyJob?.total ? copyJob.done / copyJob.total : undefined} label={t("act.copying")} />
+      {copyJob ? `${t("act.copying")} ${copyJob.total ? `${formatNumber(copyJob.done)} / ${formatNumber(copyJob.total)}` : ""} ${copyJob.message || ""}` : t("act.copyPaused")}</p>
+  {/if}
+  {#if isCopy && action.counts && !proposed}
+    <p class="mac-callout sub">{t("act.copyCounts", { done: formatNumber(action.counts.done), same: formatNumber(action.counts.same), failed: formatNumber(action.counts.failed), todo: formatNumber(action.counts.todo) })}</p>
+    {#each (action.counts.failures || []).slice(0, 5) as f, i (i)}<p class="mac-caption-1 reason">{f.name}：{f.note}</p>{/each}
+  {/if}
   {#if action.kind === "smart_folder"}
     <p class="mac-callout sub">{t("act.smart", { q: action.query?.q || "" })}</p>
   {:else if action.items.length}
     <ul class="items mac-callout">
       {#each visible as it, i (i)}
         <li>
-          {#if proposed && action.items.length > 1}
+          {#if proposed && action.items.length > 1 && !isCopy}
             <Checkbox bind:checked={checked[i]} aria-label={it.name} />
           {/if}
           <div class="what">
@@ -142,8 +170,8 @@
 
 {#if confirm}
   <div class="backdrop">
-    <Alert title={confirm === "run" ? t(`act.confirm.${action.kind}`, { n: formatNumber(chosen.length) }) : t("act.undoTitle")}
-      message={confirm === "run" ? t("act.confirmMessage") : t("act.undoMessage")} actions={[
+    <Alert title={confirm === "run" ? (isCopy ? t("act.confirm.consolidate") : t(`act.confirm.${action.kind}`, { n: formatNumber(chosen.length) })) : t("act.undoTitle")}
+      message={confirm === "run" ? (isCopy ? t("act.confirmConsolidate") : t("act.confirmMessage")) : (isCopy ? t("act.undoConsolidate") : t("act.undoMessage"))} actions={[
         { label: confirm === "run" ? t("act.run") : t("act.undo"), role: "default", onPress: confirm === "run" ? run : undo },
         { label: t("common.cancel"), role: "cancel", onPress: () => (confirm = null) },
       ]} />
@@ -182,6 +210,7 @@
   .arrow { flex: none; }
   .to { color: var(--label-primary); }
   .reason { color: var(--system-orange); }
+  .running { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--label-primary); }
   .st { flex: none; color: var(--label-secondary); }
   .st-done, .st-undone { color: var(--system-green); }
   .st-skipped { color: var(--system-orange); }

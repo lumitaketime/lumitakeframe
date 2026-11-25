@@ -31,9 +31,9 @@ from . import db
 
 PENDING_DIR = "Re'memor 待刪除"  # 「移到待刪除資料夾」放在該來源最上層的這個資料夾裡，保留原本的資料夾結構
 MAX_ITEMS = 200
-LEVEL = {"label": 3, "smart_folder": 3, "mark_delete": 3, "move": 4, "rename": 4, "to_pending": 4, "category_rule": 1, "category_plan": 3}
+LEVEL = {"label": 3, "smart_folder": 3, "mark_delete": 3, "move": 4, "rename": 4, "to_pending": 4, "category_rule": 1, "category_plan": 3, "consolidate": 4}
 CATEGORY_KINDS = ("category_rule", "category_plan")
-FILE_OPS = ("move", "rename", "to_pending")
+FILE_OPS = ("move", "rename", "to_pending", "consolidate")
 
 _lock = threading.Lock()
 
@@ -305,8 +305,38 @@ def _build_category(conn, args):
     return payload, f"{summary}：會改變 {prev['changed']:,} 個資料夾的分類"
 
 
+def _build_consolidate(conn, args):
+    """整理計畫：把檔案複製到另一顆硬碟，比對確認一模一樣；可選把原本那份放進「待刪除」。"""
+    from . import consolidate
+
+    try:
+        p = consolidate.plan(conn, args.get("source_root"), args.get("target_root"), args.get("dest"),
+                             tuple(args.get("states") or ("only",)), args.get("folder"))
+    except consolidate.PlanError as exc:
+        raise ActionError(str(exc)) from exc
+    mark = bool(args.get("mark_source"))
+    gb = _fmt_size(p["bytes"])
+    name = f"把 {p['files']:,} 個檔案（{gb}）從「{p['source']}」複製到「{p['target']}」的「{p['dest']}」，逐一比對確認一模一樣"
+    items = [{"type": "op", "name": name}]
+    if mark:
+        items.append({"type": "op", "name": "複製並確認好之後，原本那份放進「待刪除」清單（只是標記，清理還要你確認）"})
+    if not p["enough"]:
+        items[0]["ok"] = False
+        items[0]["reason"] = f"「{p['target']}」的空間不夠（剩 {_fmt_size(p['free'] or 0)}）"
+    payload = {**p, "mark_source": mark, "items": items, "by_user": bool(args.get("by_user"))}
+    return payload, f"整理計畫：{p['files']:,} 個檔案（{gb}）複製到「{p['target']}」"
+
+
+def _fmt_size(n: int) -> str:
+    for unit, size in (("TB", 1e12), ("GB", 1e9), ("MB", 1e6), ("KB", 1e3)):
+        if n >= size:
+            return f"{n / size:.1f} {unit}"
+    return f"{n} B"
+
+
 _BUILD = {"label": _build_label, "smart_folder": _build_smart, "mark_delete": _build_mark, "move": _build_move,
-          "rename": _build_rename, "to_pending": _build_pending, "category_rule": _build_category, "category_plan": _build_category}
+          "rename": _build_rename, "to_pending": _build_pending, "category_rule": _build_category, "category_plan": _build_category,
+          "consolidate": _build_consolidate}
 
 
 # ---- 讀取紀錄 ----
@@ -322,8 +352,10 @@ def _public(r: sqlite3.Row) -> dict:
             "preview": payload.get("preview") if r["kind"] in CATEGORY_KINDS else None,
             "folder": payload.get("folder"), "file_op": r["kind"] in FILE_OPS,
             "items": [{k: it.get(k) for k in ("type", "id", "name", "drive", "from", "to", "size", "new_name", "ok", "reason")}
-                      | {"status": (outcome.get(n) or {}).get("status"), "reason": (outcome.get(n) or {}).get("reason")}
+                      | {"status": (outcome.get(n) or {}).get("status"), "reason": (outcome.get(n) or {}).get("reason") or it.get("reason")}
                       for n, it in enumerate(items[:MAX_ITEMS])],
+            "examples": payload.get("examples") if r["kind"] == "consolidate" else None,
+            "counts": result.get("counts") if r["kind"] == "consolidate" else None,
             "message": result.get("message") or ""}
 
 
@@ -389,9 +421,12 @@ def run(conn: sqlite3.Connection, action_id: int, level: int, only: list[int] | 
             raise ActionError("找不到這個動作")
         if r["state"] != "proposed":
             raise ActionError("這個動作已經處理過了")
-        if level < r["level"]:
-            raise ActionError("目前的權限不允許這個動作，請到設定 → AI 助理調整權限")
         payload = json.loads(r["payload"])
+        # 本人自己在畫面上做的計畫（不是助理提的）不受助理的權限等級限制
+        if level < r["level"] and not payload.get("by_user"):
+            raise ActionError("目前的權限不允許這個動作，請到設定 → AI 助理調整權限")
+        if r["kind"] == "consolidate":  # 複製要很久：交給背景工作（可以暫停、接著做），做完再更新這張卡
+            return _start_consolidate(conn, r, payload)
         items = payload.get("items") or []
         chosen = set(range(len(items))) if only is None else {int(i) for i in only}
         results = _RUN[r["kind"]](conn, payload, chosen)
@@ -403,6 +438,44 @@ def run(conn: sqlite3.Connection, action_id: int, level: int, only: list[int] | 
                      (state, json.dumps(results, ensure_ascii=False), db.now_iso(), r["id"]))
         conn.commit()
         return get(conn, r["id"])
+
+
+def _start_consolidate(conn, r, payload) -> dict:
+    from . import consolidate
+    from .jobs import current_runner
+
+    if any(it.get("ok") is False for it in payload.get("items") or []):
+        raise ActionError(next(it["reason"] for it in payload["items"] if it.get("ok") is False))
+    runner = current_runner()
+    if runner is None:
+        raise ActionError("現在沒辦法在背景開始，請稍後再試")
+    n = consolidate.stage(conn, r["id"], payload)
+    conn.execute("UPDATE assistant_actions SET state = 'running', result = ? WHERE id = ?",
+                 (json.dumps({"message": f"正在複製 {n:,} 個檔案…", "items": []}, ensure_ascii=False), r["id"]))
+    conn.commit()
+    runner.submit("consolidate", action_id=r["id"], target=f"consolidate:{r['id']}")
+    return get(conn, r["id"])
+
+
+def finish_consolidate(conn: sqlite3.Connection, action_id: int, res) -> None:
+    """背景工作做完（或暫停、中斷）：更新那張卡。"""
+    from . import consolidate
+
+    r = conn.execute("SELECT * FROM assistant_actions WHERE id = ?", (int(action_id),)).fetchone()
+    if r is None:
+        return
+    c = consolidate.counts(conn, action_id)
+    payload = json.loads(r["payload"])
+    ok = c["done"] + c["same"]
+    if c["todo"] and (res.stopped or res.interrupted or res.error):
+        state = "running" if res.stopped else ("partial" if ok else "failed")
+    else:
+        state = "done" if not c["failed"] and not c["todo"] else ("partial" if ok else "failed")
+    result = {"message": consolidate.describe(res, payload), "items": [{"index": 0, "status": "done" if ok else "skipped"}],
+              "counts": c}
+    conn.execute("UPDATE assistant_actions SET state = ?, result = ?, done_at = ? WHERE id = ?",
+                 (state, json.dumps(result, ensure_ascii=False), db.now_iso(), r["id"]))
+    conn.commit()
 
 
 def _message(kind: str, ok: int, tried: int) -> str:
@@ -638,13 +711,20 @@ def undo(conn: sqlite3.Connection, action_id: int) -> dict:
         r = conn.execute("SELECT * FROM assistant_actions WHERE id = ?", (int(action_id),)).fetchone()
         if r is None:
             raise ActionError("找不到這個動作")
-        if r["state"] not in ("done", "partial"):
+        if r["state"] not in ("done", "partial", "failed" if r["kind"] == "consolidate" else "done"):
             raise ActionError("這個動作沒有執行過，或已經復原了")
         payload = json.loads(r["payload"])
         result = json.loads(r["result"] or "{}")
         kind = r["kind"]
         problems = []
-        if kind in CATEGORY_KINDS:
+        if kind == "consolidate":
+            from . import consolidate
+
+            try:
+                problems = consolidate.undo(conn, r["id"], payload)
+            except consolidate.PlanError as exc:
+                raise ActionError(str(exc)) from exc
+        elif kind in CATEGORY_KINDS:
             from . import classify
 
             classify.restore(conn, result.get("before") or {})  # 回到套用前的分類設定

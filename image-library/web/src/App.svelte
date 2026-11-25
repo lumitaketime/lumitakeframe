@@ -21,6 +21,7 @@
   import Assistant from "./pages/Assistant.svelte";
   import Browse from "./pages/Browse.svelte";
   import Drives from "./pages/Drives.svelte";
+  import Retire from "./pages/Retire.svelte";
   import Albums from "./pages/Albums.svelte";
   import Album from "./pages/Album.svelte";
   import People from "./pages/People.svelte";
@@ -365,6 +366,8 @@
               <Browse scope={{ type: "category", category: seg[1] }} />
             {:else if page === "drives"}
               <Drives />
+            {:else if page === "retire" && seg[1]}
+              <Retire rootId={Number(seg[1])} />
             {:else if page === "kind" && seg[1]}
               <Browse scope={{ type: "kind", kind: seg[1] }} />
             {:else if page === "albums" && seg[1] === "smart" && seg[2]}

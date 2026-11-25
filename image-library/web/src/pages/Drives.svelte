@@ -10,7 +10,7 @@
   import { setFrame } from "../shell/frame.svelte.js";
   import { t, formatNumber, formatBytes, formatDate, formatDuration } from "../i18n/index.svelte.js";
   import { app, toast, refresh } from "../lib/state.svelte.js";
-  import { link } from "../lib/router.svelte.js";
+  import { link, navigate } from "../lib/router.svelte.js";
   import HealthAlert from "../views/HealthAlert.svelte";
   import { loadHealth, recheckHealth } from "../data/health.js";
 
@@ -202,6 +202,11 @@
               <Button variant="bordered" loading={busy === d.key} disabled={!!busy} onclick={() => stop(d)}>{t("drives.stop")}</Button>
             {:else}
               <Button variant="bordered" loading={busy === d.key} disabled={!!busy || !d.online} onclick={() => scan(d)}>{d.last_scan ? t("drives.rescan") : t("drives.scan")}</Button>
+            {/if}
+            {#if d.last_scan}
+              {#each d.roots as r (r.id)}
+                <Button variant="bordered" onclick={() => navigate(`/retire/${r.id}`)}>{d.roots.length > 1 ? t("retire.buttonOf", { name: r.name }) : t("retire.button")}</Button>
+              {/each}
             {/if}
             <span class="grow"></span>
             <Button variant="borderless" role="destructive" disabled={!!busy} onclick={() => (removing = d)}>{t("drives.remove")}</Button>

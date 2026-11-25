@@ -62,7 +62,7 @@ def build_id() -> str:
         _BUILD = h.hexdigest()[:12]
     return _BUILD
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
-LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/catalog/move", "/api/catalog/location/check", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export",
+LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/catalog/move", "/api/catalog/location/check", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export", "/api/retire/export",
                   "/api/assistant/actions/run", "/api/assistant/actions/undo", "/api/catalog/backup", "/api/catalog/backup/dir", "/api/catalog/restore",
                   "/api/catalog/reset", "/api/catalog/old/trash", "/api/health/decide", "/api/health/check", "/api/spotlight/report", "/api/spotlight/ack", "/api/spotlight/rebuild"}
 SETTING_KEYS = {
@@ -1784,6 +1784,160 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             raise HTTPException(400, str(e)) from e
         finally:
             c.close()
+        try:
+            fileops.reveal(out, select=True)
+        except OSError:
+            pass
+        return {"path": str(out)}
+
+    # ---- 硬碟淘汰檢查：每個檔案在別顆硬碟有沒有一模一樣的副本（只讀，不刪不搬） ----
+    def _retire_job(root_id: int):
+        snap = jobs().snapshot()
+        return next((j for j in snap["active"] + snap["queued"] if j["kind"] == "retire_verify" and j.get("target") == f"retire:{root_id}"), None)
+
+    @app.get("/api/retire")
+    def retire_overview():
+        """每顆硬碟的淘汰檢查摘要（總覽首頁用）。"""
+        from . import retire
+
+        c = conn()
+        try:
+            out = []
+            for r in c.execute("SELECT id FROM roots ORDER BY name").fetchall():
+                try:
+                    out.append(retire.analyze(c, r["id"]))
+                except ValueError:
+                    continue
+            return {"drives": out}
+        finally:
+            c.close()
+
+    @app.get("/api/retire/{root_id:int}")
+    def retire_summary(root_id: int):
+        from . import retire
+
+        c = conn()
+        try:
+            out = retire.analyze(c, root_id)
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+        finally:
+            c.close()
+        out["job"] = _retire_job(root_id)
+        return out
+
+    @app.get("/api/retire/{root_id:int}/folders")
+    def retire_folders(root_id: int, state: str = "only", offset: int = 0, limit: int = 100):
+        from . import retire
+
+        c = conn()
+        try:
+            retire.analyze(c, root_id)
+            return retire.folders(c, root_id, state, offset, limit)
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+        finally:
+            c.close()
+
+    @app.get("/api/retire/{root_id:int}/files")
+    def retire_files(root_id: int, state: str = "only", folder: int | None = None, offset: int = 0, limit: int = 200):
+        from . import retire
+
+        c = conn()
+        try:
+            retire.analyze(c, root_id)
+            return retire.files(c, root_id, state, folder, offset, limit)
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+        finally:
+            c.close()
+
+    @app.get("/api/retire/{root_id:int}/plan")
+    def retire_plan(root_id: int):
+        from . import retire
+
+        c = conn()
+        try:
+            return retire.verify_plan(c, root_id)
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+        finally:
+            c.close()
+
+    @app.post("/api/retire/{root_id:int}/verify")
+    def retire_verify(root_id: int):
+        return jobs().submit("retire_verify", root_id=int(root_id), target=f"retire:{int(root_id)}")
+
+    @app.post("/api/retire/{root_id:int}/planned")
+    def retire_planned(root_id: int, body: dict = Body(default={})):
+        """本人打算淘汰這顆硬碟（其他硬碟的副本只在這顆上時，會提醒不算安全）。"""
+        from . import retire
+
+        c = conn()
+        try:
+            have = retire.set_planned(c, root_id, bool(body.get("on")))
+            return {"planned": sorted(have)}
+        finally:
+            c.close()
+
+    @app.get("/api/consolidate")
+    def consolidate_list(source_root: int):
+        """這顆硬碟還沒確認、或正在複製的整理計畫。"""
+        from .actions import get
+
+        c = conn()
+        try:
+            ids = [r["id"] for r in c.execute("SELECT id, payload FROM assistant_actions WHERE kind = 'consolidate' AND state IN ('proposed', 'running') "
+                                              "ORDER BY id DESC LIMIT 10") if json.loads(r["payload"] or "{}").get("source_root") == source_root]
+            return {"actions": [get(c, i) for i in ids]}
+        finally:
+            c.close()
+
+    @app.post("/api/consolidate/propose")
+    def consolidate_propose(body: dict = Body(...)):
+        """整理計畫（本人在淘汰檢查頁按的）：先做成一張卡，看過、按「執行」才會開始複製。"""
+        from .actions import ActionError, propose
+
+        c = conn()
+        try:
+            return propose(c, "consolidate", {**{k: body.get(k) for k in ("source_root", "target_root", "dest", "states", "folder", "mark_source")},
+                                              "by_user": True}, 4)
+        except ActionError as e:
+            raise HTTPException(400, str(e)) from e
+        finally:
+            c.close()
+
+    @app.post("/api/retire/export")
+    def retire_export(body: dict = Body(...)):
+        """「只在這裡」等清單存成試算表檔（CSV）。存到本人選的地方；沒選就放在 Re'memor 的資料目錄。不能存在正在檢查的那顆硬碟上。"""
+        from pathlib import Path as _Path
+
+        from . import retire
+
+        rid = int(body.get("root_id") or 0)
+        c = conn()
+        try:
+            root = c.execute("SELECT * FROM roots WHERE id = ?", (rid,)).fetchone()
+            if root is None:
+                raise HTTPException(404, "找不到這顆硬碟")
+            retire.analyze(c, rid)
+            text = retire.export_csv(c, rid)
+            same = [r["path"] for r in c.execute("SELECT path FROM roots WHERE id = ? OR (drive_id IS NOT NULL AND drive_id = ?)",
+                                                 (rid, root["drive_id"]))]
+            name = retire._name_of(c, root)
+        finally:
+            c.close()
+        folder = _Path(body["dir"]) if body.get("dir") else cfg.home / "exports"
+        try:
+            real = folder.resolve()
+            if any(real == _Path(p).resolve() or _Path(p).resolve() in real.parents for p in same):
+                raise HTTPException(400, "不能把清單存在正在檢查的這顆硬碟上，請選別的位置")
+        except OSError:
+            pass
+        folder.mkdir(parents=True, exist_ok=True)
+        safe = "".join(ch if ch.isalnum() or ch in " -_（）" else "_" for ch in name).strip() or "drive"
+        out = folder / f"淘汰檢查 {safe} {db.now_iso()[:10]}.csv"
+        out.write_text(text, encoding="utf-8")
         try:
             fileops.reveal(out, select=True)
         except OSError:

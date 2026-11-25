@@ -24,7 +24,7 @@ from .media import MediaError
 from .scanner import scan_all
 
 LABELS = {
-    "scan": "掃描", "compare": "比對內容", "extract": "讀取文件文字", "ocr": "文字辨識", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
+    "scan": "掃描", "compare": "比對內容", "retire_verify": "確認副本", "consolidate": "複製到另一顆硬碟", "extract": "讀取文件文字", "ocr": "文字辨識", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
     "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
@@ -111,8 +111,8 @@ class JobRunner:
             t.start()
 
     # ---- 工作紀錄：寫進資料庫，關掉 App 再開仍然看得到；紀錄失敗不影響工作本身 ----
-    LOGGED = ("scan", "index", "compare", "extract", "ocr", "analyze", "embed_docs", "photos", "classify_ai", "classify_review")
-    RESUMABLE = ("scan", "index", "compare", "extract", "ocr", "embed_docs", "photos", "classify_ai", "classify_review")
+    LOGGED = ("scan", "index", "compare", "retire_verify", "consolidate", "extract", "ocr", "analyze", "embed_docs", "photos", "classify_ai", "classify_review")
+    RESUMABLE = ("scan", "index", "compare", "retire_verify", "consolidate", "extract", "ocr", "embed_docs", "photos", "classify_ai", "classify_review")
 
     def _log_sql(self, sql: str, args: tuple = ()) -> int | None:
         try:
@@ -625,6 +625,33 @@ class JobRunner:
                                   progress=lambda done, total, name: upd(done=done, total=total, message=name, unit="bytes"))
                 job["result"] = {"hashed": res.hashed, "interrupted": res.interrupted, "stopped": res.stopped}
                 parts.append(describe_compare(res))
+            if kind == "retire_verify":
+                from .health import held_roots
+                from .retire import describe as describe_retire, verify as retire_verify
+
+                rid = int(opts["root_id"])
+                name = (conn.execute("SELECT name FROM roots WHERE id = ?", (rid,)).fetchone() or {"name": ""})["name"]
+                res = retire_verify(conn, rid, stop=stop, hold=held_roots(conn, "read"),
+                                    progress=lambda done, total, n: upd(done=done, total=total, message=n))
+                job["result"] = {"copies": res.copies, "stopped": res.stopped}
+                parts.append(describe_retire(res, name))
+            if kind == "consolidate":
+                import json as _json
+
+                from . import consolidate
+                from .actions import finish_consolidate
+
+                aid = int(opts["action_id"])
+                row = conn.execute("SELECT payload, state FROM assistant_actions WHERE id = ?", (aid,)).fetchone()
+                if row is None or row["state"] not in ("running", "partial", "failed"):
+                    raise RuntimeError("這張整理計畫已經不存在或已經復原了")
+                payload = _json.loads(row["payload"])
+                res = consolidate.run(conn, aid, payload, stop=stop, progress=lambda done, total, n: upd(done=done, total=total, message=n))
+                finish_consolidate(conn, aid, res)
+                job["result"] = {"copied": res.copied, "stopped": res.stopped}
+                parts.append(consolidate.describe(res, payload))
+                if res.error:
+                    raise RuntimeError(res.error)
             if kind == "move_catalog":
                 from pathlib import Path as _Path
 

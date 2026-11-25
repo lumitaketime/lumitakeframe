@@ -69,3 +69,5 @@ export const loadChats = () => api("/api/assistant/chats", { quiet: true });
 export const loadChat = (id) => api(`/api/assistant/chats/${id}`);
 /** 刪除對話紀錄（可以一次好幾段；不動任何檔案） */
 export const deleteChats = (ids) => api("/api/assistant/chats/delete", { body: { ids } });
+/** 一個動作現在的狀態（例如背景複製做完了沒） */
+export const loadAction = (id) => api(`/api/assistant/actions/${id}`, { quiet: true });

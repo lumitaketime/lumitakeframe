@@ -109,7 +109,8 @@ def reveal(path: Path, select: bool = True) -> None:
 
 
 PICK_PROMPTS = {"add": "選擇要加入的資料夾", "catalog": "選擇要放目錄的位置（建議選常接的磁碟）",
-                "backup": "選擇存放目錄備份的位置（建議選另一顆磁碟）"}
+                "backup": "選擇存放目錄備份的位置（建議選另一顆磁碟）",
+                "export": "選擇清單要存在哪裡（不能選正在檢查的那顆硬碟）"}
 
 
 def pick_folder(purpose: str = "add") -> str | None:

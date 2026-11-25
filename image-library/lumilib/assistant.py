@@ -34,6 +34,8 @@ TOOLS = {
     "largest_folders": (1, "列出最佔空間的資料夾。args: {\"limit\": 數量（最多 20）}"),
     "drives_overview": (1, "所有硬碟的容量、檔案數、上次掃描時間、各類型佔多少。args: {}"),
     "duplicates": (1, "重複的檔案與資料夾，以及可以釋出多少空間。args: {}"),
+    "retire_check": (1, "淘汰檢查：某顆硬碟上的檔案在別顆硬碟有沒有一模一樣的副本、哪些只在這顆上、能不能淘汰。"
+                        "使用者問「某顆硬碟可以淘汰／丟掉／不要了嗎」時用這個。args: {\"drive\": 硬碟名稱}"),
     "read_document": (2, "讀一份文件的內容（Re'memor 已經讀好的文字）。args: {\"file_id\": 檔案編號（先用 search_files 找到）}"),
     "catalog_analysis": (1, "檔案分析：類型、年份分布、最常出現的詞（每個詞在幾個資料夾、大多在哪一類），目前的分類清單、規則、使用者的身分。討論分類時先用這個。args: {}"),
     "keyword_folders": (1, "某個詞出現在哪些資料夾（含年份、目前的分類）。args: {\"word\": 詞}"),
@@ -52,6 +54,9 @@ TOOLS = {
     "propose_mark_delete": (3, "提出：把已確認重複的多餘副本標記為待刪除（只是標記）。args: {\"file_ids\": [編號]}"),
     "propose_move": (4, "提出：把同一個來源裡的檔案搬到某個資料夾（不存在會建立）。args: {\"file_ids\": [編號], \"folder\": 資料夾路徑（和搜尋結果的「資料夾」寫法一樣，相對於同一個來源）}"),
     "propose_rename": (4, "提出：替檔案改名（副檔名不變）。args: {\"renames\": [{\"file_id\": 編號, \"new_name\": 新檔名}]}"),
+    "propose_consolidate": (4, "提出整理計畫：把一顆硬碟上的檔案複製到另一顆，逐一比對確認一模一樣（例如淘汰前先備份「只在這顆上」的檔案，或把某個資料夾集中到一顆）。"
+                               "不刪除任何原本的檔案；mark_source＝true 時，確認好後把原本那份放進「待刪除」清單。"
+                               "args: {\"from\": 來源硬碟名稱, \"to\": 目標硬碟名稱, \"folder\": 只複製這個資料夾（相對路徑，可省略＝只在這顆上的全部檔案）, \"mark_source\": true/false}"),
     "propose_to_pending": (4, "提出：把檔案移到該來源的「Re'memor 待刪除」資料夾（不刪除，隨時可以搬回來）。args: {\"file_ids\": [編號]}"),
 }
 PLAN_TOOLS = ("catalog_analysis", "keyword_folders", "save_profile", "plan_categories", "classify_folders")
@@ -201,6 +206,54 @@ def tool_duplicates(conn: sqlite3.Connection, args: dict, ctx) -> str:
     return "\n".join(lines)
 
 
+def _find_root(conn: sqlite3.Connection, name: str):
+    name = str(name or "").strip()
+    rows = conn.execute("SELECT r.*, COALESCE(v.name, r.name) AS label FROM roots r LEFT JOIN drives v ON v.id = r.drive_id").fetchall()
+    for test in (lambda r: r["name"] == name or r["label"] == name, lambda r: name and (name in r["name"] or name in (r["label"] or ""))):
+        hit = [r for r in rows if test(r)]
+        if hit:
+            return hit[0], rows
+    return None, rows
+
+
+def tool_retire_check(conn: sqlite3.Connection, args: dict, ctx) -> str:
+    from . import retire
+
+    root, rows = _find_root(conn, args.get("drive"))
+    if root is None:
+        return "（找不到這顆硬碟。目前的硬碟有：" + "、".join(r["label"] for r in rows) + "）"
+    s = retire.analyze(conn, root["id"])
+    lines = [retire.describe_summary(s)]
+    top = retire.folders(conn, root["id"], "only", 0, 5)["folders"]
+    if top:
+        lines.append("只在這顆上、最大的幾個資料夾：" + "；".join(f"{f['path'] or '（最上層）'}（{f['files']:,} 個，{_fmt_bytes(f['bytes'])}）" for f in top))
+    if s["states"]["maybe"]["files"]:
+        plan_ = retire.verify_plan(conn, root["id"])
+        need = "、".join(f"「{n['name']}」" for n in plan_["need"])
+        lines.append(f"還有 {plan_['files']:,} 個要完整比對才能確定（大約要讀 {_fmt_bytes(plan_['bytes'])}）"
+                     + (f"，需要接上 {need}" if need else "") + "。請到「硬碟」頁這顆硬碟的「淘汰檢查」按「確認副本」。")
+    lines.append("（淘汰檢查只讀不寫；要不要淘汰、怎麼處理，由使用者自己決定。）")
+    return "\n".join(lines)
+
+
+def tool_propose_consolidate(conn: sqlite3.Connection, args: dict, ctx) -> str:
+    from .actions import ActionError, propose
+
+    ctx = _ctx(ctx)
+    src, rows = _find_root(conn, args.get("from"))
+    dst, _ = _find_root(conn, args.get("to"))
+    if src is None or dst is None:
+        return "（找不到硬碟。目前的硬碟有：" + "、".join(r["label"] for r in rows) + "）"
+    try:
+        action = propose(conn, "consolidate", {"source_root": src["id"], "target_root": dst["id"], "folder": args.get("folder"),
+                                               "mark_source": bool(args.get("mark_source"))}, ctx.level, ctx.question)
+    except ActionError as exc:
+        return f"（沒有建立提案：{exc}）"
+    ctx.actions.append(action)
+    return (f"已建立整理計畫 #{action['id']}：{action['summary']}。這只是提案，要等使用者在畫面上看過並按下「執行」才會開始複製；"
+            "複製在背景進行，可以暫停；原本的檔案不會被刪除。")
+
+
 def tool_read_document(conn: sqlite3.Connection, args: dict, ctx) -> str:
     from .textindex import body
 
@@ -333,7 +386,7 @@ def tool_plan_categories(conn: sqlite3.Connection, args: dict, ctx) -> str:
 
 
 RUN = {"search_files": tool_search_files, "largest_folders": tool_largest_folders, "drives_overview": tool_drives_overview,
-       "duplicates": tool_duplicates, "read_document": tool_read_document,
+       "duplicates": tool_duplicates, "read_document": tool_read_document, "retire_check": tool_retire_check, "propose_consolidate": tool_propose_consolidate,
        "catalog_analysis": tool_catalog_analysis, "keyword_folders": tool_keyword_folders, "save_profile": tool_save_profile,
        "plan_categories": tool_plan_categories, "classify_folders": tool_classify_folders,
        **{name: _proposer(kind) for name, kind in PROPOSE.items()}}

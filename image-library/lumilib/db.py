@@ -17,7 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 34  # v34：分類的說明與合併、我的關鍵字規則（可有年份範圍）、等本人選的資料夾、關鍵字統計；v33：自動分類（分類清單、本人設定、AI 建議、學到的規則、每個資料夾目前的分類）；v32：側邊欄「喜好項目」裡釘選的檔案與捷徑；v31：已經交給 Spotlight 的項目；v30：助理的對話紀錄；v29：硬碟健康（自我檢測、讀取錯誤、本人的處理方式）；v28：文件的語意向量（用意思找文件）；v27：助理提出的動作（提案、執行、復原的紀錄）；v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
+SCHEMA_VERSION = 35  # v35：硬碟淘汰檢查（每個檔案在別顆硬碟有沒有副本）、檔案的快速指紋、文件封面縮圖；v34：分類的說明與合併、我的關鍵字規則（可有年份範圍）、等本人選的資料夾、關鍵字統計；v33：自動分類（分類清單、本人設定、AI 建議、學到的規則、每個資料夾目前的分類）；v32：側邊欄「喜好項目」裡釘選的檔案與捷徑；v31：已經交給 Spotlight 的項目；v30：助理的對話紀錄；v29：硬碟健康（自我檢測、讀取錯誤、本人的處理方式）；v28：文件的語意向量（用意思找文件）；v27：助理提出的動作（提案、執行、復原的紀錄）；v26：佔比圖依資料夾找大檔案、加總小檔案的索引；v25：依副檔名找檔案的索引（要讀文字、要辨識的檔案）；v24：智慧資料夾（儲存的搜尋）；v23：文件文字與全文索引；v22：工作紀錄（關掉 App 再開仍然看得到）；v21：待刪除的標記；v20：完整內容指紋與資料夾簽章（重複項目）；v19：每個資料夾「主要是什麼類型」（佔比圖上色用）；v18：照片原有的顏色標籤帶到檔案目錄；v17：硬碟總覽的類型統計索引；v16：瀏覽用的索引、檔案與資料夾的顏色標籤（v15：硬碟目錄 drives、folders、files）
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS roots (
@@ -595,6 +595,55 @@ def _migrate_v34(conn: sqlite3.Connection) -> None:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
 
 
+RETIRE_SCHEMA = """
+-- v35：硬碟淘汰檢查的結果（每次重算整批換掉）。state：copy 別顆有確認過的副本／risky 副本只在有狀況或也要淘汰的硬碟／
+-- maybe 別顆有大小一樣的、還沒確認／only 只有這一顆有／junk 系統自動產生的小檔案或空檔案
+CREATE TABLE IF NOT EXISTS retire_files (
+    root_id INTEGER NOT NULL REFERENCES roots(id) ON DELETE CASCADE,
+    file_id INTEGER NOT NULL,
+    folder_id INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    holders TEXT,
+    PRIMARY KEY (root_id, file_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_retire_folder ON retire_files(root_id, state, folder_id);
+CREATE TABLE IF NOT EXISTS retire_runs (
+    root_id INTEGER PRIMARY KEY REFERENCES roots(id) ON DELETE CASCADE,
+    sig TEXT NOT NULL,
+    computed_at TEXT NOT NULL,
+    summary TEXT NOT NULL
+);
+-- v35：整理計畫（把檔案複製到另一顆硬碟）的每一個檔案。status：todo／done 複製並比對確認／same 目的地已經有一模一樣的／
+-- failed 沒做成（note 寫原因）；undone 復原時已經移到垃圾桶。new_file_id＝複製出來那份在目錄裡的編號
+CREATE TABLE IF NOT EXISTS consolidate_items (
+    action_id INTEGER NOT NULL,
+    file_id INTEGER NOT NULL,
+    dst_path TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'todo',
+    new_file_id INTEGER,
+    dst_mtime REAL,
+    note TEXT,
+    PRIMARY KEY (action_id, file_id)
+) WITHOUT ROWID;
+-- v35：文件封面縮圖（存在目錄旁邊的 covers 資料夾，不寫到硬碟）。sig＝大小|修改時間，檔案變了就重做；ok＝0 做不出來
+CREATE TABLE IF NOT EXISTS file_covers (
+    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    sig TEXT NOT NULL,
+    ok INTEGER NOT NULL,
+    made_at TEXT NOT NULL
+);
+"""
+
+
+def _migrate_v35(conn: sqlite3.Connection) -> None:
+    conn.executescript(RETIRE_SCHEMA)
+    if "quick_sig" not in {r[1] for r in conn.execute("PRAGMA table_info(files)")}:
+        conn.execute("ALTER TABLE files ADD COLUMN quick_sig TEXT")  # 開頭結尾各 64KB 的快速指紋（比對副本時先用它篩）
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     existing = {row[1] for row in conn.execute("PRAGMA table_info(images)")}
     for name, ddl in V2_COLUMNS:
@@ -616,6 +665,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
             update_folder_totals(conn, r[0])
     conn.executescript(PENDING_SCHEMA)
     _migrate_v34(conn)
+    _migrate_v35(conn)
     # v20：完整內容指紋（要整個檔案讀過才有）與資料夾簽章
     file_cols = {r[1] for r in conn.execute("PRAGMA table_info(files)")}
     for name in ("content_hash", "hashed_at"):
