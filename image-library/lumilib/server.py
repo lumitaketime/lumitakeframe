@@ -1076,6 +1076,76 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         })
         return items
 
+    # ---- 比較圖像搜尋模型（試用） ----
+    @app.get("/api/clip/trial")
+    def clip_trial_status():
+        from .clip import CLIP_MODELS, TRIAL_KIND, model_installed, trial_info
+
+        info = trial_info(cfg)
+        c = conn()
+        try:
+            photos = c.execute("SELECT COUNT(*) FROM images WHERE status = 'ok' AND media_type = 'photo'").fetchone()[0]
+            name = info.get("candidate")
+            count = c.execute("SELECT COUNT(*) FROM image_vectors WHERE kind = ? AND model = ?", (TRIAL_KIND, name)).fetchone()[0] if name else 0
+        finally:
+            c.close()
+        total = lambda ms: round(ms * photos / 1000) if ms else None  # noqa: E731  整個圖庫大約要幾秒
+        return {
+            **info, "count": count, "photos": photos,
+            "candidate_label": (CLIP_MODELS.get(name) or {}).get("label") if name else None,
+            "current_label": (CLIP_MODELS.get(cfg.clip_model) or {}).get("label", cfg.clip_model),
+            "candidate_total_s": total(info.get("candidate_ms")), "current_total_s": total(info.get("current_ms")),
+            "candidate_installed": bool(name) and model_installed(cfg, name),
+        }
+
+    @app.get("/api/clip/compare")
+    def clip_compare(q: str, k: int = 12):
+        from .clip import compare
+
+        c = conn()
+        try:
+            try:
+                res = compare(c, cfg, q.strip()[:200], max(1, min(k, 30)))
+            except MediaError as exc:
+                raise HTTPException(400, str(exc))
+            ids = [i for i, _ in res["candidate_hits"]] + [i for i, _ in res["current_hits"]]
+            rows = {r["id"]: r for r in c.execute(
+                f"SELECT i.*, {STACK_COUNT_SQL} FROM images i WHERE i.id IN ({','.join('?' * len(ids)) or 'NULL'})", ids)}
+            pack = lambda hits: [{**summarize(rows[i]), "score": round(sc, 3)} for i, sc in hits if i in rows]  # noqa: E731
+            return {**{k2: v for k2, v in res.items() if not k2.endswith("_hits")},
+                    "candidate_hits": pack(res["candidate_hits"]), "current_hits": pack(res["current_hits"])}
+        finally:
+            c.close()
+
+    @app.post("/api/clip/trial/adopt")
+    def clip_trial_adopt():
+        """改用試用中的模型：沿用已試建的向量，其他照片在背景補建。"""
+        from .clip import adopt_trial, trial_info
+
+        name = trial_info(cfg).get("candidate")
+        if not name:
+            raise HTTPException(400, "沒有試用中的模型")
+        c = conn()
+        try:
+            kept = adopt_trial(c, cfg)
+        finally:
+            c.close()
+        cfg.save_setting("clip_model", name)
+        cfg.save_setting("clip_enabled", 1)
+        jobs().submit("clip")
+        return {"ok": True, "model": name, "kept": kept}
+
+    @app.post("/api/clip/trial/clear")
+    def clip_trial_clear():
+        from .clip import clear_trial
+
+        c = conn()
+        try:
+            clear_trial(c, cfg)
+        finally:
+            c.close()
+        return {"ok": True}
+
     @app.post("/api/clip/models/delete")
     def delete_clip_model(body: dict = Body(...)):
         from .clip import CLIP_MODELS, delete_model
@@ -2068,6 +2138,13 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             opts = {"batch": int(body.get("batch") or 0)}
         if kind == "quality" and body.get("redo"):
             opts = {"redo": True}
+        if kind == "clip_trial":
+            from .clip import CLIP_MODELS, model_installed as clip_installed
+
+            name = str(body.get("model") or "embeddinggemma-2")
+            if name not in CLIP_MODELS or not clip_installed(cfg, name):
+                raise HTTPException(400, "請先下載要比較的圖像搜尋模型")
+            opts = {"model": name, "count": max(50, min(int(body.get("count") or 1000), 5000))}
         return jobs().submit(kind, **opts)
 
     @app.post("/api/jobs/stop")

@@ -24,7 +24,7 @@ LABELS = {
     "scan": "掃描", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
     "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
     "pets": "寵物辨識", "pet_cluster": "寵物分群", "pet_model": "下載寵物辨識模型",
-    "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
+    "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型", "clip_trial": "試建圖像搜尋索引（比較用）",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放",
     "quality": "品質檢查（模糊、曝光）", "export": "匯出照片",
     "exif": "修改照片資訊", "exif_undo": "復原照片資訊",
@@ -407,6 +407,14 @@ class JobRunner:
                 n = index_images(conn, self.cfg, stop=stop,
                                  progress=lambda i, t, m: upd(done=i, total=t, message=f"圖像索引 {i}/{t}　{m}"))
                 parts.append(f"圖像搜尋索引 {n} 張")
+            if kind == "clip_trial":
+                from .clip import trial_index
+
+                name = opts.get("model") or "embeddinggemma-2"
+                info = trial_index(conn, self.cfg, name, int(opts.get("count") or 1000), stop=stop,
+                                   progress=lambda i, t, m: upd(done=i, total=t, message=f"試建索引 {i}/{t}　{m}"))
+                parts.append(f"試用索引 {info.get('count', 0)} 張"
+                             + (f"（每張約 {info['candidate_ms'] / 1000:.2f} 秒）" if info.get("candidate_ms") else ""))
             if kind == "clip_model":
                 from .clip import download_model as download_clip
 

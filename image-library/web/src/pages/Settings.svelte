@@ -1,4 +1,5 @@
 <script>
+  import ClipCompare from "../components/ClipCompare.svelte";
   import { slider } from "../lib/slider.js";
   import Loading from "../components/Loading.svelte";
   import { tick } from "svelte";
@@ -936,6 +937,7 @@
         <div class="row wrap">
           <button class="btn ghost" disabled={!clipModels.find((m) => m.active)?.installed} onclick={() => job("clip")}>建立圖像索引</button>
         </div>
+        <ClipCompare models={clipModels} onchange={async () => { settings = await api("/api/settings"); loadExtra(); }} />
         <p class="muted tiny">模型從 Hugging Face 下載（Immich 專案提供的 ONNX 版本），檔案約數百 MB 到 1 GB 以上。</p>
       {:else}<Loading kind="rows" count={2} />{/if}
     </section>

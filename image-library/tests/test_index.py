@@ -309,3 +309,113 @@ class SortFavoriteTests(unittest.TestCase):
             self.assertEqual([(f["kind"], f["name"]) for f in fav], [("album", "乙"), ("folder", "b")])
             c.post("/api/settings", json={"album_sort": "custom"})
             self.assertEqual(c.get("/api/server").json()["ui"]["album_sort"], "custom")
+
+
+class ClipTrialTests(unittest.TestCase):
+    """比較圖像搜尋模型：試建索引、比較、改用、清除（用假模型，不必下載真的模型）。"""
+
+    def test_trial_compare_adopt(self):
+        from unittest import mock
+
+        from PIL import Image as PILImage
+
+        from lumilib import clip
+        from lumilib.config import load_config
+        from lumilib.media import thumb_path
+
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "p").mkdir()
+        cfg = load_config(tmp / "home")
+        conn = db.connect(cfg.db_path)
+        root = db.add_root(conn, tmp / "p")["id"]
+        colors = {"red.jpg": (220, 20, 20), "green.jpg": (20, 200, 30), "blue.jpg": (20, 30, 220)}
+        ids = {}
+        for name, rgb in colors.items():
+            ids[name] = _add(conn, root, name, name)
+            fp = conn.execute("SELECT fingerprint FROM images WHERE id = ?", (ids[name],)).fetchone()[0]
+            p = thumb_path(cfg.thumbs_dir, fp)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            PILImage.new("RGB", (64, 48), rgb).save(p, "WEBP" if p.suffix == ".webp" else "JPEG")
+            conn.execute("UPDATE images SET thumb_ok = 1, media_type = 'photo' WHERE id = ?", (ids[name],))
+        conn.commit()
+
+        class Fake:
+            """把畫面的平均顏色當向量；文字「紅／綠／藍」對應到顏色。"""
+            def __init__(self, flip=False):
+                self.flip = flip
+
+            def encode_image(self, img):
+                v = np.asarray(img.convert("RGB"), dtype=np.float32).mean(axis=(0, 1))
+                return (v / np.linalg.norm(v)).astype(np.float32)
+
+            def encode_text(self, text):
+                v = {"紅": [1, 0, 0], "綠": [0, 1, 0], "藍": [0, 0, 1]}[text[0]]
+                if self.flip:  # 舊模型分不清紅和藍
+                    v = {"紅": [0, 0, 1], "綠": [0, 1, 0], "藍": [1, 0, 0]}[text[0]]
+                return np.array(v, dtype=np.float32)
+
+        models = {"embeddinggemma-2": Fake(), "xlm-roberta-base-vit-b32": Fake(flip=True)}
+        with mock.patch.object(clip, "get_model", lambda c, name=None: models[name or c.clip_model]), \
+             mock.patch.object(clip, "model_installed", lambda c, name: True):
+            # 目前的模型先有正式索引
+            n = clip.index_images(conn, cfg, model=models["xlm-roberta-base-vit-b32"])
+            self.assertEqual(n, 3)
+            info = clip.trial_index(conn, cfg, "embeddinggemma-2", count=10)
+            self.assertEqual(info["count"], 3)
+            self.assertIn("candidate_ms", info)
+            self.assertIn("current_ms", info)
+            # 試用向量和正式索引分開
+            kinds = dict(conn.execute("SELECT kind, COUNT(*) FROM image_vectors GROUP BY kind").fetchall())
+            self.assertEqual(kinds, {"clip": 3, "clip_trial": 3})
+            res = clip.compare(conn, cfg, "紅色", k=1)
+            self.assertEqual(res["candidate_hits"][0][0], ids["red.jpg"])
+            self.assertEqual(res["current_hits"][0][0], ids["blue.jpg"])
+            self.assertEqual(res["pool"], 3)
+            # 改用：試用向量變成正式索引，不必重建
+            kept = clip.adopt_trial(conn, cfg)
+            self.assertEqual(kept, 3)
+            rows = conn.execute("SELECT kind, model, COUNT(*) FROM image_vectors GROUP BY kind, model").fetchall()
+            self.assertEqual([tuple(r) for r in rows], [("clip", "embeddinggemma-2", 3)])
+            self.assertEqual({r[0] for r in conn.execute("SELECT clip_model FROM images")}, {"embeddinggemma-2"})
+            self.assertEqual(clip.trial_info(cfg), {})
+            # 再試一次後清除
+            clip.trial_index(conn, cfg, "embeddinggemma-2", count=10)
+            clip.clear_trial(conn, cfg)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM image_vectors WHERE kind = 'clip_trial'").fetchone()[0], 0)
+        conn.close()
+
+    def test_eg2_resize_matches_reference(self):
+        from lumilib.clip import EmbeddingGemma2Model as M
+
+        m = M.__new__(M)
+        # 和 transformers.js 的 get_aspect_ratio_preserving_size 一樣：寬高是 48 的倍數，總塊數不超過 70×9
+        for h, w in [(270, 360), (360, 270), (2000, 3000), (100, 4000)]:
+            th, tw = m._size(h, w, 70 * 9)
+            self.assertEqual((th % 48, tw % 48), (0, 0))
+            self.assertLessEqual((th // 16) * (tw // 16), 630)
+        self.assertEqual(m._size(270, 360, 630), (336, 432))
+
+
+class EmbeddingGemma2RealTests(unittest.TestCase):
+    """有下載真的模型時（LUMILIB_EG2_DIR 指向模型資料夾，裡面放 cats.jpg）才跑：對照模型卡上的範例分數。"""
+
+    def test_matches_model_card(self):
+        import os
+
+        d = os.environ.get("LUMILIB_EG2_DIR")
+        if not d or not (Path(d) / "cats.jpg").exists():
+            self.skipTest("沒有設定 LUMILIB_EG2_DIR")
+        from PIL import Image as PILImage
+
+        from lumilib.clip import EmbeddingGemma2Model
+
+        m = EmbeddingGemma2Model(Path(d))
+        m.DIM = 768  # 模型卡的分數是完整 768 維
+        m.BUDGET = 280
+        img = m.encode_image(PILImage.open(Path(d) / "cats.jpg"))
+        scores = [float(m.encode_text(q) @ img) for q in
+                  ("cats sleeping on a couch", "a president's speech about serving your country", "a turtle swimming in the ocean")]
+        for got, want in zip(scores, (0.740, 0.462, 0.508)):  # 模型卡用 4 位元版，這裡是 8 位元版，允許小差距
+            self.assertAlmostEqual(got, want, delta=0.02)
+        zh = [float(m.encode_text(q) @ img) for q in ("在沙發上睡覺的貓", "海裡游泳的海龜")]
+        self.assertGreater(zh[0], zh[1] + 0.1)
