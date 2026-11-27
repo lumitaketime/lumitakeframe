@@ -20,6 +20,7 @@
   import { app } from "../lib/state.svelte.js";
   import { link, navigate } from "../lib/router.svelte.js";
   import { prettyName } from "../lib/names.js";
+  import InboxLink from "../views/InboxLink.svelte";
 
   let ov = $state(null);
   let dupes = $state(null);
@@ -122,14 +123,15 @@
         <h2 class="mac-headline">{t("ov.attention")}</h2>
         {#if !ov}
           <ProgressIndicator kind="spinner" size="small" label={t("view.loading")} />
-        {:else if !ov.attention.length && !notes.length}
+        {:else if !ov.attention.length && !ov.inbox && !notes.length}
           <p class="ok mac-body"><Icon name="checkmark" size={14} />{t("ov.allGood")}</p>
         {:else}
+          <!-- 要你決定的事與提醒都在「待辦」，這裡只放一條連結 -->
+          {#if ov.inbox || notes.length}
+            <InboxLink text={ov.inbox && notes.length ? t("ov.inboxBoth", { n: formatNumber(ov.inbox), m: formatNumber(notes.length) })
+              : ov.inbox ? t("inbox.linkText", { n: formatNumber(ov.inbox) }) : t("ov.inboxNotes", { m: formatNumber(notes.length) })} />
+          {/if}
           <ul class="rows mac-callout">
-            {#each notes as n (n.key)}
-              <li class="lv-{n.level}"><Icon name={n.icon || "info"} size={14} /><a href={n.href} use:link>{n.text}</a>
-                <button type="button" class="snooze" title={t("ov.snooze")} aria-label={t("ov.snooze")} onclick={() => snooze(n)}><Icon name="xmark" size={10} /></button></li>
-            {/each}
             {#each ov.attention.slice(0, 8) as a, i (i)}
               <li class="lv-{a.level}"><Icon name={ATT_ICON[a.kind] || "info"} size={14} /><a href={a.href} use:link>{attentionText(a)}</a></li>
             {/each}

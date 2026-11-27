@@ -23,6 +23,7 @@
   import Drives from "./pages/Drives.svelte";
   import Retire from "./pages/Retire.svelte";
   import Overview from "./pages/Overview.svelte";
+  import Inbox from "./pages/Inbox.svelte";
   import Albums from "./pages/Albums.svelte";
   import Album from "./pages/Album.svelte";
   import People from "./pages/People.svelte";
@@ -336,7 +337,7 @@
       <div class="body">
         <main class="scroll-area" use:touchBounce>
           <div class="load-bar" class:on={app.busy} aria-hidden="true"><span></span></div>
-          {#if app.server?.health_alerts?.length && page !== "drives"}
+          {#if app.server?.health_alerts?.length && page !== "drives" && page !== "inbox"}
             <HealthBanner alerts={app.server.health_alerts} />
           {/if}
           {#key routeKey}
@@ -367,6 +368,8 @@
               <Browse scope={{ type: "category", category: seg[1] }} />
             {:else if page === "overview"}
               <Overview />
+            {:else if page === "inbox"}
+              <Inbox />
             {:else if page === "drives"}
               <Drives />
             {:else if page === "retire" && seg[1]}

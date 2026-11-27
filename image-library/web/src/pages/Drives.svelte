@@ -12,7 +12,7 @@
   import { t, formatNumber, formatBytes, formatDate, formatDuration } from "../i18n/index.svelte.js";
   import { app, toast, refresh } from "../lib/state.svelte.js";
   import { link, navigate } from "../lib/router.svelte.js";
-  import HealthAlert from "../views/HealthAlert.svelte";
+  import InboxLink from "../views/InboxLink.svelte";
   import { loadHealth, recheckHealth } from "../data/health.js";
 
   let detail = $state(null);
@@ -145,9 +145,7 @@
     {/if}
 
     {#if needing.length}
-      <div class="alerts">
-        {#each needing as h (h.key)}<HealthAlert health={h} onchange={() => load()} />{/each}
-      </div>
+      <div class="alerts"><InboxLink tone="warn" text={t("inbox.linkHealth", { n: formatNumber(needing.length) })} /></div>
     {/if}
 
     <div class="cards">

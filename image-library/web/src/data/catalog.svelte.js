@@ -12,6 +12,7 @@ export const catalog = $state({
   smart: [], // 智慧資料夾（儲存起來的搜尋）
   categories: [], // 自動分類：每類幾個資料夾、多少檔案
   categoryReview: 0, // AI 沒把握、請本人確認的資料夾數
+  inbox: 0, // 待辦：幾件事等你決定
   loaded: false,
   error: "",
 });
@@ -28,6 +29,7 @@ export function loadCatalog() {
       catalog.pending = data.pending || 0;
       catalog.categories = data.categories || [];
       catalog.categoryReview = data.category_review || 0;
+      catalog.inbox = data.inbox || 0;
       catalog.error = "";
     })
     .catch((e) => {

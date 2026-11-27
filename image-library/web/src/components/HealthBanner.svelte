@@ -1,5 +1,5 @@
 <script>
-  /** 每一頁最上面的提醒：有硬碟可能有狀況，Re'memor 先不處理它，請到「硬碟」頁決定怎麼處理。 */
+  /** 每一頁最上面的提醒：有硬碟可能有狀況，Re'memor 先不處理它，請到「待辦」決定怎麼處理。 */
   import { Icon } from "../ui/index.js";
   import { t } from "../i18n/index.svelte.js";
   import { link } from "../lib/router.svelte.js";
@@ -12,7 +12,7 @@
 <div class="banner mac-callout" class:fail role="status">
   <Icon name="exclamation-triangle" size={14} />
   <span>{t("health.banner", { names })}</span>
-  <a href="/drives" use:link>{t("health.bannerAction")}</a>
+  <a href="/inbox" use:link>{t("health.bannerAction")}</a>
 </div>
 
 <style>

@@ -1460,7 +1460,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             out = {"drives": drives_overview(c, scanning, detail=detail), "kinds": kinds_overview(c),
                    "categories": category_overview(c), "category_review": review_count(c),
                    "labels": labels_overview(c),
-                   "pending": c.execute("SELECT COUNT(*) FROM delete_marks").fetchone()[0]}
+                   "pending": c.execute("SELECT COUNT(*) FROM delete_marks").fetchone()[0],
+                   "inbox": __import__("lumilib.inbox", fromlist=["count"]).count(c)}  # 待辦：幾件事等你決定
             if detail:
                 out["new"] = new_volumes(c) if request.state.local else []
                 out["scan_job"] = current.get("id") if current.get("kind") in ("scan", "index") else None
@@ -1822,9 +1823,6 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
         import json as _json
         from datetime import datetime, timedelta, timezone
 
-        from . import health as _health
-        from . import pending as _pending
-        from .classify import review_count
         from .retire import _name_of
 
         c = conn()
@@ -1836,11 +1834,8 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                       for r in c.execute("SELECT f.id, f.name, f.kind, f.size, f.mtime, f.root_id, f.image_id, d.path AS folder, "
                                          "(SELECT ok FROM file_covers v WHERE v.file_id = f.id) AS cover FROM files f JOIN folders d ON d.id = f.folder_id "
                                          "WHERE f.status = 'ok' AND f.first_seen >= ? ORDER BY f.id DESC LIMIT 12", (week,))]
+            # 要你決定的事（硬碟狀況、計畫卡、請你確認、待刪除）都在「待辦」；這裡只列硬碟的掃描狀況
             attention = []
-            for h in _health.listing(c):
-                if h["status"] in ("warn", "fail"):
-                    attention.append({"kind": "health", "level": h["status"], "name": h["name"],
-                                      "detail": (h["findings"][0]["text"] if h["findings"] else ""), "href": "/drives"})
             old = (datetime.now(timezone.utc) - timedelta(days=180)).isoformat(timespec="seconds")
             roots = c.execute("SELECT * FROM roots ORDER BY name").fetchall()
             for r in roots:
@@ -1851,15 +1846,9 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
                     attention.append({"kind": "partial", "level": "info", "name": name, "href": "/drives"})
                 elif r["last_scan"] < old:
                     attention.append({"kind": "stale", "level": "info", "name": name, "date": r["last_scan"], "href": "/drives"})
-            marks = _pending.count(c)
-            if marks:
-                attention.append({"kind": "pending", "level": "info", "n": marks, "href": "/pending"})
-            review = review_count(c)
-            if review:
-                attention.append({"kind": "review", "level": "info", "n": review, "href": "/category/review"})
-            plans = c.execute("SELECT COUNT(*) FROM assistant_actions WHERE state = 'proposed'").fetchone()[0]
-            if plans:
-                attention.append({"kind": "plans", "level": "info", "n": plans, "href": "/category/review"})
+            from . import inbox as _inbox
+
+            waiting = _inbox.count(c)
             retire = []
             runs = {r["root_id"]: _json.loads(r["summary"]) for r in c.execute("SELECT root_id, summary FROM retire_runs")}
             for r in roots:
@@ -1872,7 +1861,7 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             from .insight import week_report
 
             return {"recent": {"files": recent["n"], "bytes": recent["b"], "items": newest}, "attention": attention, "retire": retire,
-                    "week": week_report(c)}
+                    "week": week_report(c), "inbox": waiting}
         finally:
             c.close()
 
@@ -1904,6 +1893,17 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             raise HTTPException(400, str(e)) from e
         except Exception as e:  # noqa: BLE001  模型沒開、太久沒回應…
             raise HTTPException(503, f"AI 沒辦法回答：{e}") from e
+        finally:
+            c.close()
+
+    # ---- 待辦：所有等你決定的事集中在一個地方 ----
+    @app.get("/api/inbox")
+    def inbox_list():
+        from . import inbox
+
+        c = conn()
+        try:
+            return inbox.build(c)
         finally:
             c.close()
 

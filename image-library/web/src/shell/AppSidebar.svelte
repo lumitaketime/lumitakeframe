@@ -78,6 +78,7 @@
 
   const LABELS = ["red", "yellow", "green", "blue", "purple"];
   const libraryItems = $derived([
+    { value: "inbox", label: t("nav.inbox"), icon: "checkmark", href: "/inbox", badge: catalog.inbox ? formatNumber(catalog.inbox) : undefined, draggable: true },
     { value: "overview", label: t("nav.overview"), icon: "house", href: "/overview", draggable: true },
     { value: "files", label: t("nav.allFiles"), icon: "files", href: "/folders", draggable: true },
     { value: "assistant", label: t("nav.assistant"), icon: "sparkles", href: "/assistant", draggable: true },

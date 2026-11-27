@@ -13,6 +13,7 @@
   import { undoAction } from "../data/assistant.js";
   import { loadCatalog } from "../data/catalog.svelte.js";
   import { navigate } from "../lib/router.svelte.js";
+  import InboxLink from "./InboxLink.svelte";
   import { t, formatNumber } from "../i18n/index.svelte.js";
   import { app, toast, refresh } from "../lib/state.svelte.js";
 
@@ -147,16 +148,8 @@
   </List>
 
   {#if plans || st.review}
-    <List header={t("cat.set.waiting")}>
-      {#if plans}
-        <ListRow title={t("cat.set.plans")} subtitle={t("cat.set.plansHint", { n: formatNumber(plans) })} icon="sparkles" iconTint="purple"
-          accessory="disclosure" onclick={() => navigate("/category/review")} />
-      {/if}
-      {#if st.review}
-        <ListRow title={t("cat.review.title")} subtitle={t("cat.review.count", { n: formatNumber(st.review) })} icon="exclamation-triangle" iconTint="orange"
-          accessory="disclosure" onclick={() => navigate("/category/review")} />
-      {/if}
-    </List>
+    <div class="waiting"><InboxLink text={plans && st.review ? t("inbox.linkCategory", { plans: formatNumber(plans), review: formatNumber(st.review) })
+      : plans ? t("inbox.linkPlans", { n: formatNumber(plans) }) : t("inbox.linkReview", { n: formatNumber(st.review) })} /></div>
   {/if}
 
   <List header={t("cat.look.title")} footer={t("cat.look.footer")}>
@@ -256,6 +249,7 @@
 
 <style>
   .acts { display: inline-flex; align-items: center; gap: var(--space-1); }
+  .waiting { margin: var(--space-2) 0 var(--space-4); }
   .pad { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3); }
   .backdrop { position: fixed; inset: 0; z-index: 320; display: flex; align-items: center; justify-content: center; background: var(--media-scrim-light); }
 </style>
