@@ -7,7 +7,8 @@
    * - 執行中：版本，旁邊有「更新 Ollama」（新模型需要新版時用）
    * 用 List 包起來；header／footer 由外面決定要不要顯示。
    */
-  import { Alert, Button, List, ListRow, ProgressIndicator } from "../ui/index.js";
+  import { Button, List, ListRow, ProgressIndicator } from "../ui/index.js";
+  import OllamaInstallDialog from "./OllamaInstallDialog.svelte";
   import { loadOllamaStatus, installOllama, startOllama } from "../data/ollama.js";
   import { t } from "../i18n/index.svelte.js";
   import { app, toast, refresh } from "../lib/state.svelte.js";
@@ -113,11 +114,7 @@
 {/if}
 
 {#if confirm}
-  <Alert title={t(confirm === "update" ? "oll.confirmUpdate" : "oll.confirmInstall")}
-    message={t(confirm === "update" ? "oll.confirmUpdateMessage" : "oll.confirmInstallMessage")} actions={[
-      { label: t(confirm === "update" ? "oll.updateShort" : "oll.installShort"), role: "default", onPress: install },
-      { label: t("common.cancel"), role: "cancel", onPress: () => (confirm = "") },
-    ]} />
+  <OllamaInstallDialog update={confirm === "update"} onconfirm={install} oncancel={() => (confirm = "")} />
 {/if}
 
 <style>

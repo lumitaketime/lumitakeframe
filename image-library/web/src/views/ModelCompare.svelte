@@ -177,13 +177,16 @@
 {/if}
 
 {#if confirmPull && suggestInfo}
+  <div class="backdrop">
   <Alert title={t("ai.setup.confirmTitle", { model: SUGGEST })} message={t("set.ai.pullMessage", { size: `${suggestInfo.size_gb} GB` }) + `\n\n${t("cmp.pullNote")}`} actions={[
     { label: t("ai.setup.download"), role: "default", onPress: pullSuggest },
     { label: t("common.cancel"), role: "cancel", onPress: () => (confirmPull = false) },
   ]} />
+  </div>
 {/if}
 
 <style>
+  .backdrop { position: fixed; inset: 0; z-index: 320; display: flex; align-items: center; justify-content: center; background: var(--media-scrim-light); }
   .pad { padding: var(--space-2) var(--space-4) var(--space-3); }
   .acts { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
   .sub { color: var(--label-secondary); }

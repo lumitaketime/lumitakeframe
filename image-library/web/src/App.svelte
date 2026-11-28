@@ -13,6 +13,8 @@
   import Insights from "./pages/Insights.svelte";
   import { catalog as catalogState, catalogTotals } from "./data/catalog.svelte.js";
   import { categoryName } from "./data/category.svelte.js";
+  import SettingsSidebar from "./shell/SettingsSidebar.svelte";
+  import { resolveCat } from "./lib/settings.js";
   import AiSetup from "./components/AiSetup.svelte";
   import Timeline from "./pages/Timeline.svelte";
   import Explore from "./pages/Explore.svelte";
@@ -61,6 +63,13 @@
   // 寬度小於 800：側邊欄收成抽屜、工具列出現 ≡；小於 1100：資訊欄自動收起（按了才浮在內容上）。
   let winW = $state(typeof window === "undefined" ? 1400 : window.innerWidth);
   const compact = $derived(winW < DRAWER_BREAK);
+  $effect(() => {
+    frame.compact = compact;
+  });
+  // 設定的「返回」：記下進設定前最後看的那一頁
+  $effect(() => {
+    if (page !== "settings" && page !== "welcome") frame.back = route.path + (Object.keys(route.query).length ? `?${new URLSearchParams(route.query)}` : "");
+  });
   const infoDocked = $derived(winW >= INFO_BREAK);
   let infoFloat = $state(false); // 窄視窗時暫時打開的資訊欄
   const infoOpen = $derived(!compact && (infoDocked ? frame.info : infoFloat));
@@ -96,7 +105,7 @@
           : page === "pending" ? t("nav.pending")
           : page === "activity" ? t("nav.scanProgress")
           : page === "drives" ? t("nav.drives")
-          : page === "settings" ? t("nav.settings")
+          : page === "settings" ? (resolveCat(seg[1] || "") ? t(`set.cat.${resolveCat(seg[1])}`) : t("nav.settings"))
             : page === "search" || page === "find" ? t("nav.search") : page === "assistant" ? t("nav.assistant") : "");
 
   // 側邊欄寬度：拖曳右邊緣，或聚焦後用左右方向鍵（200–320）
@@ -321,7 +330,7 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="side" transition:slidePanel={{ x: -(frame.sidebarWidth + 16) }}>
         {#if macOverlayTitleBar}<div class="titledrag" data-tauri-drag-region="deep" aria-hidden="true"></div>{/if}
-        <AppSidebar width={frame.sidebarWidth} />
+        {#if page === "settings"}<SettingsSidebar width={frame.sidebarWidth} />{:else}<AppSidebar width={frame.sidebarWidth} />{/if}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
         <div class="resizer" role="separator" aria-orientation="vertical" aria-label={t("nav.resizeSidebar")} tabindex="0"
           aria-valuemin={SIDEBAR_MIN} aria-valuemax={SIDEBAR_MAX} aria-valuenow={frame.sidebarWidth}
@@ -421,7 +430,8 @@
       <button class="scrim" onclick={() => (frame.drawer = false)} aria-label={t("nav.closeMenu")} transition:fade={{ duration: DUR.fast }}></button>
       <div class="drawer" transition:slidePanel={{ x: -320 }}>
         {#if macOverlayTitleBar}<div class="titledrag" data-tauri-drag-region="deep" aria-hidden="true"></div>{/if}
-        <AppSidebar width={Math.min(300, winW - 48)} />
+        {#if page === "settings"}<SettingsSidebar width={Math.min(300, winW - 48)} onpick={() => (frame.drawer = false)} />
+        {:else}<AppSidebar width={Math.min(300, winW - 48)} />{/if}
       </div>
     {/if}
   </div>
@@ -448,19 +458,18 @@
 
 <style>
   .boot { height: 100vh; display: flex; align-items: center; justify-content: center; color: var(--label-secondary); }
-  /* 外框：視窗底色上浮著玻璃側邊欄；右邊的內容窗格不透明 */
+  /* 外框（新版 macOS 的 Finder）：側邊欄貼齊視窗左邊、直接用視窗底色；右邊的內容窗格不透明，中間一條分隔線 */
   .frame { display: flex; height: 100vh; height: 100dvh; background: var(--window-bg); color: var(--label-primary); overflow: hidden; }
   .frame.resizing { cursor: col-resize; user-select: none; }
-  /* 側邊欄：浮動面板，與視窗邊緣留 8，圓角 radius-lg */
-  .side { position: relative; flex: none; padding: var(--space-2); padding-top: calc(var(--space-2) + env(safe-area-inset-top)); display: flex; }
-  .side :global(.lg-sidebar-floating), .drawer :global(.lg-sidebar-floating) { border-radius: var(--radius-lg); }
-  .resizer { position: absolute; top: var(--space-4); bottom: var(--space-4); right: 0; width: var(--space-2); cursor: col-resize; border-radius: var(--radius-capsule); touch-action: none; }
-  .resizer:hover, .frame.resizing .resizer { background: var(--fill-secondary); }
+  /* 側邊欄：貼齊視窗邊緣（不再浮起、沒有圓角），右邊緣可以拖曳調整寬度 */
+  .side { position: relative; flex: none; padding-top: env(safe-area-inset-top); display: flex; }
+  .resizer { position: absolute; z-index: 3; top: 0; bottom: 0; right: -3px; width: 6px; cursor: col-resize; touch-action: none; }
+  .resizer:hover, .frame.resizing .resizer { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 
   /* Mac App：紅綠燈按鈕在左上角（約 70×28）。側邊欄的標誌往下讓位；側邊欄收起時，工具列往右讓位 */
   /* Mac App：紅綠燈在側邊欄左上角（距視窗左 22、垂直置中於 52 高的工具列）。
      側邊欄頂端留一條可拖曳視窗的空白，標誌放在紅綠燈下面；側邊欄收起時工具列往右讓出紅綠燈的位置 */
-  .titledrag { position: absolute; z-index: 2; left: 0; right: var(--space-2); top: 0; height: 44px; }
+  .titledrag { position: absolute; z-index: 2; left: 0; right: 0; top: 0; height: 44px; }
   .mac-titlebar .side :global(.lg-side-top:first-child), .mac-titlebar .drawer :global(.lg-side-top:first-child) { padding-top: 32px; }
   .mac-titlebar.no-side .bar { padding-left: 84px; }
   .mac-titlebar.no-side .bar :global(.sb.expanded) { left: 84px; }
@@ -478,8 +487,8 @@
 
   /* 窄視窗：≡ 滑出的側邊欄 */
   .scrim { position: fixed; inset: 0; z-index: 250; border: 0; padding: 0; background: var(--media-scrim-light); cursor: default; }
-  .drawer { position: fixed; z-index: 260; left: 0; top: 0; bottom: 0; padding: var(--space-2); padding-top: calc(var(--space-2) + env(safe-area-inset-top));
-    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom)); display: flex; will-change: transform; }
+  .drawer { position: fixed; z-index: 260; left: 0; top: 0; bottom: 0; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+    display: flex; will-change: transform; background: var(--window-bg); box-shadow: var(--shadow-popover); }
 
   /* 頂端的 M3 線性載入條：請求超過一下子還沒回來才出現 */
   .load-bar { position: sticky; top: 0; height: 0; z-index: 30; pointer-events: none; }

@@ -33,6 +33,9 @@ export const frame = $state({
   info: read("frame.info", false), // 資訊欄是否打開（⌘I）
   drawer: false, // 窄視窗時滑出的側邊欄
   page: null, // { key, crumbs, status, location, info }
+  compact: false, // 視窗窄到側邊欄收成抽屜（App 設定）
+  back: "/overview", // 設定的「返回」：進設定前最後看的那一頁
+  settingsFocus: "", // 搜尋設定時點的項目：設定頁打開後捲到這一項並閃一下
 });
 
 export function toggleSidebar() {

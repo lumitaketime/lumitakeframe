@@ -33,6 +33,9 @@ const EXTRA = {
   "sparkles": '<path d="M10 3.5l1.6 4.4 4.4 1.6-4.4 1.6L10 15.5l-1.6-4.4L4 9.5l4.4-1.6z"/><path d="M17.5 13.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>',
   "arrow-up": '<path d="M12 19V5M6 11l6-6 6 6"/>',
   "arrow-down": '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  "lock": '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
+  "shield": '<path d="M12 3.5 5 6v5.5c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6z"/><path d="M9 12.2l2.1 2.1L15.2 10"/>',
+  "play": '<path d="M8 5.5v13l10-6.5z"/>',
 };
 
 export const ICONS = { ...BASE, ...EXTRA };

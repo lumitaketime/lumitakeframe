@@ -265,7 +265,7 @@
   ondragleave={(e) => { if (!fromSidebar && !e.currentTarget.contains(e.relatedTarget)) dropping = false; }}
   ondragend={dragEnd}
   ondrop={(e) => { if (!canPin(e)) return; e.preventDefault(); if (fromSidebar) dragEnd(); else drop(e, null); }}>
-<Sidebar {sections} {bottom} {value} {width} {collapsed} label={t("nav.main")} onchange={go} class="app-sidebar"
+<Sidebar {sections} {bottom} {value} {width} {collapsed} floating={false} label={t("nav.main")} onchange={go} class="app-sidebar"
   ontogglesection={toggleSection} onsectiondrop={(e, s) => { if (s.id === "favorites") drop(e, null); }}
   onitemdragstart={dragStart} onitemdrop={(e, it) => drop(e, it.fav)} onitemcontext={itemMenu}>
   {#snippet header()}
@@ -281,6 +281,6 @@
   .brand { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-1) var(--space-2); text-decoration: none; border-radius: var(--radius-sm); }
   .brand img { display: block; border-radius: var(--radius-sm); }
   :global(.app-sidebar) { height: 100%; }
-  .drop { height: 100%; display: flex; border-radius: var(--radius-lg); }
-  .drop.dropping { box-shadow: 0 0 0 2px var(--accent); }
+  .drop { height: 100%; display: flex; }
+  .drop.dropping { box-shadow: inset 0 0 0 2px var(--accent); }
 </style>

@@ -17,34 +17,51 @@
   import SemanticSettings from "../views/SemanticSettings.svelte";
   import { loadSettings, saveSetting, loadStorage, resetText } from "../data/settings.js";
   import { loadTextStatus, startExtract, startOcr, stopJob } from "../data/find.svelte.js";
-  import { setFrame } from "../shell/frame.svelte.js";
+  import { setFrame, frame } from "../shell/frame.svelte.js";
+  import { CATS, OLD } from "../lib/settings.js";
+  import { tick } from "svelte";
   import { t, i18n, LOCALES, setLocale, formatNumber, formatBytes, formatDuration } from "../i18n/index.svelte.js";
   import { app, toast, refresh } from "../lib/state.svelte.js";
   import { route, navigate } from "../lib/router.svelte.js";
 
   let { section = "" } = $props();
 
-  const CATS = [
-    { id: "general", icon: "gear", tint: "gray-1" },
-    { id: "catalog", icon: "external-drive-fill", tint: "blue" },
-    { id: "scan", icon: "clock", tint: "orange" },
-    { id: "text", icon: "magnifyingglass", tint: "indigo" },
-    { id: "assistant", icon: "sparkles", tint: "purple" },
-    { id: "classify", icon: "tag", tint: "green" },
-    { id: "photos", icon: "photo", tint: "pink" },
-    { id: "system", icon: "slider-horizontal", tint: "gray-1" },
-  ];
-  // 舊網址（照片圖庫的設定分類）對到新的分類與子分類
-  const OLD = { ai: ["photos", "ai"], recog: ["photos", "recog"], faces: ["photos", "recog"], search: ["photos", "search"], organize: ["photos", "organize"],
-    rating: ["photos", "organize"], tools: ["photos", "organize"], library: ["photos", "library"], look: ["photos", "library"], features: ["photos", "library"],
-    phone: ["system", ""], storage: ["system", ""], advanced: ["system", ""], about: ["about", ""] };
   const sub = $derived(route.path.split("/").filter(Boolean)[2] || "");
   const mapped = $derived(OLD[section] || null);
   const current = $derived(mapped ? mapped[0] : CATS.some((c) => c.id === section) ? section : "");
   const photoTab = $derived((mapped && mapped[0] === "photos" ? mapped[1] : sub) || "ai");
   let width = $state(1200);
-  const narrow = $derived(width < 640);
+  // 分類清單：平常在左邊的「設定側邊欄」（shell/SettingsSidebar）；側邊欄收起或視窗太窄時，才放在頁面裡
+  const inlineCats = $derived(frame.compact || !frame.sidebar);
+  const narrow = $derived(inlineCats && width < 640);
   const shown = $derived(current || (narrow ? "" : "general")); // 窄視窗先顯示分類清單
+  const cat = $derived(CATS.find((c) => c.id === shown) || null);
+  const tint = (c) => (/^gray/.test(c) ? `var(--${c})` : `var(--system-${c})`);
+
+  // 從「搜尋設定」點進來：捲到那一項，閃一下讓人看到
+  let paneEl = $state();
+  $effect(() => {
+    const label = frame.settingsFocus;
+    if (!label || !shown || !paneEl) return;
+    shown;
+    const find = () => [...paneEl.querySelectorAll(".lg-list-header, .lg-row-title, h2, h3, .lg-seg-label, button, label")]
+      .find((el) => el.textContent.trim() === label);
+    let tries = 0;
+    const timer = setInterval(async () => {
+      await tick();
+      const el = find();
+      if (el || ++tries > 20) {
+        clearInterval(timer);
+        frame.settingsFocus = "";
+        if (!el) return;
+        const box = el.closest(".lg-list, section, .lg-row-li") || el;
+        box.scrollIntoView({ block: "center", behavior: "smooth" });
+        box.classList.add("set-flash");
+        setTimeout(() => box.classList.remove("set-flash"), 1600);
+      }
+    }, 100);
+    return () => clearInterval(timer);
+  });
 
   $effect(() => {
     setFrame({ crumbs: [], status: "", location: null, info: null });
@@ -150,22 +167,27 @@
   const FORMATS = ["pdf", "office", "text", "ebook", "mac", "archive", "music"];
 </script>
 
-<div class="settings" bind:clientWidth={width} class:narrow>
-  {#if !narrow || !shown}
+<div class="settings" bind:clientWidth={width} class:narrow class:single={!inlineCats}>
+  {#if inlineCats && (!narrow || !shown)}
     <nav class="cats" aria-label={t("set.categories")}>
       <List appearance="plain">
         {#each CATS as c (c.id)}
           <ListRow title={t(`set.cat.${c.id}`)} icon={c.icon} iconTint={c.tint} selected={shown === c.id} onclick={() => go(c.id)} accessory={narrow ? "disclosure" : "none"} />
         {/each}
-        <ListRow title={t("set.cat.about")} icon="info" iconTint="gray-1" selected={shown === "about"} onclick={() => go("about")} accessory={narrow ? "disclosure" : "none"} />
       </List>
     </nav>
   {/if}
 
   {#if shown}
-  <div class="pane" class:wide={shown === "photos" || shown === "system" || shown === "about"}>
+  <div class="pane" class:wide={shown === "photos" || shown === "system" || shown === "about"} bind:this={paneEl}>
     {#if narrow}<div class="back"><Button variant="borderless" icon="chevron-left" onclick={() => navigate("/settings")}>{t("nav.settings")}</Button></div>{/if}
-    <h1 class="mac-title-1">{t(`set.cat.${shown}`)}</h1>
+    {#if cat}
+      <header class="hero">
+        <span class="hero-tile" style:background={tint(cat.tint)} aria-hidden="true"><Icon name={cat.icon} size={30} weight="medium" /></span>
+        <h1 class="mac-title-2">{t(`set.cat.${shown}`)}</h1>
+        <p class="mac-callout">{t(`set.desc.${shown}`)}</p>
+      </header>
+    {/if}
     {#if error}
       <p class="err mac-body" role="alert">{error} <Button size="small" variant="bordered" onclick={load}>{t("view.retry")}</Button></p>
     {/if}
@@ -389,13 +411,25 @@
 
 <style>
   .settings { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--space-6); align-items: start; padding: var(--space-5) var(--space-6) var(--space-8); }
+  .settings.single { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+  .settings.single .pane { width: 100%; }
   .settings.narrow { grid-template-columns: minmax(0, 1fr); padding: var(--space-4); }
+  .narrow .hero { flex-direction: row; text-align: left; align-items: center; padding: var(--space-3) var(--space-4); gap: var(--space-3); }
+  .narrow .hero-tile { flex: none; width: 40px; height: 40px; border-radius: var(--radius-md); }
+  .narrow .hero h1 { display: none; }
+  /* 每一頁最上面的說明卡（像「系統設定」）：大圖示、名稱、一句話說明 */
+  .hero { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); text-align: center; padding: var(--space-5) var(--space-6);
+    border-radius: var(--radius-lg); background: var(--fill-quaternary); }
+  .hero-tile { width: 56px; height: 56px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-lg); color: var(--on-accent);
+    box-shadow: var(--shadow-rim); }
+  .hero p { margin: 0; max-width: 520px; color: var(--label-secondary); }
+  .pane :global(.set-flash) { animation: set-flash calc(var(--dur-slow) * 4) var(--ease-out); border-radius: var(--radius-lg); }
+  @keyframes set-flash { 0%, 40% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent); } 100% { box-shadow: 0 0 0 3px transparent; } }
   .cats { position: sticky; top: var(--space-4); }
   .pane { min-width: 0; max-width: 680px; display: flex; flex-direction: column; gap: var(--space-5); }
   .pane.wide { max-width: 980px; }
   h1 { margin: 0; color: var(--label-primary); }
   .pad { padding: var(--space-2) var(--space-3); }
-  .langs { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); }
   .job { display: inline-flex; align-items: center; gap: var(--space-2); }
   .lead { margin: 0; color: var(--label-secondary); }
   .err { margin: 0; color: var(--system-red); display: flex; align-items: center; gap: var(--space-2); }
