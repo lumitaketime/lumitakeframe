@@ -21,17 +21,18 @@ from . import db
 from .analyzer import OllamaClient, OllamaUnavailable, analyze_images, embed_images
 from .config import Config
 from .media import MediaError
+from .ollama_setup import InstallError
 from .scanner import scan_all
 
 LABELS = {
-    "scan": "掃描", "compare": "比對內容", "retire_verify": "確認副本", "consolidate": "複製到另一顆硬碟", "covers": "做文件封面", "reindex_text": "重建搜尋索引", "extract": "讀取文件文字", "ocr": "文字辨識", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型",
+    "scan": "掃描", "compare": "比對內容", "retire_verify": "確認副本", "consolidate": "複製到另一顆硬碟", "covers": "做文件封面", "reindex_text": "重建搜尋索引", "extract": "讀取文件文字", "ocr": "文字辨識", "analyze": "AI 分析", "index": "掃描並分析", "embed": "建立語意向量", "pull": "下載模型", "ollama_install": "安裝 Ollama", "model_compare": "比較 AI 模型",
     "faces": "人臉辨識", "cluster": "人物分群", "face_model": "下載人臉模型",
     "clip": "建立圖像搜尋索引", "clip_model": "下載圖像搜尋模型",
     "dups": "尋找重複與相似照片", "stacks": "重新計算疊放", "export": "匯出照片",
     "move_catalog": "搬移目錄", "embed_docs": "建立「用意思找」的索引",
     "photos": "整理照片（拍攝資訊與縮圖）", "backup": "備份目錄", "classify": "自動分類", "classify_ai": "AI 分類", "keywords": "找出常見的詞", "classify_review": "AI 看資料夾並分類",
 }
-LANES = {"analyze": "ai", "embed": "ai", "embed_docs": "ai", "classify_ai": "ai", "classify_review": "ai", "pull": "download", "face_model": "download", "clip_model": "download",
+LANES = {"analyze": "ai", "embed": "ai", "embed_docs": "ai", "classify_ai": "ai", "classify_review": "ai", "pull": "download", "ollama_install": "download", "model_compare": "ai", "face_model": "download", "clip_model": "download",
          "scan": "scan", "backup": "catalog"}
 QUEUED_LANES = ("main", "ai", "scan")
 SCAN_WORKERS = 4  # 「同時掃描幾顆硬碟」最多 4 顆；實際同時跑幾個看設定
@@ -387,7 +388,7 @@ class JobRunner:
         error = None
         try:
             message = self._run(job)
-        except (OllamaUnavailable, MediaError) as exc:
+        except (OllamaUnavailable, MediaError, InstallError) as exc:
             message, error = str(exc), str(exc)
         except Exception as exc:  # 背景工作不能讓服務停掉
             traceback.print_exc()
@@ -885,6 +886,25 @@ class JobRunner:
 
                 self.client_factory().pull(name, report, stop)
                 parts.append(f"{name} 下載完成")
+            if kind == "ollama_install":
+                from . import ollama_setup
+
+                def step(what: str, done: int = 0, total: int = 0) -> None:
+                    text = ollama_setup.STEP_TEXT.get(what, what)
+                    if what == "download" and total:
+                        text += f"（{_fmt_bytes(done)} / {_fmt_bytes(total)}）"
+                    upd(message=text, done=done, total=total, unit="bytes" if what == "download" else None)
+
+                res = ollama_setup.install(self.cfg.home, self.cfg.ollama_url, step, stop)
+                job["result"] = res
+                parts.append(ollama_setup.describe(res))
+            if kind == "model_compare":
+                from . import compare_models
+
+                res = compare_models.run(conn, self.cfg, self.client_factory(), opts["models"], int(opts.get("n") or 8), stop=stop,
+                                         progress=lambda done, total, name: upd(done=done, total=total, message=name))
+                job["result"] = {"done": res.get("done", 0)}
+                parts.append(compare_models.describe(res))
             return "；".join(parts)
         finally:
             conn.close()

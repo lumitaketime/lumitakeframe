@@ -9,7 +9,7 @@
   import { app, refresh, toast } from "../lib/state.svelte.js";
   import { navigate } from "../lib/router.svelte.js";
   import { count } from "../lib/format.js";
-  import { mdiCheck, mdiClose, mdiHarddisk, mdiContentCopy, mdiDownload, mdiCreation, mdiImageMultipleOutline } from "../lib/icons.js";
+  import { mdiCheck, mdiClose, mdiHarddisk, mdiDownload, mdiCreation, mdiImageMultipleOutline } from "../lib/icons.js";
 
   let { startStep = "" } = $props();
 
@@ -30,7 +30,9 @@
   const pullQueued = $derived((s?.jobs?.queued || []).some((j) => j.kind === "pull"));
   const index = $derived(STEPS.indexOf(step));
 
+  let oll = $state(null); // Ollama 能不能在 App 裡一鍵安裝（Mac、在這台電腦打開時）
   async function checkAi() {
+    api("/api/ollama/status").then((d) => (oll = d)).catch(() => {});
     try {
       ai = await api("/api/ai/status");
       if (ai.ollama && (!models || !models.ollama_ok)) models = await api("/api/models");
@@ -102,14 +104,34 @@
     }
   }
 
-  async function copy(text) {
+  const canInstall = $derived(!!oll?.can_install && s?.local !== false);
+  let installing = $state(false);
+  let installError = $state("");
+  const installJob = $derived((s?.jobs?.active || []).find((j) => j.kind === "ollama_install") || null);
+  const installPct = $derived(installJob?.total ? Math.round((installJob.done / installJob.total) * 100) : null);
+  async function install() {
+    installing = true;
+    installError = "";
     try {
-      await navigator.clipboard.writeText(text);
-      toast("已複製");
-    } catch {
-      toast("無法複製，請手動選取文字", "error");
+      await api("/api/ollama/install", { body: {} });
+      refresh();
+    } catch (e) {
+      installError = e.message;
+    } finally {
+      installing = false;
     }
   }
+  // 安裝結束：失敗的話把原因留在畫面上
+  let wasInstalling = false;
+  $effect(() => {
+    const now = !!installJob;
+    if (wasInstalling && !now) {
+      const last = s?.jobs?.last;
+      if (last?.kind === "ollama_install" && last.error) installError = last.error;
+      checkAi();
+    }
+    wasInstalling = now;
+  });
 
   async function choose(name) {
     const info = models?.recommended.find((m) => m.name === name);
@@ -193,23 +215,31 @@
         <p class="lead">Ollama 已經安裝，但還沒有打開。</p>
         <div class="row"><button class="btn" disabled={starting} onclick={startOllama}>{starting ? "打開中…" : "打開 Ollama"}</button></div>
         <p class="small muted">或到「應用程式」資料夾雙擊 Ollama。打開後，螢幕上方選單列會出現小羊駝圖示，這裡會自動偵測。</p>
+      {:else if installJob}
+        <p class="lead">正在安裝 Ollama，完成後會自動打開。</p>
+        <div class="progress">
+          <div class="small">{installJob.message}</div>
+          {#if installPct !== null}<progress max="100" value={installPct}></progress>{/if}
+        </div>
       {:else}
-        <p class="lead">Ollama 是免費的程式，負責在你的 Mac 上執行 AI 模型。照著下面做，這個畫面會自動偵測安裝結果。</p>
-        <ol class="howto">
-          <li>
-            <b>下載 Ollama</b>
-            <a class="btn small" href="https://ollama.com/download" target="_blank" rel="noopener"><Icon path={mdiDownload} size={16} />打開下載頁</a>
-            <span class="small muted">在網頁上按「Download for macOS」。</span>
-          </li>
-          <li><b>安裝</b><span class="small muted">打開「下載項目」裡的 Ollama 檔案，把 Ollama 圖示拖進「應用程式」資料夾。</span></li>
-          <li><b>打開 Ollama</b><span class="small muted">到「應用程式」雙擊 Ollama。如果問「確定要打開嗎？」，按「打開」。看到螢幕上方選單列出現小羊駝圖示就完成了，不需要登入或設定。</span></li>
-          <li><b>回到這裡</b><span class="small muted">每 3 秒自動偵測一次，偵測到會顯示「已經在執行」。</span></li>
-        </ol>
-        <details class="alt">
-          <summary>會用終端機？也可以用 Homebrew 安裝</summary>
-          {#each ["brew install ollama", "brew services start ollama"] as cmd (cmd)}
-            <div class="cmd"><code>{cmd}</code><button class="icon-btn" title="複製" onclick={() => copy(cmd)}><Icon path={mdiContentCopy} size={18} /></button></div>
-          {/each}
+        <p class="lead">Ollama 是免費的程式，負責在你的 Mac 上執行 AI 模型。</p>
+        {#if canInstall}
+          <div class="row"><button class="btn" disabled={installing} onclick={install}><Icon path={mdiDownload} size={16} />{installing ? "準備中…" : "下載並安裝 Ollama"}</button></div>
+          <p class="small muted">會從 Ollama 官方網站下載 Mac 版（約幾百 MB），只下載程式，不會送出你的任何檔案或資料。下載後先檢查是 Ollama 官方簽署的，再放進你帳號裡的「應用程式」資料夾（不需要輸入密碼），然後自動打開。</p>
+          {#if installError}<p class="small err">{installError}</p>{/if}
+        {/if}
+        <details class="alt" open={!canInstall}>
+          <summary>{canInstall ? "想自己安裝？手動步驟" : "安裝步驟"}</summary>
+          <ol class="howto">
+            <li>
+              <b>下載 Ollama</b>
+              <a class="btn small" href="https://ollama.com/download" target="_blank" rel="noopener"><Icon path={mdiDownload} size={16} />打開下載頁</a>
+              <span class="small muted">在網頁上按「Download for macOS」。</span>
+            </li>
+            <li><b>安裝</b><span class="small muted">打開「下載項目」裡的 Ollama 檔案，把 Ollama 圖示拖進「應用程式」資料夾。</span></li>
+            <li><b>打開 Ollama</b><span class="small muted">到「應用程式」雙擊 Ollama。如果問「確定要打開嗎？」，按「打開」。看到螢幕上方選單列出現小羊駝圖示就完成了，不需要登入或設定。</span></li>
+            <li><b>回到這裡</b><span class="small muted">每 3 秒自動偵測一次，偵測到會顯示「已經在執行」。</span></li>
+          </ol>
         </details>
       {/if}
       <p class="tiny muted status"><span class="spinner small-spin"></span>{ai?.ollama ? "已連線" : "正在偵測 Ollama…"}</p>
@@ -271,6 +301,7 @@
 </div>
 
 <style>
+  .err { color: var(--destructive); white-space: pre-line; }
   .overlay {
     position: fixed; inset: 0; z-index: 60; background: var(--scrim); display: flex; align-items: center;
     justify-content: center; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
@@ -304,8 +335,6 @@
   .ok p { margin: 2px 0 0; color: var(--on-surface-variant); }
   .alt { margin-top: 12px; }
   .alt summary { cursor: pointer; color: var(--on-surface-variant); font-size: var(--text-body); }
-  .cmd { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-  .cmd code { flex: 1; background: var(--surface-container); padding: 8px 12px; border-radius: var(--corner-small); font-size: var(--text-body); }
   .status { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
   .small-spin { width: 12px; height: 12px; }
   .picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 6px 0 12px; }

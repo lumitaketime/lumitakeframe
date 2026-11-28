@@ -579,8 +579,11 @@ def status(cfg, client) -> dict:
         else:
             out["model_ready"] = True  # 真的連不連得到，問的時候或按「測試連線」才知道
         return out
+    from .models import RECOMMENDED
+
     model = assistant_model(cfg)
-    out = {**base, "model": model, "remote": False, "service": "", "ollama": False, "installed": False, "model_ready": False, "message": ""}
+    size = next((m["size_gb"] for m in RECOMMENDED if same_model(m["name"], model)), None)
+    out = {**base, "model": model, "size_gb": size, "remote": False, "service": "", "ollama": False, "installed": False, "model_ready": False, "message": ""}
     try:
         names = client.list_models()
     except OllamaUnavailable:

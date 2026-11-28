@@ -11,6 +11,7 @@
   import { loadModels, testAssistant, saveSettings } from "../data/settings.js";
   import { downloadModel, loadActions, loadProviderModels } from "../data/assistant.js";
   import ActionCard from "./ActionCard.svelte";
+  import OllamaSetup from "./OllamaSetup.svelte";
   import { t, i18n } from "../i18n/index.svelte.js";
   import { app, toast, refresh } from "../lib/state.svelte.js";
 
@@ -196,12 +197,13 @@
   </List>
 
   {#if provider === "ollama"}
+    <OllamaSetup header="Ollama" onready={() => loadModels().then((d) => (models = d)).catch(() => {})} />
     <List header={t("set.ai.model")} footer={info?.note || ""}>
       <ListRow title={t("set.ai.model")} subtitle={fitText}>
         {#snippet trailing()}<PopUpButton value={chosen} onchange={(v) => set("assistant_model", v)} {options} menuWidth={380} />{/snippet}
       </ListRow>
       {#if models && !models.ollama_ok}
-        <ListRow title={t("ai.setup.ollamaOff")} subtitle={t("ai.setup.ollamaHint")} />
+        <ListRow title={t("oll.needFirst")} />
       {:else if pull}
         <ListRow title={t("ai.setup.downloading", { model: current })} detail={pull.total ? `${Math.round((pull.done / pull.total) * 100)}%` : ""} />
       {:else if models && !ready}

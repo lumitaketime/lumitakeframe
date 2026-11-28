@@ -303,6 +303,8 @@
     if (app.refreshKey) api("/api/server").then((s) => {
       lastSnap = JSON.stringify(s);
       app.server = s;
+      // 剛開始了一個工作（例如按了下載或安裝）：馬上改成較快的更新頻率，進度不用等下一輪才出現
+      if (s.jobs?.running && !wasRunning) poll();
     }).catch(() => {});
   });
 </script>

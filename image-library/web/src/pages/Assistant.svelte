@@ -11,7 +11,8 @@
   import { Alert, Button, Icon, ProgressIndicator } from "../ui/index.js";
   import KindIcon from "../views/KindIcon.svelte";
   import ActionCard from "../views/ActionCard.svelte";
-  import { loadAssistantStatus, loadSuggestions, downloadModel, startOllama, ask, loadChats, loadChat, deleteChats } from "../data/assistant.js";
+  import OllamaSetup from "../views/OllamaSetup.svelte";
+  import { loadAssistantStatus, loadSuggestions, downloadModel, ask, loadChats, loadChat, deleteChats } from "../data/assistant.js";
   import { Checkbox } from "../ui/index.js";
   import { setFrame } from "../shell/frame.svelte.js";
   import { t, i18n, formatBytes, formatNumber } from "../i18n/index.svelte.js";
@@ -182,14 +183,6 @@
       toast(e.message, "error");
     }
   }
-  async function openOllama() {
-    try {
-      await startOllama();
-      setTimeout(loadAll, 2500);
-    } catch (e) {
-      toast(e.message, "error");
-    }
-  }
 
   // 建議卡片：文字依語言組成；有連結的直接前往，有 ask 的幫你問助理
   function cardText(c) {
@@ -297,18 +290,14 @@
         {:else if !st.ollama}
           <p><b>{st.installed ? t("ai.setup.ollamaOff") : t("ai.setup.noOllama")}</b></p>
           <p class="sub mac-callout">{t("ai.setup.ollamaHint")}</p>
-          <div class="acts">
-            {#if st.installed}<Button variant="borderedProminent" onclick={openOllama}>{t("ai.setup.openOllama")}</Button>
-            {:else}<Button variant="borderedProminent" onclick={() => navigate("/welcome?step=ollama")}>{t("ai.setup.installOllama")}</Button>{/if}
-            <Button variant="bordered" onclick={loadAll}>{t("view.retry")}</Button>
-          </div>
+          <OllamaSetup showRunning={false} onready={loadAll} />
         {:else if pull}
           <p><b>{t("ai.setup.downloading", { model: st.model })}</b></p>
           <ProgressIndicator value={pull.total ? pull.done / pull.total : undefined} label={t("ai.setup.downloading", { model: st.model })} />
           <p class="sub mac-callout">{pull.total ? `${formatBytes(pull.done)}／${formatBytes(pull.total)}` : t("dupes.waiting")}</p>
         {:else}
           <p><b>{t("ai.setup.noModel", { model: st.model })}</b></p>
-          <p class="sub mac-callout">{t("ai.setup.modelHint")}</p>
+          <p class="sub mac-callout">{t("ai.setup.modelHint", { size: st.size_gb ? `${st.size_gb} GB` : "?" })}</p>
           <div class="acts"><Button variant="borderedProminent" icon="arrow-down" onclick={() => (confirmDownload = true)}>{t("ai.setup.download")}</Button></div>
         {/if}
       </section>
@@ -395,7 +384,7 @@
 {/if}
 {#if confirmDownload}
   <div class="backdrop">
-    <Alert title={t("ai.setup.confirmTitle", { model: st.model })} message={t("ai.setup.confirmMessage")} actions={[
+    <Alert title={t("ai.setup.confirmTitle", { model: st.model })} message={t("ai.setup.confirmMessage", { size: st.size_gb ? `${st.size_gb} GB` : "?" })} actions={[
       { label: t("ai.setup.download"), role: "default", onPress: download },
       { label: t("common.cancel"), role: "cancel", onPress: () => (confirmDownload = false) },
     ]} />

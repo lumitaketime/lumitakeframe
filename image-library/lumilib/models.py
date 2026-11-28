@@ -36,6 +36,13 @@ RECOMMENDED = [
         "note": "Gemma 4 最大版，最細緻，適合 48GB 以上的 Mac Studio／MacBook Pro。",
     },
     {
+        "name": "qwen3.8:27b", "kind": "vision", "family": "Qwen 3.8", "size_gb": 18, "min_ram": 36,
+        "quality": 6, "speed": 2, "speed_text": "慢",
+        "note": "2026 年 8 月推出。中文、圖中文字與看懂畫面都比 Gemma 4 強，也會用工具，最適合當助理。"
+                "但每個字都用到整個模型，分析照片比 gemma4:26b 慢好幾倍；照片很多時建議先用 gemma4:26b，"
+                "或在「設定 → 照片」用「實測比較」試試看。需要較新版的 Ollama。",
+    },
+    {
         "name": "qwen3-vl:4b-instruct", "kind": "vision", "family": "Qwen3-VL", "size_gb": 3.3, "min_ram": 8,
         "quality": 3, "speed": 2, "speed_text": "慢",
         "note": "不思考的版本（qwen3-vl:4b 預設會先思考，實測無法輸出結果）。可以用，但比 Gemma 4 慢不少。",
@@ -170,12 +177,13 @@ def annotated(ram_gb: int, installed_names: list[str]) -> list[dict]:
 
 
 # ---- 檔案管理助理用的模型（依這台電腦的記憶體挑） ----
-# 由大到小：記憶體夠就用比較聰明的；助理要回答問題與整理檔案，Gemma 4 是實測過的系列。
-ASSISTANT_LADDER = ("gemma4:31b", "gemma4:26b", "gemma4:e4b", "gemma4:e2b")
+# 由大到小：記憶體夠就用比較聰明的。助理一次只回答一個問題，品質比速度重要，
+# 36 GB 以上用中文最好的 Qwen 3.8 27B；再小一點用 Gemma 4（實測過、速度快）。
+ASSISTANT_LADDER = ("qwen3.8:27b", "gemma4:26b", "gemma4:e4b", "gemma4:e2b")
 
 
 def recommend_assistant(ram_gb: int) -> str:
-    """這台電腦最適合的助理模型：8 GB → E2B，16 GB → E4B，32 GB → 26B，48 GB 以上 → 31B。不知道記憶體時用 E4B。"""
+    """這台電腦最適合的助理模型：8 GB → E2B，16 GB → E4B，32 GB → Gemma 4 26B，36 GB 以上 → Qwen 3.8 27B。不知道記憶體時用 E4B。"""
     if not ram_gb:
         return "gemma4:e4b"
     by_name = {m["name"]: m for m in RECOMMENDED}

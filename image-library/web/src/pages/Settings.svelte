@@ -11,6 +11,8 @@
   import AssistantSettings from "../views/AssistantSettings.svelte";
   import ClassifySettings from "../views/ClassifySettings.svelte";
   import PhoneSettings from "../views/PhoneSettings.svelte";
+  import OllamaSetup from "../views/OllamaSetup.svelte";
+  import ModelCompare from "../views/ModelCompare.svelte";
   import { api } from "../lib/api.js";
   import SemanticSettings from "../views/SemanticSettings.svelte";
   import { loadSettings, saveSetting, loadStorage, resetText } from "../data/settings.js";
@@ -359,6 +361,10 @@
       <p class="lead mac-body">{t("set.photos.lead")}</p>
       <SegmentedControl value={photoTab} onchange={(v) => navigate(`/settings/photos/${v}`, { replace: true })} ariaLabel={t("set.cat.photos")}
         segments={["ai", "recog", "search", "organize", "library"].map((v) => ({ value: v, label: t(`set.photos.${v}`) }))} />
+      {#if photoTab === "ai"}
+        <OllamaSetup showRunning={false} />
+        <ModelCompare />
+      {/if}
       <div class="legacy"><PhotoSettings embedded section={photoTab} /></div>
 
     {:else if shown === "system"}

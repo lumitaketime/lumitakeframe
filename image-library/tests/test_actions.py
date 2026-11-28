@@ -286,8 +286,9 @@ class HardwareTests(unittest.TestCase):
 
         self.assertEqual(recommend_assistant(8), "gemma4:e2b")
         self.assertEqual(recommend_assistant(16), "gemma4:e4b")
-        self.assertEqual(recommend_assistant(36), "gemma4:26b")
-        self.assertEqual(recommend_assistant(64), "gemma4:31b")
+        self.assertEqual(recommend_assistant(32), "gemma4:26b")
+        self.assertEqual(recommend_assistant(36), "qwen3.8:27b")
+        self.assertEqual(recommend_assistant(64), "qwen3.8:27b")
         self.assertEqual(recommend_assistant(4), "gemma4:e2b")
 
 

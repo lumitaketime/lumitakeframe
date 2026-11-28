@@ -159,9 +159,11 @@ class OllamaClient:
                         continue
                     event = json.loads(line.decode("utf-8"))
                     if event.get("error"):
-                        raise RuntimeError(event["error"])
+                        raise RuntimeError(_pull_error(model, event["error"]))
                     if progress:
                         progress(event.get("status", ""), int(event.get("completed") or 0), int(event.get("total") or 0))
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(_pull_error(model, exc.read().decode("utf-8", "ignore") or str(exc))) from exc
         except (urllib.error.URLError, ConnectionError) as exc:
             raise OllamaUnavailable(f"無法連線到 Ollama（{self.base_url}）：{exc}") from exc
 
@@ -631,6 +633,16 @@ def translate_analysis(client, model: str, description: str, tags: list[str], la
               f"描述：{description}\n關鍵字：{'、'.join(tags)}")
     raw = client.chat_json(model, prompt, TRANSLATE_SCHEMA, timeout=60)
     return {"description": str(raw.get("description") or "").strip(), "tags": _str_list(raw.get("tags"), 40)}
+
+
+def _pull_error(model: str, text: str) -> str:
+    """下載模型失敗的原因，改成一般人看得懂的話。"""
+    low = text.lower()
+    if "newer version" in low or "412" in low:
+        return (f"{model} 需要較新版的 Ollama。請到「設定 → AI 助理」按「更新 Ollama」，更新完再下載一次。")
+    if "file does not exist" in low or "not found" in low:
+        return f"Ollama 上找不到「{model}」這個模型名稱，請確認拼字。"
+    return text
 
 
 # ---- AI 是否準備好 -------------------------------------------------------------------------

@@ -62,7 +62,7 @@ def build_id() -> str:
         _BUILD = h.hexdigest()[:12]
     return _BUILD
 PUBLIC_API = {"/api/auth/status", "/api/auth/login", "/api/auth/logout"}
-LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/catalog/move", "/api/catalog/location/check", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export", "/api/retire/export",
+LOCAL_ONLY_API = {"/api/pick-folder", "/api/restart", "/api/shutdown", "/api/catalog/move", "/api/catalog/location/check", "/api/lan", "/api/open-url", "/api/ollama/start", "/api/ollama/install", "/api/storage/reveal", "/api/reveal-path", "/api/items/open", "/api/pending/trash", "/api/pending/export", "/api/retire/export",
                   "/api/assistant/actions/run", "/api/assistant/actions/undo", "/api/catalog/backup", "/api/catalog/backup/dir", "/api/catalog/restore",
                   "/api/catalog/reset", "/api/catalog/old/trash", "/api/health/decide", "/api/health/check", "/api/spotlight/report", "/api/spotlight/ack", "/api/spotlight/rebuild"}
 SETTING_KEYS = {
@@ -996,6 +996,59 @@ def create_app(cfg: Config, bound_host: str = "127.0.0.1", client_factory=None, 
             raise HTTPException(500, f"無法啟動 Ollama：{exc}") from exc
         ai_cache["at"] = 0.0
         return {"ok": True}
+
+    @app.get("/api/ollama/status")
+    def ollama_status():
+        """Ollama 裝了沒、版本、能不能在 App 裡一鍵安裝。"""
+        from . import ollama_setup
+
+        out = ollama_setup.status()
+        out["running_version"] = ollama_setup.running_version(cfg.ollama_url)
+        out["running"] = bool(out["running_version"])
+        return out
+
+    @app.post("/api/ollama/install")
+    def ollama_install(body: dict = Body(default={})):
+        """本人按「下載並安裝／更新 Ollama」：從 Ollama 官方下載，檢查簽章後裝好並打開（只在 Mac）。"""
+        from . import ollama_setup
+
+        if not ollama_setup.status()["can_install"]:
+            raise HTTPException(400, "一鍵安裝只支援 Mac。其他系統請到 ollama.com 下載。")
+        ai_cache["at"] = 0.0
+        return jobs().submit("ollama_install")
+
+    @app.get("/api/models/compare")
+    def model_compare_last():
+        from . import compare_models
+
+        c = conn()
+        try:
+            return {"result": compare_models.last(c)}
+        finally:
+            c.close()
+
+    @app.post("/api/models/compare")
+    def model_compare(body: dict = Body(...)):
+        """實測比較：用幾張自己的照片讓兩個模型各跑一次（不寫進圖庫）。"""
+        from . import compare_models
+
+        names = [str(x).strip() for x in body.get("models") or [] if str(x).strip()]
+        if len(set(names)) < 2:
+            raise HTTPException(400, "請選兩個不同的模型來比較")
+        try:
+            installed = client_factory().list_models()
+        except OllamaUnavailable as exc:
+            raise HTTPException(400, str(exc)) from exc
+        from .models import same_model
+
+        missing = [n for n in names if not any(same_model(n, i) for i in installed)]
+        if missing:
+            raise HTTPException(400, f"還沒下載：{'、'.join(missing)}。請先下載再比較。")
+        try:
+            n = max(2, min(compare_models.MAX_PHOTOS, int(body.get("n") or 8)))
+        except (TypeError, ValueError):
+            n = 8
+        return jobs().submit("model_compare", models=names[:compare_models.MAX_MODELS], n=n)
 
     @app.post("/api/ollama/test")
     def ollama_test(body: dict = Body(...)):
